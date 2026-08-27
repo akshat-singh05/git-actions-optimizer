@@ -1,0 +1,14 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY setup.py .
+COPY gha_optimizer ./gha_optimizer
+COPY dashboard ./dashboard
+
+RUN pip install -e .
+
+CMD ["uvicorn", "gha_optimizer.server.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,144 @@
+# gha-optimizer
+
+An ML-based **prescriptive scheduler** for GitHub Actions CI/CD pipelines.
+Unlike analytics-only tools (GitHub Insights, CircleCI Insights), this
+system **predicts** cache invalidation, job failures, and runtime duration,
+then **autonomously re-orders and re-schedules** pipeline jobs to minimize
+wall-clock time, compute cost, and energy consumption.
+
+> **Patent-ready architecture:** The core novel mechanism — a dependency-
+> graph-aware cache invalidation predictor combined with dynamic job
+> reordering — is implemented as a separable, defensible technical
+> contribution distinct from prior art.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     DATA INGESTION LAYER                         │
+│  GitHub API/Webhooks → Workflow YAML parser → Execution history  │
+│  Git commit graph → File change diffs → Job logs & timings       │
+└──────────────────────────┬───────────────────────────────────────┘
+                            ↓
+┌──────────────────────────────────────────────────────────────────┐
+│                  FEATURE EXTRACTION LAYER                        │
+│  Dependency graph builder (files ↔ jobs ↔ packages ↔ cache keys) │
+│  Historical execution embeddings · Cache key fingerprinting      │
+│  Commit diff features · Author/streak/temporal features          │
+└──────────────────────────┬───────────────────────────────────────┘
+                            ↓
+┌──────────────────────────────────────────────────────────────────┐
+│                   PREDICTION ENGINE (ML CORE)                    │
+│  Model A: Cache-Miss Predictor (GBT/XGBoost classifier)         │
+│  Model B: Job Failure Predictor (GBT + threshold calibration)    │
+│  Model C: Duration Estimator (regression + quantile bands)       │
+│  Model D: GNN Cache Predictor (HeteroConv — patent core)        │
+└──────────────────────────┬───────────────────────────────────────┘
+                            ↓
+┌──────────────────────────────────────────────────────────────────┐
+│                OPTIMIZATION / SCHEDULER LAYER                    │
+│  Job DAG re-orderer (fail-fast topological scheduling)           │
+│  Cost-aware runner allocator (α·time + β·cost + γ·energy)        │
+│  Matrix reduction engine (cluster redundant cells)               │
+│  Probabilistic early-exit propagation through DAG                │
+└──────────────────────────┬───────────────────────────────────────┘
+                            ↓
+┌──────────────────────────────────────────────────────────────────┐
+│                 WORKFLOW GENERATION LAYER                         │
+│  Auto-generates optimized .github/workflows/*.yml                │
+│  Produces diff + explanation ("why this change")                 │
+│  Human-in-the-loop approval / auto-apply mode                    │
+└──────────────────────────┬───────────────────────────────────────┘
+                            ↓
+┌──────────────────────────────────────────────────────────────────┐
+│               FEEDBACK / CONTINUOUS LEARNING LOOP                │
+│  Actual outcomes → drift detection → retrain models              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## What's here
+
+```
+gha_optimizer/
+  config.py              Central configuration (env-driven)
+  cli.py                 CLI: analyze, serve, train, evaluate
+  pipeline.py            Wires all layers together end to end
+
+  ingestion/             Layer 1 — workflow YAML parsing, GitHub API client
+  graph/                 Layer 2 — dependency graph builder
+  features/              Layer 2 — ML-ready feature extraction
+  models/                Layer 3 — ML models (tabular + GNN)
+    cache_miss_predictor.py    Model A — GBT cache-miss classifier
+    failure_predictor.py       Model B — GBT failure classifier
+    duration_estimator.py      Model C — GBT duration regressor
+    gnn_cache_predictor.py     Model D — HeteroConv GNN (patent core)
+    matrix_reducer.py          Matrix cell clustering engine
+    graph_utils.py             networkx → torch_geometric conversion
+  scheduler/             Layer 4 — optimization & scheduling
+  generator/             Layer 5 — workflow YAML rewriting
+  server/                Layer 6 — FastAPI backend
+  feedback/              Layer 6 — drift detection & retraining
+
+dashboard/               React-free SPA dashboard (vanilla JS + Chart.js)
+
+examples/
+  sample_workflow.yml    5-job GitHub Actions workflow
+  sample_repo/           Toy source tree for the graph builder
+  synthetic_history.py   Generates training data (no GitHub token needed)
+  demo.py                Runs the full pipeline end to end
+
+tests/                   25+ tests covering all modules
+```
+
+## Quickstart
+
+```bash
+# Install
+pip install -e .
+
+# Run the full pipeline on synthetic data
+python examples/demo.py
+
+# Run tests
+pytest tests/ -v
+
+# Start the API server (requires: pip install fastapi uvicorn)
+gha-optimizer serve
+
+# Open the dashboard
+# Open dashboard/index.html in your browser
+
+# Run an ablation study
+gha-optimizer evaluate
+
+# Train on real GitHub data
+export GITHUB_TOKEN=ghp_...
+gha-optimizer train --repo owner/repo
+```
+
+## Novel Features by Patent Strength
+
+| Feature | Patent Strength | Implementation |
+|---------|----------------|----------------|
+| Graph-based cache-miss prediction (GNN) | **High** | `models/gnn_cache_predictor.py` |
+| Dynamic DAG re-scheduling from ML predictions | **High** | `scheduler/optimizer.py` |
+| Probabilistic skip propagation | **High** | `scheduler/optimizer.py` |
+| Cost-aware runner allocation | Medium | `scheduler/optimizer.py` |
+| Matrix reduction (redundant cell elimination) | Medium | `models/matrix_reducer.py` |
+| Energy/CO₂-aware scheduling | Medium | `scheduler/optimizer.py` |
+| Failure prediction with threshold calibration | Medium | `models/failure_predictor.py` |
+
+## Tech Stack
+
+- **Core:** Python 3.10+, networkx, scikit-learn, pandas
+- **ML Upgrade:** XGBoost (optional), PyTorch + torch_geometric (GNN)
+- **Server:** FastAPI + uvicorn
+- **Dashboard:** Vanilla JS + Chart.js (no build step)
+- **Data:** SQLite (upgradeable to PostgreSQL)
+- **Integration:** GitHub REST API via `requests`
+
+## Evaluation
+
+The system supports a built-in ablation study (`gha-optimizer evaluate`)
+comparing multiple scheduler weight configurations to demonstrate the
+incremental value of each component.

@@ -1,0 +1,2 @@
+[console_scripts]
+gha-optimizer = gha_optimizer.cli:main

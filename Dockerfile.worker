@@ -1,0 +1,13 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY setup.py .
+COPY gha_optimizer ./gha_optimizer
+
+RUN pip install -e .
+
+CMD ["celery", "-A", "gha_optimizer.worker.celery_app", "worker", "--loglevel=info"]

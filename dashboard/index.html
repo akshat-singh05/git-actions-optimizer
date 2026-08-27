@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GHA Optimizer — Dashboard</title>
+    <meta name="description" content="ML-based predictive scheduler for GitHub Actions CI/CD pipelines. Visualize predicted vs actual cache hits, time saved, cost saved.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="app">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                        <circle cx="14" cy="14" r="12" stroke="url(#grad)" stroke-width="2.5" fill="none"/>
+                        <path d="M9 14l3 3 7-7" stroke="url(#grad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs><linearGradient id="grad" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+                    </svg>
+                    <span class="logo-text">GHA Optimizer</span>
+                </div>
+            </div>
+            <ul class="nav-items">
+                <li class="nav-item active" data-view="overview">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    <span>Overview</span>
+                </li>
+                <li class="nav-item" data-view="pipeline">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-7.07-2.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83"/></svg>
+                    <span>Pipeline</span>
+                </li>
+                <li class="nav-item" data-view="predictions">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    <span>Predictions</span>
+                </li>
+                <li class="nav-item" data-view="schedule">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    <span>Schedule</span>
+                </li>
+                <li class="nav-item" data-view="models">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    <span>Models</span>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="status-badge" id="serverStatus">
+                    <span class="status-dot"></span>
+                    <span>Connecting...</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <!-- Header -->
+            <header class="content-header">
+                <div class="header-left">
+                    <h1 id="viewTitle">Overview</h1>
+                    <p class="header-subtitle" id="viewSubtitle">Dashboard summary and key metrics</p>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-primary" id="btnOptimize" onclick="runOptimization()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Run Optimization
+                    </button>
+                </div>
+            </header>
+
+            <!-- Views -->
+            <div class="view active" id="view-overview">
+                <!-- Summary Cards -->
+                <div class="cards-grid">
+                    <div class="card metric-card">
+                        <div class="card-icon time-icon">⏱</div>
+                        <div class="card-body">
+                            <span class="metric-label">Time Saved</span>
+                            <span class="metric-value" id="metricTimeSaved">—</span>
+                            <span class="metric-detail" id="metricTimeDetail">loading...</span>
+                        </div>
+                    </div>
+                    <div class="card metric-card">
+                        <div class="card-icon cost-icon">💰</div>
+                        <div class="card-body">
+                            <span class="metric-label">Cost Saved</span>
+                            <span class="metric-value" id="metricCostSaved">—</span>
+                            <span class="metric-detail" id="metricCostDetail">loading...</span>
+                        </div>
+                    </div>
+                    <div class="card metric-card">
+                        <div class="card-icon energy-icon">⚡</div>
+                        <div class="card-body">
+                            <span class="metric-label">Energy Saved</span>
+                            <span class="metric-value" id="metricEnergySaved">—</span>
+                            <span class="metric-detail" id="metricEnergyDetail">loading...</span>
+                        </div>
+                    </div>
+                    <div class="card metric-card">
+                        <div class="card-icon accuracy-icon">🎯</div>
+                        <div class="card-body">
+                            <span class="metric-label">Model Accuracy</span>
+                            <span class="metric-value" id="metricAccuracy">—</span>
+                            <span class="metric-detail" id="metricAccuracyDetail">loading...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="charts-row">
+                    <div class="card chart-card">
+                        <h3 class="card-title">Optimization History</h3>
+                        <canvas id="chartHistory" height="260"></canvas>
+                    </div>
+                    <div class="card chart-card">
+                        <h3 class="card-title">Cost Breakdown</h3>
+                        <canvas id="chartCost" height="260"></canvas>
+                    </div>
+                </div>
+
+                <!-- Recent Results -->
+                <div class="card">
+                    <h3 class="card-title">Recent Optimizations</h3>
+                    <div class="table-container">
+                        <table class="data-table" id="recentTable">
+                            <thead>
+                                <tr>
+                                    <th>Workflow</th>
+                                    <th>Time Saved</th>
+                                    <th>Cost Saved</th>
+                                    <th>Jobs Skipped</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentTableBody">
+                                <tr><td colspan="5" class="loading-row">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pipeline View -->
+            <div class="view" id="view-pipeline">
+                <div class="card">
+                    <h3 class="card-title">Job Dependency Graph</h3>
+                    <p class="card-desc">Interactive DAG visualization — colors indicate risk level</p>
+                    <div class="dag-container" id="dagContainer">
+                        <svg id="dagSvg" width="100%" height="400"></svg>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Per-Job Predictions</h3>
+                    <div class="table-container">
+                        <table class="data-table" id="jobTable">
+                            <thead>
+                                <tr>
+                                    <th>Job</th>
+                                    <th>Level</th>
+                                    <th>Runner</th>
+                                    <th>P(Fail)</th>
+                                    <th>P(Cache Miss)</th>
+                                    <th>Est. Duration</th>
+                                    <th>Est. Cost</th>
+                                    <th>CO₂</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jobTableBody">
+                                <tr><td colspan="9" class="loading-row">Run optimization to see results</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Predictions View -->
+            <div class="view" id="view-predictions">
+                <div class="charts-row">
+                    <div class="card chart-card">
+                        <h3 class="card-title">Predicted vs Actual Cache Hits</h3>
+                        <canvas id="chartCachePredictions" height="300"></canvas>
+                    </div>
+                    <div class="card chart-card">
+                        <h3 class="card-title">Predicted vs Actual Duration</h3>
+                        <canvas id="chartDurationPredictions" height="300"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Prediction Accuracy Over Time</h3>
+                    <canvas id="chartAccuracyTrend" height="200"></canvas>
+                </div>
+            </div>
+
+            <!-- Schedule View -->
+            <div class="view" id="view-schedule">
+                <div class="card">
+                    <h3 class="card-title">Schedule Comparison — Gantt Chart</h3>
+                    <p class="card-desc">Baseline (top) vs Optimized (bottom) timeline</p>
+                    <div class="gantt-container" id="ganttContainer">
+                        <canvas id="chartGantt" height="300"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Optimization Explanation</h3>
+                    <pre class="explanation-text" id="explanationText">Run optimization to see the detailed explanation.</pre>
+                </div>
+            </div>
+
+            <!-- Models View -->
+            <div class="view" id="view-models">
+                <div class="cards-grid cards-3">
+                    <div class="card">
+                        <h3 class="card-title">🔮 Cache-Miss Predictor</h3>
+                        <div class="model-metrics" id="cacheModelMetrics">
+                            <div class="metric-row"><span>Backend</span><span>—</span></div>
+                            <div class="metric-row"><span>Precision</span><span>—</span></div>
+                            <div class="metric-row"><span>Recall</span><span>—</span></div>
+                            <div class="metric-row"><span>F1</span><span>—</span></div>
+                            <div class="metric-row"><span>ROC AUC</span><span>—</span></div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title">⚠️ Failure Predictor</h3>
+                        <div class="model-metrics" id="failureModelMetrics">
+                            <div class="metric-row"><span>Backend</span><span>—</span></div>
+                            <div class="metric-row"><span>Precision</span><span>—</span></div>
+                            <div class="metric-row"><span>Recall</span><span>—</span></div>
+                            <div class="metric-row"><span>F1</span><span>—</span></div>
+                            <div class="metric-row"><span>Threshold</span><span>—</span></div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title">⏱ Duration Estimator</h3>
+                        <div class="model-metrics" id="durationModelMetrics">
+                            <div class="metric-row"><span>Backend</span><span>—</span></div>
+                            <div class="metric-row"><span>MAE</span><span>—</span></div>
+                            <div class="metric-row"><span>MAPE</span><span>—</span></div>
+                            <div class="metric-row"><span>R²</span><span>—</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card chart-card">
+                    <h3 class="card-title">Feature Importance</h3>
+                    <canvas id="chartFeatureImportance" height="300"></canvas>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
