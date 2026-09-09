@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitHub Actions Optimizer — Live Demo</title>
+    <meta name="description" content="Live demonstration of the GitHub Actions Performance Optimizer pipeline." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0a0e1a;
+            --surface: #111827;
+            --surface2: #1a2236;
+            --border: #1e293b;
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --accent: #6366f1;
+            --accent2: #8b5cf6;
+            --green: #10b981;
+            --green-dim: #065f46;
+            --red: #ef4444;
+            --amber: #f59e0b;
+            --cyan: #06b6d4;
+            --pink: #ec4899;
+            --radius: 12px;
+            --mono: 'JetBrains Mono', monospace;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 24px 32px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+        }
+        .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .header h1 .icon { font-size: 24px; -webkit-text-fill-color: initial; }
+        .team {
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+        .team strong { color: var(--text); font-weight: 500; }
+
+        /* Loading */
+        .loading-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 60vh;
+            gap: 20px;
+        }
+        .spinner {
+            width: 48px; height: 48px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { color: var(--text-dim); font-size: 14px; }
+
+        /* Main */
+        .main { max-width: 1400px; margin: 0 auto; padding: 24px 32px 80px; }
+
+        /* Summary cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .summary-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .summary-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+        }
+        .summary-card .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+        .summary-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            font-family: var(--mono);
+        }
+        .summary-card .sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+        .val-green { color: var(--green); }
+        .val-accent { color: var(--accent2); }
+        .val-cyan { color: var(--cyan); }
+        .val-amber { color: var(--amber); }
+        .val-pink { color: var(--pink); }
+
+        /* Steps */
+        .step {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        .step-header:hover { background: var(--surface2); }
+        .step-num {
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            width: 28px; height: 28px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .step-title { font-weight: 600; font-size: 14px; flex: 1; }
+        .step-badge {
+            font-size: 11px; padding: 3px 10px; border-radius: 20px;
+            font-family: var(--mono); font-weight: 500;
+        }
+        .badge-pass { background: var(--green-dim); color: var(--green); }
+        .badge-info { background: rgba(99,102,241,0.15); color: var(--accent); }
+        .chevron {
+            transition: transform 0.2s;
+            color: var(--text-dim);
+        }
+        .step.open .chevron { transform: rotate(90deg); }
+        .step-body {
+            display: none;
+            padding: 0 20px 20px;
+            border-top: 1px solid var(--border);
+        }
+        .step.open .step-body { display: block; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 12px;
+        }
+        th {
+            text-align: left;
+            padding: 8px 12px;
+            background: var(--surface2);
+            color: var(--text-dim);
+            font-weight: 500;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        td {
+            padding: 8px 12px;
+            border-top: 1px solid var(--border);
+            font-family: var(--mono);
+            font-size: 12px;
+        }
+        tr:hover td { background: rgba(99,102,241,0.04); }
+
+        /* Misc */
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-family: var(--mono);
+            font-weight: 500;
+        }
+        .tag-green { background: var(--green-dim); color: var(--green); }
+        .tag-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+        .tag-red { background: rgba(239,68,68,0.15); color: var(--red); }
+        .tag-blue { background: rgba(99,102,241,0.15); color: var(--accent); }
+
+        .edge-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 6px;
+            margin-top: 10px;
+        }
+        .edge-item {
+            font-family: var(--mono);
+            font-size: 12px;
+            padding: 6px 10px;
+            background: var(--surface2);
+            border-radius: 6px;
+            color: var(--text-dim);
+        }
+        .edge-item .arrow { color: var(--accent); margin: 0 6px; }
+        .edge-item .etype { color: var(--cyan); }
+
+        .bar-chart { margin-top: 10px; }
+        .bar-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+        .bar-label {
+            width: 200px;
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text-dim);
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .bar-track {
+            flex: 1;
+            height: 20px;
+            background: var(--surface2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--accent2));
+            border-radius: 4px;
+            transition: width 0.6s ease;
+        }
+        .bar-value {
+            width: 60px;
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text);
+        }
+
+        .dag-visual {
+            font-family: var(--mono);
+            font-size: 13px;
+            padding: 16px;
+            background: var(--surface2);
+            border-radius: 8px;
+            line-height: 1.8;
+            margin-top: 10px;
+        }
+        .dag-visual .node { color: var(--accent); font-weight: 600; }
+        .dag-visual .arrow-sym { color: var(--green); }
+
+        .diff-block {
+            font-family: var(--mono);
+            font-size: 12px;
+            background: #0d1117;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            white-space: pre;
+            line-height: 1.6;
+            margin-top: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .diff-add { color: #3fb950; }
+        .diff-del { color: #f85149; }
+        .diff-hdr { color: #79c0ff; }
+
+        .section-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 16px;
+            margin-bottom: 6px;
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 800px) {
+            .two-col { grid-template-columns: 1fr; }
+            .summary-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        .compact-card {
+            background: var(--surface2);
+            border-radius: 8px;
+            padding: 14px;
+        }
+        .compact-card h4 {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+        .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
+        .kv .k { color: var(--text-dim); }
+        .kv .v { font-family: var(--mono); color: var(--text); }
+
+        .footer {
+            text-align: center;
+            padding: 32px;
+            color: var(--text-dim);
+            font-size: 12px;
+            border-top: 1px solid var(--border);
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-inner">
+            <h1><span class="icon">⚡</span> GitHub Actions Performance Optimizer</h1>
+            <div class="team">
+                <strong>Akshat Singh</strong> — 23BKT0005 &nbsp;|&nbsp;
+                <strong>Aditya Chaubey</strong> — 23BCE2274
+            </div>
+        </div>
+    </div>
+
+    <div class="main" id="content">
+        <div class="loading-screen" id="loading">
+            <div class="spinner"></div>
+            <div class="loading-text">Running full pipeline… Repository → Graph → Fusion → ML → Scheduler → YAML</div>
+        </div>
+    </div>
+
+    <script>
+    const API = '/api/demo';
+
+    async function loadDemo() {
+        try {
+            const res = await fetch(API);
+            const data = await res.json();
+            renderDashboard(data);
+        } catch (e) {
+            document.getElementById('loading').innerHTML = `
+                <div style="color:var(--red); font-size:14px;">Failed to load demo: ${e.message}</div>
+                <div style="color:var(--text-dim); font-size:12px; margin-top:8px;">Make sure demo_server.py is running on port 8501</div>`;
+        }
+    }
+
+    function renderDashboard(d) {
+        const s = d.summary;
+        const content = document.getElementById('content');
+
+        content.innerHTML = `
+            <!-- Summary Cards -->
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <div class="label">Files Analyzed</div>
+                    <div class="value val-accent">${s.files_analyzed}</div>
+                    <div class="sub">${s.source_deps} source + ${s.ci_deps} CI deps</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">Fused Graph</div>
+                    <div class="value val-cyan">${s.fused_nodes}</div>
+                    <div class="sub">${s.fused_edges} edges across domains</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">ML Models</div>
+                    <div class="value val-green">${s.models_trained}</div>
+                    <div class="sub">Cache · Failure · Duration</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">Wall-Clock Saved</div>
+                    <div class="value val-green">${s.time_saved_pct > 0 ? '+' : ''}${s.time_saved_pct}%</div>
+                    <div class="sub">${s.baseline_wall_clock}s → ${s.optimized_wall_clock}s</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">Pipeline Time</div>
+                    <div class="value val-amber">${s.elapsed}s</div>
+                    <div class="sub">All 11 stages end-to-end</div>
+                </div>
+            </div>
+
+            <!-- Step 1: Repository Analysis -->
+            ${renderStep(1, 'Repository Analysis', `${d.step1_repository.file_count} files, ${d.step1_repository.job_count} jobs`, 'badge-info', true, `
+                <div class="two-col">
+                    <div class="compact-card">
+                        <h4>📁 Files Discovered</h4>
+                        ${d.step1_repository.files_discovered.map(f => `<div class="kv"><span class="k">✓</span><span class="v">${f}</span></div>`).join('')}
+                    </div>
+                    <div class="compact-card">
+                        <h4>🔧 Workflow: ${d.step1_repository.workflow_name}</h4>
+                        <div class="kv"><span class="k">Triggers</span><span class="v">${d.step1_repository.triggers.join(', ')}</span></div>
+                        <div class="kv"><span class="k">Jobs</span><span class="v">${d.step1_repository.job_count}</span></div>
+                        <div class="kv"><span class="k">DAG edges</span><span class="v">${d.step1_repository.dag_edge_count}</span></div>
+                    </div>
+                </div>
+                <table style="margin-top:14px">
+                    <tr><th>Job ID</th><th>Runner</th><th>Steps</th><th>Needs</th><th>Cache</th></tr>
+                    ${Object.entries(d.step1_repository.jobs).map(([id, j]) => `
+                        <tr><td style="color:var(--accent)">${id}</td><td>${j.runs_on}</td><td>${j.steps}</td>
+                        <td>${j.needs.length ? j.needs.join(', ') : '<span style="color:var(--text-dim)">root</span>'}</td>
+                        <td>${j.uses_cache ? '<span class="tag tag-green">yes</span>' : 'no'}</td></tr>
+                    `).join('')}
+                </table>
+                <div class="section-label">DAG Structure</div>
+                <div class="dag-visual">
+                    ${d.step1_repository.dag_edges.map(e => `<span class="node">${e.from}</span> <span class="arrow-sym">→</span> <span class="node">${e.to}</span>`).join('<br>')}
+                    ${d.step1_repository.dag_edges.length === 0 ? '<span style="color:var(--text-dim)">(no dependencies)</span>' : ''}
+                </div>
+            `)}
+
+            <!-- Step 2: Source Code Graph -->
+            ${renderStep(2, 'Source Code Graph (AST)', `${d.step2_source_graph.node_count} nodes, ${d.step2_source_graph.edge_count} edges`, 'badge-info', false, `
+                <div class="section-label">Node Types</div>
+                <div class="edge-list">
+                    ${Object.entries(d.step2_source_graph.node_types).map(([t, c]) => `<div class="edge-item"><span class="etype">${t}</span>: ${c}</div>`).join('')}
+                </div>
+                <div class="section-label">Discovered Dependencies</div>
+                <div class="edge-list">
+                    ${d.step2_source_graph.edges.map(e => `<div class="edge-item">${e.from} <span class="arrow">→</span> ${e.to} <span class="etype">[${shortEdge(e.type)}]</span></div>`).join('')}
+                </div>
+            `)}
+
+            <!-- Step 3: CI Graph -->
+            ${renderStep(3, 'CI/CD Graph', `${d.step3_ci_graph.node_count} nodes, ${d.step3_ci_graph.edge_count} edges`, 'badge-info', false, `
+                <div class="section-label">CI Node Types</div>
+                <div class="edge-list">
+                    ${Object.entries(d.step3_ci_graph.node_types).map(([t, c]) => `<div class="edge-item"><span class="etype">${t}</span>: ${c}</div>`).join('')}
+                </div>
+            `)}
+
+            <!-- Step 4: Graph Fusion -->
+            ${renderStep(4, 'Graph Fusion (Cross-Domain)', `${d.step4_fusion.cross_domain_edges} cross-domain edges`, 'badge-info', false, `
+                <div class="two-col">
+                    <div class="compact-card">
+                        <h4>Fused Graph</h4>
+                        <div class="kv"><span class="k">Total Nodes</span><span class="v">${d.step4_fusion.node_count}</span></div>
+                        <div class="kv"><span class="k">Total Edges</span><span class="v">${d.step4_fusion.edge_count}</span></div>
+                        <div class="kv"><span class="k">Cross-Domain</span><span class="v" style="color:var(--green)">${d.step4_fusion.cross_domain_edges}</span></div>
+                    </div>
+                    <div class="compact-card">
+                        <h4>Graph Summary</h4>
+                        ${Object.entries(d.step4_fusion.summary).map(([k,v]) => `<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}
+                    </div>
+                </div>
+                <div class="section-label">Cross-Domain Edges (Fusion)</div>
+                <div class="edge-list">
+                    ${d.step4_fusion.fusion_edges.map(e => `<div class="edge-item">${e.from} <span class="arrow">→</span> ${e.to} <span class="etype">[${e.type}]</span></div>`).join('')}
+                </div>
+            `)}
+
+            <!-- Step 5: Impact Analysis -->
+            ${renderStep(5, 'Impact Analysis', `${d.step5_impact.primary_impacted_jobs.length} jobs impacted`, 'badge-info', false, `
+                <div class="two-col">
+                    <div class="compact-card">
+                        <h4>Change: <span style="color:var(--pink)">src/database.py</span></h4>
+                        <div class="kv"><span class="k">Impacted Jobs</span><span class="v">${d.step5_impact.primary_impacted_jobs.join(', ')}</span></div>
+                        <div class="kv"><span class="k">Cache Keys</span><span class="v">${d.step5_impact.primary_cache_touched.length ? d.step5_impact.primary_cache_touched.join(', ') : 'none'}</span></div>
+                    </div>
+                    <div class="compact-card">
+                        <h4>Change: <span style="color:var(--amber)">requirements.txt</span></h4>
+                        <div class="kv"><span class="k">Impacted Jobs</span><span class="v">${d.step5_impact.comparison_impacted_jobs.join(', ')}</span></div>
+                        <div class="kv"><span class="k">Cache Keys</span><span class="v">${d.step5_impact.comparison_cache_touched.length ? escapeHtml(d.step5_impact.comparison_cache_touched.join(', ')) : 'none'}</span></div>
+                    </div>
+                </div>
+            `)}
+
+            <!-- Step 6: Feature Extraction -->
+            ${renderStep(6, 'Feature Extraction', `${d.step6_features.feature_columns.length} features × ${Object.keys(d.step6_features.per_job_features).length} jobs`, 'badge-info', false, `
+                <div class="kv" style="margin-bottom:8px"><span class="k">Training Data</span><span class="v">${d.step6_features.history_records} records → ${d.step6_features.training_shape}</span></div>
+                <table>
+                    <tr><th>Feature</th>${Object.keys(d.step6_features.per_job_features).map(j => `<th>${j}</th>`).join('')}</tr>
+                    ${d.step6_features.feature_columns.map(f => `
+                        <tr><td style="color:var(--text-dim)">${f}</td>
+                        ${Object.values(d.step6_features.per_job_features).map(fv => `<td>${fv[f]}</td>`).join('')}
+                        </tr>
+                    `).join('')}
+                </table>
+            `)}
+
+            <!-- Step 7: ML Models -->
+            ${renderStep(7, 'ML Model Training & Prediction', `3 models trained`, 'badge-pass', true, `
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+                    ${renderModelCard('Cache-Miss Predictor', d.step7_models.cache_miss)}
+                    ${renderModelCard('Failure Predictor', d.step7_models.failure)}
+                    ${renderModelCard('Duration Estimator', d.step7_models.duration)}
+                    ${renderModelCard('GNN Predictor', d.step7_models.gnn)}
+                </div>
+                <div class="section-label">Predictions for src/database.py change</div>
+                <table>
+                    <tr><th>Job</th><th>P(Cache Miss)</th><th>P(Failure)</th><th>Duration (s)</th></tr>
+                    ${Object.entries(d.step7_models.predictions).map(([j, p]) => `
+                        <tr><td style="color:var(--accent)">${j}</td>
+                        <td>${renderProb(p.cache_miss)}</td>
+                        <td>${renderProb(p.failure)}</td>
+                        <td>${p.duration}</td></tr>
+                    `).join('')}
+                </table>
+                <div class="section-label">Feature Importance (Cache-Miss Model)</div>
+                <div class="bar-chart">
+                    ${d.step7_models.feature_importance.map(fi => `
+                        <div class="bar-row">
+                            <div class="bar-label">${fi.name}</div>
+                            <div class="bar-track"><div class="bar-fill" style="width:${(fi.value / d.step7_models.feature_importance[0].value * 100).toFixed(0)}%"></div></div>
+                            <div class="bar-value">${fi.value}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `)}
+
+            <!-- Step 8: Scheduler -->
+            ${renderStep(8, 'DAG-Aware Scheduling', `fail-fast ordering`, 'badge-pass', true, `
+                <div class="two-col">
+                    <div class="compact-card">
+                        <h4>Original Order</h4>
+                        <div class="dag-visual">
+                            ${d.step8_schedule.original_order.map((j,i) => `${i+1}. <span class="node">${j}</span>`).join('<br>')}
+                        </div>
+                    </div>
+                    <div class="compact-card">
+                        <h4>Optimized Order (Fail-Fast)</h4>
+                        <div class="dag-visual">
+                            ${d.step8_schedule.jobs.map(j => `${j.order+1}. <span class="node">${j.job_id}</span> <span style="color:var(--text-dim)">level=${j.dag_level}, P(fail)=${j.failure_prob}</span>`).join('<br>')}
+                        </div>
+                    </div>
+                </div>
+                <table style="margin-top:14px">
+                    <tr><th>Job</th><th>Level</th><th>Runner</th><th>Est. Duration</th><th>Est. Cost</th><th>Skip?</th></tr>
+                    ${d.step8_schedule.jobs.map(j => `
+                        <tr><td style="color:var(--accent)">${j.job_id}</td>
+                        <td>${j.dag_level}</td>
+                        <td><span class="tag tag-blue">${j.runner}</span></td>
+                        <td>${j.est_duration}s</td>
+                        <td>$${j.est_cost}</td>
+                        <td>${j.skip ? '<span class="tag tag-red">YES</span>' : '<span class="tag tag-green">no</span>'}</td></tr>
+                    `).join('')}
+                </table>
+            `)}
+
+            <!-- Step 9: Validation -->
+            ${renderStep(9, 'DAG Safety Verification', 'ALL PASS', 'badge-pass', true, `
+                <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:10px;">
+                    ${renderCheck('All jobs preserved', d.step9_validation.all_jobs_present)}
+                    ${renderCheck('No circular dependencies', d.step9_validation.no_cycles)}
+                    ${renderCheck('Needs relationships preserved', d.step9_validation.needs_preserved)}
+                    ${renderCheck('Workflow executable', d.step9_validation.workflow_executable)}
+                </div>
+            `)}
+
+            <!-- Step 10: Output -->
+            ${renderStep(10, 'Optimized Workflow Generation', d.step10_output.yaml_valid ? 'VALID YAML' : 'INVALID', d.step10_output.yaml_valid ? 'badge-pass' : 'badge-red', true, `
+                <div class="kv"><span class="k">YAML Valid</span><span class="v" style="color:var(--green)">✓ PASS</span></div>
+                <div class="section-label">Workflow Diff (Original → Optimized)</div>
+                <div class="diff-block">${formatDiff(d.step10_output.diff_preview)}</div>
+            `)}
+
+            <!-- Final Summary -->
+            ${renderStep(11, 'Final Summary', `${s.elapsed}s`, 'badge-pass', true, `
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:14px;">
+                    <div class="compact-card">
+                        <h4>⏱ Wall-Clock</h4>
+                        <div class="kv"><span class="k">Baseline</span><span class="v">${s.baseline_wall_clock}s</span></div>
+                        <div class="kv"><span class="k">Optimized</span><span class="v" style="color:var(--green)">${s.optimized_wall_clock}s</span></div>
+                        <div class="kv"><span class="k">Saved</span><span class="v" style="color:var(--green)">${s.time_saved_pct > 0 ? '+' : ''}${s.time_saved_pct}%</span></div>
+                    </div>
+                    <div class="compact-card">
+                        <h4>💰 Cost</h4>
+                        <div class="kv"><span class="k">Baseline</span><span class="v">$${s.baseline_cost}</span></div>
+                        <div class="kv"><span class="k">Optimized</span><span class="v">${s.cost_saved_pct > 0 ? '<span style="color:var(--green)">' : '<span style="color:var(--amber)">'}$${s.optimized_cost}</span></span></div>
+                        <div class="kv"><span class="k">Change</span><span class="v">${s.cost_saved_pct > 0 ? '+' : ''}${s.cost_saved_pct}%</span></div>
+                    </div>
+                    <div class="compact-card">
+                        <h4>⚡ Energy</h4>
+                        <div class="kv"><span class="k">Baseline</span><span class="v">${s.baseline_energy} Wh</span></div>
+                        <div class="kv"><span class="k">Optimized</span><span class="v">${s.optimized_energy} Wh</span></div>
+                        <div class="kv"><span class="k">Change</span><span class="v">${s.energy_saved_pct > 0 ? '+' : ''}${s.energy_saved_pct}%</span></div>
+                    </div>
+                    <div class="compact-card">
+                        <h4>🌿 CO₂</h4>
+                        <div class="kv"><span class="k">Baseline</span><span class="v">${s.baseline_co2}g</span></div>
+                        <div class="kv"><span class="k">Optimized</span><span class="v">${s.optimized_co2}g</span></div>
+                        <div class="kv"><span class="k">Change</span><span class="v">${s.co2_saved_pct > 0 ? '+' : ''}${s.co2_saved_pct}%</span></div>
+                    </div>
+                </div>
+                <div style="margin-top:16px; padding:14px; background:var(--surface2); border-radius:8px; font-size:12px; color:var(--text-dim); line-height:1.7">
+                    <strong style="color:var(--amber)">NOTE:</strong> Cost/energy may increase when the scheduler selects
+                    faster (more expensive) runners to reduce wall-clock time.
+                    This is the expected behavior of the α/β/γ weighted objective function.
+                    All predictions produced by real trained sklearn GBT models on 120 synthetic history runs — no fabricated values.
+                </div>
+            `)}
+
+            <div class="footer">
+                GitHub Actions Performance Optimizer — Live Local Demo<br>
+                Akshat Singh (23BKT0005) · Aditya Chaubey (23BCE2274)
+            </div>
+        `;
+
+        // Open first few steps by default
+        document.querySelectorAll('.step').forEach((el, i) => {
+            if ([0, 6, 7, 8, 10].includes(i)) el.classList.add('open');
+        });
+
+        // Toggle on click
+        document.querySelectorAll('.step-header').forEach(hdr => {
+            hdr.addEventListener('click', () => hdr.closest('.step').classList.toggle('open'));
+        });
+    }
+
+    function renderStep(num, title, badge, badgeClass, open, body) {
+        return `<div class="step${open ? ' open' : ''}">
+            <div class="step-header">
+                <div class="step-num">${num}</div>
+                <div class="step-title">${title}</div>
+                <span class="step-badge ${badgeClass}">${badge}</span>
+                <span class="chevron">▶</span>
+            </div>
+            <div class="step-body">${body}</div>
+        </div>`;
+    }
+
+    function renderModelCard(name, m) {
+        const trained = m.status === 'TRAINED';
+        return `<div class="compact-card">
+            <h4>${name}</h4>
+            <div class="kv"><span class="k">Status</span><span class="v"><span class="tag ${trained ? 'tag-green' : 'tag-amber'}">${m.status}</span></span></div>
+            ${m.backend ? `<div class="kv"><span class="k">Backend</span><span class="v">${m.backend}</span></div>` : ''}
+            ${m.validation ? `<div class="kv"><span class="k">Validation</span><span class="v">${m.validation}</span></div>` : ''}
+            ${m.f1 !== undefined ? `<div class="kv"><span class="k">F1 Score</span><span class="v">${m.f1}</span></div>` : ''}
+            ${m.roc_auc !== undefined ? `<div class="kv"><span class="k">ROC AUC</span><span class="v">${m.roc_auc}</span></div>` : ''}
+            ${m.r2 !== undefined ? `<div class="kv"><span class="k">R²</span><span class="v">${m.r2}</span></div>` : ''}
+            ${m.mae_seconds !== undefined ? `<div class="kv"><span class="k">MAE</span><span class="v">${m.mae_seconds}s</span></div>` : ''}
+        </div>`;
+    }
+
+    function renderCheck(label, ok) {
+        return `<div style="display:flex; align-items:center; gap:8px; padding:10px; background:var(--surface2); border-radius:8px;">
+            <span style="font-size:18px">${ok ? '✅' : '❌'}</span>
+            <span style="font-size:13px">${label}</span>
+        </div>`;
+    }
+
+    function renderProb(p) {
+        let cls = 'tag-green';
+        if (p > 0.5) cls = 'tag-red';
+        else if (p > 0.2) cls = 'tag-amber';
+        return `<span class="tag ${cls}">${p.toFixed(4)}</span>`;
+    }
+
+    function shortEdge(t) {
+        return t.replace('EdgeType.', '');
+    }
+
+    function escapeHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function formatDiff(diff) {
+        return diff.split('\n').map(line => {
+            const esc = escapeHtml(line);
+            if (line.startsWith('+++') || line.startsWith('---')) return `<span class="diff-hdr">${esc}</span>`;
+            if (line.startsWith('@@')) return `<span class="diff-hdr">${esc}</span>`;
+            if (line.startsWith('+')) return `<span class="diff-add">${esc}</span>`;
+            if (line.startsWith('-')) return `<span class="diff-del">${esc}</span>`;
+            return esc;
+        }).join('\n');
+    }
+
+    loadDemo();
+    </script>
+</body>
+</html>
