@@ -271,10 +271,51 @@ class GraphFusion:
     ) -> int:
         """
         Link Directory nodes to Job nodes when step commands reference
-        that directory (e.g., `ruff check .`, `python -m build`).
+        that directory (e.g., ``ruff check src/``, ``pytest tests/``).
         """
-        # Lightweight: just count, actual linking uses tags
-        return 0
+        edges_added = 0
+
+        dir_nodes = {
+            n: d for n, d in g.nodes(data=True)
+            if d.get("node_type") == NodeType.DIRECTORY.value
+        }
+        if not dir_nodes:
+            return 0
+
+        step_nodes = {
+            n: d for n, d in g.nodes(data=True)
+            if d.get("node_type") == NodeType.WORKFLOW_STEP.value
+        }
+
+        for step_id, step_data in step_nodes.items():
+            tags = step_data.get("tags", [])
+            step_label = tags[0] if tags else ""
+
+            # Find the parent job for this step
+            parent_job = None
+            for pred in g.predecessors(step_id):
+                if g.nodes.get(pred, {}).get("node_type") == NodeType.WORKFLOW_JOB.value:
+                    parent_job = pred
+                    break
+            if not parent_job:
+                continue
+
+            # Check if step command references any directory
+            for dir_id in dir_nodes:
+                dir_name = dir_id.replace(f"{NodeType.DIRECTORY.value}::", "")
+                if dir_name and dir_name in step_label:
+                    _add_edge_if_missing(
+                        g, dir_id, parent_job,
+                        EdgeType.REFERENCES,
+                        ProvenanceRecord(
+                            origin_parser="GraphFusion",
+                            creation_source="directory_reference",
+                            confidence=0.5,
+                        ),
+                    )
+                    edges_added += 1
+
+        return edges_added
 
 
 # ─── Utility ────────────────────────────────────────────────────────

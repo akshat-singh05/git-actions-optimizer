@@ -325,6 +325,7 @@ def generate_dependency_graph(
 def extract_features(self, repo: str, commit_sha: str) -> Dict[str, Any]:
     """
     Extract ML features from the graph and commit data.
+    Builds a training frame from historical records.
     """
     cid = str(uuid.uuid4())[:8]
     _log("extract_features", cid, "Extracting features for %s@%s", repo, commit_sha[:8])
@@ -332,6 +333,7 @@ def extract_features(self, repo: str, commit_sha: str) -> Dict[str, Any]:
     try:
         from gha_optimizer.server.db.session import SessionLocal
         from gha_optimizer.server.db import crud
+        from gha_optimizer.ingestion.github_client import WorkflowRunRecord
 
         db = SessionLocal()
         try:
@@ -341,12 +343,50 @@ def extract_features(self, repo: str, commit_sha: str) -> Dict[str, Any]:
 
         _log("extract_features", cid, "Found %d historical records", len(recent))
 
+        if len(recent) < 5:
+            return {
+                "status": "blocked",
+                "reason": "insufficient_data",
+                "record_count": len(recent),
+            }
+
+        # Convert DB records to WorkflowRunRecords and build features
+        records = []
+        for rec in recent:
+            records.append(WorkflowRunRecord(
+                run_id=rec["run_id"],
+                commit_sha=rec.get("commit_sha", ""),
+                files_changed=rec.get("files_changed", []),
+                job_id=rec.get("job_id", "unknown"),
+                duration_seconds=rec.get("duration_seconds", 0.0),
+                conclusion=rec.get("conclusion", "unknown"),
+                cache_hit=bool(rec.get("cache_hit", False)),
+                author=rec.get("author", "unknown"),
+                timestamp=rec.get("timestamp", ""),
+                branch=rec.get("branch", "main"),
+                runner_label=rec.get("runner_label", "ubuntu-latest"),
+                loc_added=rec.get("loc_added", 0),
+                loc_deleted=rec.get("loc_deleted", 0),
+            ))
+
+        # Build a minimal graph for feature extraction
+        import networkx as nx
+        from gha_optimizer.features.feature_extraction import build_training_frame
+        graph = nx.DiGraph()
+        train_df = build_training_frame(graph, records)
+
+        _log("extract_features", cid,
+             "Built training frame: %d rows × %d cols",
+             len(train_df), train_df.shape[1])
+
         return {
             "status": "complete",
             "correlation_id": cid,
             "repo": repo,
             "commit_sha": commit_sha,
             "records_used": len(recent),
+            "feature_rows": len(train_df),
+            "feature_columns": train_df.shape[1],
         }
 
     except Exception as exc:
@@ -366,7 +406,7 @@ def extract_features(self, repo: str, commit_sha: str) -> Dict[str, Any]:
 def retrain_models(self, repo: str, force: bool = False) -> Dict[str, Any]:
     """
     Retrain ML models using historical data from the database.
-    Uses the Retrainer service with A/B model comparison.
+    Checks for drift first, then fits cache-miss, failure, and duration models.
     """
     cid = str(uuid.uuid4())[:8]
     _log("retrain_models", cid, "Retraining models for %s (force=%s)", repo, force)
@@ -375,6 +415,12 @@ def retrain_models(self, repo: str, force: bool = False) -> Dict[str, Any]:
         from gha_optimizer.server.db.session import SessionLocal
         from gha_optimizer.server.db import crud
         from gha_optimizer.feedback.drift_detector import DriftDetector
+        from gha_optimizer.ingestion.github_client import WorkflowRunRecord
+        from gha_optimizer.features.feature_extraction import build_training_frame
+        from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
+        from gha_optimizer.models.failure_predictor import FailurePredictor
+        from gha_optimizer.models.duration_estimator import DurationEstimator
+        from gha_optimizer.config import config
 
         db = SessionLocal()
         try:
@@ -392,23 +438,81 @@ def retrain_models(self, repo: str, force: bool = False) -> Dict[str, Any]:
                 }
 
             # Get training data
-            records = crud.get_recent_runs(db, repo=repo, limit=500)
-            if len(records) < 20:
+            raw_records = crud.get_recent_runs(db, repo=repo, limit=500)
+            if len(raw_records) < 20:
                 _log("retrain_models", cid,
-                     "Insufficient training data (%d records, need 20+)", len(records))
+                     "Insufficient training data (%d records, need 20+)", len(raw_records))
                 return {
                     "status": "blocked",
                     "reason": "insufficient_data",
-                    "record_count": len(records),
+                    "record_count": len(raw_records),
                 }
 
+            # Convert to WorkflowRunRecords
+            records = []
+            for rec in raw_records:
+                records.append(WorkflowRunRecord(
+                    run_id=rec["run_id"],
+                    commit_sha=rec.get("commit_sha", ""),
+                    files_changed=rec.get("files_changed", []),
+                    job_id=rec.get("job_id", "unknown"),
+                    duration_seconds=rec.get("duration_seconds", 0.0),
+                    conclusion=rec.get("conclusion", "unknown"),
+                    cache_hit=bool(rec.get("cache_hit", False)),
+                    author=rec.get("author", "unknown"),
+                    timestamp=rec.get("timestamp", ""),
+                    branch=rec.get("branch", "main"),
+                    runner_label=rec.get("runner_label", "ubuntu-latest"),
+                    loc_added=rec.get("loc_added", 0),
+                    loc_deleted=rec.get("loc_deleted", 0),
+                ))
+
             _log("retrain_models", cid, "Retraining with %d records", len(records))
+
+            # Build training frame
+            import networkx as nx
+            graph = nx.DiGraph()
+            train_df = build_training_frame(graph, records)
+
+            # Train all three models
+            model_dir = config.model.model_dir
+            model_dir.mkdir(parents=True, exist_ok=True)
+
+            cache_model = CacheMissPredictor()
+            cache_metrics = cache_model.fit(train_df)
+            cache_model.save(model_dir / "cache_miss.joblib")
+
+            failure_model = FailurePredictor()
+            failure_metrics = failure_model.fit(train_df)
+            failure_model.save(model_dir / "failure.joblib")
+
+            duration_model = DurationEstimator()
+            duration_metrics = duration_model.fit(train_df)
+            duration_model.save(model_dir / "duration.joblib")
+
+            _log("retrain_models", cid,
+                 "Retraining complete. Cache: %s, Failure: %s, Duration: %s",
+                 cache_metrics, failure_metrics, duration_metrics)
+
+            # Record model versions in DB
+            import uuid as _uuid
+            version = str(_uuid.uuid4())[:8]
+            crud.insert_model_version(db, "cache_miss", version, cache_metrics,
+                                      str(model_dir / "cache_miss.joblib"), len(train_df))
+            crud.insert_model_version(db, "failure", version, failure_metrics,
+                                      str(model_dir / "failure.joblib"), len(train_df))
+            crud.insert_model_version(db, "duration", version, duration_metrics,
+                                      str(model_dir / "duration.joblib"), len(train_df))
 
             return {
                 "status": "complete",
                 "correlation_id": cid,
                 "records_used": len(records),
                 "drift_report": drift_report.summary,
+                "cache_metrics": cache_metrics,
+                "failure_metrics": failure_metrics,
+                "duration_metrics": duration_metrics,
+                "model_version": version,
             }
 
         finally:
@@ -434,16 +538,43 @@ def run_benchmark(self, repo: str, commit_sha: str) -> Dict[str, Any]:
 
     try:
         from gha_optimizer.graph.benchmark import GraphBenchmarker
+        from gha_optimizer.graph.builder import GraphBuilder
+
+        repo_root = Path(".gha_optimizer/repos") / repo.replace("/", "_")
+        repo_root.mkdir(parents=True, exist_ok=True)
 
         benchmarker = GraphBenchmarker()
+        builder = GraphBuilder(repo_root)
+
+        # Time the graph build
+        def _build():
+            builder.build_from_source([])
+            return builder.get_graph()
+        graph = benchmarker.time_operation("build", _build)
+
+        # Measure memory and snapshot size
+        benchmarker.measure_memory(graph)
+        benchmarker.measure_snapshot_size(graph)
+
+        # Generate consolidated report
+        report = benchmarker.generate_report(graph)
+        report_dict = report.model_dump()
+
+        _log("run_benchmark", cid,
+             "Benchmark: build=%.1fms, nodes=%d, edges=%d",
+             report_dict.get("graph_build_time_ms", 0),
+             report_dict.get("node_count", 0),
+             report_dict.get("edge_count", 0))
 
         return {
             "status": "complete",
             "correlation_id": cid,
             "repo": repo,
             "commit_sha": commit_sha,
+            "benchmark": report_dict,
         }
 
     except Exception as exc:
         _err("run_benchmark", cid, "Failed: %s", exc)
         raise self.retry(exc=exc)
+

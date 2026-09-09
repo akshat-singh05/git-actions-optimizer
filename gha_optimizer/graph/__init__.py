@@ -10,9 +10,19 @@ from .storage import GraphStorage
 from .queries import GraphQueries
 from .impact import ImpactAnalysisEngine
 from .versioning import GraphVersioning
+from .dependency_graph import (
+    build_dependency_graph,
+    impacted_jobs_for_diff,
+    cache_keys_touched_by,
+    graph_distance_to_job,
+    graph_summary,
+)
 
 __all__ = [
     "NodeType", "EdgeType", "NodeMetadata", "EdgeMetadata",
     "GraphBuilder", "GraphFusion", "GraphAnalytics", "GraphStorage",
-    "GraphQueries", "ImpactAnalysisEngine", "GraphVersioning"
+    "GraphQueries", "ImpactAnalysisEngine", "GraphVersioning",
+    "build_dependency_graph", "impacted_jobs_for_diff",
+    "cache_keys_touched_by", "graph_distance_to_job", "graph_summary",
 ]
+

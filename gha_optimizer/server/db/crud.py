@@ -4,33 +4,77 @@ from sqlalchemy import desc
 from . import models
 
 def insert_run(db: Session, record: dict):
-    db_run = models.WorkflowRun(
-        run_id=record["run_id"],
-        commit_sha=record.get("commit_sha"),
-        repo=record.get("repo"),
-        job_id=record["job_id"],
-        conclusion=record.get("conclusion"),
-        duration_seconds=record.get("duration_seconds"),
-        cache_hit=bool(record.get("cache_hit", False)),
-        author=record.get("author"),
-        branch=record.get("branch"),
-        runner_label=record.get("runner_label"),
-        files_changed=record.get("files_changed", []),
-        loc_added=record.get("loc_added", 0),
-        loc_deleted=record.get("loc_deleted", 0),
-        timestamp=record.get("timestamp"),
-    )
-    db.merge(db_run)
+    """Insert a workflow run record, splitting data between WorkflowRun and WorkflowJob tables."""
+    # Upsert the run-level record (deduplicates on run_id)
+    existing_run = db.query(models.WorkflowRun).filter(
+        models.WorkflowRun.run_id == record["run_id"]
+    ).first()
+
+    if not existing_run:
+        db_run = models.WorkflowRun(
+            run_id=record["run_id"],
+            commit_sha=record.get("commit_sha"),
+            repo=record.get("repo"),
+            conclusion=record.get("conclusion"),
+            timestamp=record.get("timestamp"),
+        )
+        db.add(db_run)
+        db.flush()  # ensure run_id is available for the job FK
+
+    # Upsert the per-job record
+    existing_job = db.query(models.WorkflowJob).filter(
+        models.WorkflowJob.run_id == record["run_id"],
+        models.WorkflowJob.job_id == record.get("job_id", "unknown"),
+    ).first()
+
+    if existing_job:
+        existing_job.conclusion = record.get("conclusion")
+        existing_job.duration_seconds = record.get("duration_seconds")
+        existing_job.cache_hit = bool(record.get("cache_hit", False))
+        existing_job.runner_label = record.get("runner_label")
+    else:
+        db_job = models.WorkflowJob(
+            run_id=record["run_id"],
+            job_id=record.get("job_id", "unknown"),
+            conclusion=record.get("conclusion"),
+            duration_seconds=record.get("duration_seconds"),
+            cache_hit=bool(record.get("cache_hit", False)),
+            runner_label=record.get("runner_label"),
+        )
+        db.add(db_job)
+
     db.commit()
 
 def get_recent_runs(db: Session, repo: str = None, limit: int = 500):
-    query = db.query(models.WorkflowRun).order_by(desc(models.WorkflowRun.timestamp))
+    """Retrieve recent run-job records by joining WorkflowRun and WorkflowJob."""
+    query = (
+        db.query(models.WorkflowRun, models.WorkflowJob)
+        .join(models.WorkflowJob, models.WorkflowRun.run_id == models.WorkflowJob.run_id)
+        .order_by(desc(models.WorkflowRun.timestamp))
+    )
     if repo:
         query = query.filter(models.WorkflowRun.repo == repo)
-    return [
-        {c.name: getattr(row, c.name) for c in row.__table__.columns} 
-        for row in query.limit(limit).all()
-    ]
+
+    results = []
+    for run, job in query.limit(limit).all():
+        results.append({
+            "run_id": run.run_id,
+            "commit_sha": run.commit_sha,
+            "repo": run.repo,
+            "job_id": job.job_id,
+            "conclusion": job.conclusion,
+            "duration_seconds": job.duration_seconds,
+            "cache_hit": job.cache_hit,
+            "runner_label": job.runner_label,
+            "timestamp": run.timestamp,
+            # Fields not in normalized schema — return defaults
+            "files_changed": [],
+            "author": "unknown",
+            "branch": "main",
+            "loc_added": 0,
+            "loc_deleted": 0,
+        })
+    return results
 
 def insert_optimization_result(db: Session, result: dict):
     db_result = models.OptimizationResult(

@@ -29,8 +29,7 @@ from gha_optimizer.generator.workflow_writer import (
     generate_optimized_workflow,
     write_workflow,
 )
-from gha_optimizer.graph.builder import GraphBuilder
-from gha_optimizer.graph.fusion import GraphFusion
+from gha_optimizer.graph.dependency_graph import build_dependency_graph
 from gha_optimizer.ingestion.github_client import WorkflowRunRecord
 from gha_optimizer.ingestion.workflow_parser import WorkflowSpec, parse_workflow
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
@@ -44,38 +43,6 @@ from gha_optimizer.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def build_dependency_graph(
-    workflow: WorkflowSpec,
-    repo_root: Path,
-    tracked_files: list[str] | None = None,
-) -> nx.MultiDiGraph:
-    """
-    Build the unified heterogeneous dependency graph by:
-    1. Parsing source files with language-specific AST parsers.
-    2. Parsing the workflow YAML into CI/CD nodes.
-    3. Fusing the two domains with cross-domain edges.
-
-    This is the SINGLE canonical graph construction function.
-    """
-    builder = GraphBuilder(repo_root)
-
-    # Build source code subgraph
-    if tracked_files:
-        source_paths = [repo_root / f for f in tracked_files if (repo_root / f).exists()]
-        builder.build_from_source(source_paths)
-
-    source_graph = builder.get_graph()
-
-    # Build CI/CD subgraph
-    ci_builder = GraphBuilder(repo_root)
-    ci_builder.build_from_workflow(workflow)
-    ci_graph = ci_builder.get_graph()
-
-    # Fuse the two domains
-    fused = GraphFusion.fuse(source_graph, ci_graph)
-    return fused
 
 
 def job_only_dag(workflow: WorkflowSpec) -> nx.DiGraph:
