@@ -58,5 +58,5 @@ jobs:
     - run: ./deploy.sh
 '# gha-optimizer':
   generated: true
-  time_saved_pct: 48.9
-  cost_saved_pct: -68.4
+  time_saved_pct: 48.5
+  cost_saved_pct: -67.6
