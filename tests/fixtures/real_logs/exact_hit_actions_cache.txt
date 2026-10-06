@@ -1,0 +1,53 @@
+2026-10-06T14:14:25.9065210Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+2026-10-06T14:14:25.9065550Z with:
+2026-10-06T14:14:25.9065910Z   path: /Users/runner/Library/Caches/pypoetry/artifacts
+/Users/runner/Library/Caches/pypoetry/cache
+
+2026-10-06T14:14:25.9066990Z   key: poetry-2026-10-06-macOS-33266c2d66cd9b06185a72a565441fe93849b1dd12a163f28b4da904ee4e1a52
+2026-10-06T14:14:25.9067450Z   restore-keys: poetry-2026-10-06-macOS-
+poetry-2026-10-06-
+
+2026-10-06T14:14:25.9067740Z   enableCrossOsArchive: true
+2026-10-06T14:14:25.9067960Z   fail-on-cache-miss: false
+2026-10-06T14:14:25.9068150Z   lookup-only: false
+2026-10-06T14:14:25.9068330Z   save-always: false
+2026-10-06T14:14:25.9068480Z env:
+2026-10-06T14:14:25.9068670Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:14:25.9068920Z ##[endgroup]
+2026-10-06T14:14:28.8012890Z [command]/opt/homebrew/bin/gtar -xf /Users/runner/work/_temp/daafd37f-ed34-4eb8-8762-9b046f706930/cache.tzst -P -C /Users/runner/work/poetry/poetry --delay-directory-restore --use-compress-program unzstd
+2026-10-06T14:14:29.3053950Z Cache restored successfully
+2026-10-06T14:14:29.3375690Z Cache restored from key: poetry-2026-10-06-macOS-33266c2d66cd9b06185a72a565441fe93849b1dd12a163f28b4da904ee4e1a52
+2026-10-06T14:14:29.3512470Z ##[end-action id=__self.cache;outcome=success;conclusion=success;duration_ms=3712]
+2026-10-06T14:14:29.3520300Z ##[start-action display=Run poetry install ${ARGS};id=__self.__run]
+2026-10-06T14:14:36.5109480Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+2026-10-06T14:14:36.5109940Z with:
+2026-10-06T14:14:36.5110110Z   path: .mypy_cache
+2026-10-06T14:14:36.5110540Z   key: mypy-macOS-py3.12.10-33266c2d66cd9b06185a72a565441fe93849b1dd12a163f28b4da904ee4e1a52
+2026-10-06T14:14:36.5110970Z   restore-keys: mypy-macOS-py3.12.10-
+mypy-macOS-
+
+2026-10-06T14:14:36.5111290Z   enableCrossOsArchive: false
+2026-10-06T14:14:36.5111650Z   fail-on-cache-miss: false
+2026-10-06T14:14:36.5111900Z   lookup-only: false
+2026-10-06T14:14:36.5112190Z   save-always: false
+2026-10-06T14:14:36.5112460Z env:
+2026-10-06T14:14:36.5112640Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:14:36.5112940Z ##[endgroup]
+2026-10-06T14:14:39.2476650Z [command]/opt/homebrew/bin/gtar -xf /Users/runner/work/_temp/7b6151ca-c01f-4852-b387-b2fc8ac450cb/cache.tzst -P -C /Users/runner/work/poetry/poetry --delay-directory-restore --use-compress-program unzstd
+2026-10-06T14:14:42.2998470Z Cache restored successfully
+2026-10-06T14:14:42.3136190Z Cache restored from key: mypy-macOS-py3.12.10-33266c2d66cd9b06185a72a565441fe93849b1dd12a163f28b4da904ee4e1a52
+2026-10-06T14:14:42.3337450Z ##[group]Run poetry run mypy
+2026-10-06T14:14:42.3337850Z [36;1mpoetry run mypy[0m
+2026-10-06T14:14:42.3408040Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-06T14:14:42.3409590Z env:
+2026-10-06T14:14:42.3409920Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:14:42.3410800Z ##[endgroup]
+2026-10-06T14:14:47.4606570Z Success: no issues found in 380 source files
+2026-10-06T14:14:47.7312570Z Post job cleanup.
+2026-10-06T14:14:48.0020900Z Cache hit occurred on the primary key mypy-macOS-py3.12.10-33266c2d66cd9b06185a72a565441fe93849b1dd12a163f28b4da904ee4e1a52, not saving cache.
+2026-10-06T14:14:48.0259960Z Post job cleanup.
+2026-10-06T14:14:48.0268200Z ##[start-action display=Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9;id=__a42788b9-4564-487d-be3d-78cbde31365c.cache]
+2026-10-06T14:14:48.1688060Z Post job cleanup.
+2026-10-06T14:14:48.3899230Z Cache hit occurred on the primary key poetry-2026-10-06-macOS-33266c2d66cd9b06185a72a565441fe93849b1dd12a163f28b4da904ee4e1a52, not saving cache.
+2026-10-06T14:14:48.3982270Z ##[end-action id=__a42788b9-4564-487d-be3d-78cbde31365c.cache;outcome=success;conclusion=success;duration_ms=371]
+2026-10-06T14:14:48.4167800Z Post job cleanup.

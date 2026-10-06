@@ -1,4 +1,3 @@
-import json
 import networkx as nx
 from sqlalchemy.orm import Session
 from gha_optimizer.server.db import models
@@ -9,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class GraphStorage:
     """Handles serialization and persistence of MultiDiGraphs to PostgreSQL."""
-    
+
     @staticmethod
     def serialize_to_json(g: nx.MultiDiGraph) -> dict:
         """Serialize graph to Node-Link JSON format."""
@@ -24,7 +23,7 @@ class GraphStorage:
     def save_snapshot(db: Session, repo_id: int, commit_sha: str, g: nx.MultiDiGraph) -> models.GraphSnapshot:
         """Save a complete graph snapshot to the database."""
         json_data = GraphStorage.serialize_to_json(g)
-        
+
         snapshot = models.GraphSnapshot(
             repo_id=repo_id,
             commit_sha=commit_sha,
@@ -43,8 +42,8 @@ class GraphStorage:
             models.GraphSnapshot.repo_id == repo_id,
             models.GraphSnapshot.commit_sha == commit_sha
         ).first()
-        
+
         if not snapshot:
             return None
-            
+
         return GraphStorage.deserialize_from_json(snapshot.graph_json)

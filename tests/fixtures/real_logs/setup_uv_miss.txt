@@ -1,0 +1,41 @@
+2026-10-06T13:50:21.0888969Z ##[group]Run astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+2026-10-06T13:50:21.0889410Z with:
+2026-10-06T13:50:21.0889633Z   version: latest-known
+2026-10-06T13:50:21.0889875Z   enable-cache: true
+2026-10-06T13:50:21.0890117Z   activate-environment: false
+2026-10-06T13:50:21.0890370Z   no-project: false
+2026-10-06T13:50:21.0890648Z   working-directory: /home/runner/work/fastapi/fastapi
+2026-10-06T13:50:21.0893061Z   github-token: ***
+2026-10-06T13:50:21.0893648Z   cache-dependency-glob: **/*requirements*.txt
+**/*requirements*.in
+**/*constraints*.txt
+**/*constraints*.in
+**/pyproject.toml
+**/uv.lock
+**/*.py.lock
+
+2026-10-06T13:50:21.0894304Z   restore-cache: true
+2026-10-06T13:50:21.0894836Z   save-cache: auto
+2026-10-06T13:50:21.0895056Z   prune-cache: false
+2026-10-06T13:50:21.0895280Z   cache-python: false
+2026-10-06T13:50:21.0895520Z   ignore-nothing-to-cache: false
+2026-10-06T13:50:21.0895794Z   ignore-empty-workdir: false
+2026-10-06T13:50:21.0896108Z   download-from-astral-mirror: true
+2026-10-06T13:50:21.0896396Z   add-problem-matchers: true
+2026-10-06T13:50:21.0896639Z   quiet: false
+2026-10-06T13:50:21.0896858Z   resolution-strategy: highest
+2026-10-06T13:50:21.0897105Z env:
+2026-10-06T13:50:21.0897295Z   UV_NO_SYNC: true
+2026-10-06T13:50:21.0897523Z   INLINE_SNAPSHOT_DEFAULT_FLAGS: review
+2026-10-06T13:50:21.0897876Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-10-06T13:50:21.0898334Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+2026-10-06T13:50:21.0898780Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-10-06T13:50:21.0899358Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-10-06T13:50:21.0899750Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-10-06T13:50:21.0900148Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+2026-10-06T13:50:21.0900484Z ##[endgroup]
+2026-10-06T13:50:23.0735271Z Found 4 files to hash.
+2026-10-06T13:50:23.0807288Z Trying to restore cache from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-3.11.16-27dbe3bb39a0418ffb4874fb957517c9916efb5974668d090a85d5c1170b0f54
+2026-10-06T13:50:23.3193318Z No GitHub Actions cache found for key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-3.11.16-27dbe3bb39a0418ffb4874fb957517c9916efb5974668d090a85d5c1170b0f54
+2026-10-06T13:50:23.4321911Z ##[group]Run git apply "$RUNNER_TEMP/tests.patch"
+2026-10-06T13:50:23.4322361Z [36;1mgit apply "$RUNNER_TEMP/tests.patch"[0m

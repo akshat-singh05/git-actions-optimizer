@@ -7,9 +7,10 @@ from sqlalchemy.orm import declarative_base
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///gha_optimizer.db")
 
 engine = create_engine(
-    DATABASE_URL, 
-    # check_same_thread is needed only for SQLite
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+    DATABASE_URL,
+    # check_same_thread is needed only for SQLite; the 60 s busy timeout lets several
+    # ingestion processes share one SQLite file (writers queue instead of failing)
+    connect_args={"check_same_thread": False, "timeout": 60} if DATABASE_URL.startswith("sqlite") else {}
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -22,3 +23,14 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def init_db() -> None:
+    """Create any missing tables from the ORM (idempotent).
+
+    Convenience for local/dev databases.  Managed deployments should use
+    ``alembic upgrade head``; this is a no-op for tables that already exist.
+    """
+    from . import models  # noqa: F401  (registers the tables on Base.metadata)
+
+    Base.metadata.create_all(bind=engine)

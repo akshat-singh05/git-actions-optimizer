@@ -28,10 +28,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 import networkx as nx
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +45,7 @@ try:
 except ImportError:
     pass
 
-from gha_optimizer.models.graph_utils import (
+from gha_optimizer.models.graph_utils import (  # noqa: E402  (after the guarded torch import)
     NODE_FEATURE_DIM,
     networkx_to_heterodata,
 )

@@ -8,7 +8,6 @@ Events are dispatched to the Celery task queue for async processing.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import networkx as nx

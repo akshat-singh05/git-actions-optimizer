@@ -1,0 +1,53 @@
+2026-10-06T14:13:35.1123626Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+2026-10-06T14:13:35.1124153Z with:
+2026-10-06T14:13:35.1124656Z   path: C:\Users\runneradmin\AppData\Local\pypoetry\Cache/artifacts
+C:\Users\runneradmin\AppData\Local\pypoetry\Cache/cache
+
+2026-10-06T14:13:35.1125440Z   key: poetry-2026-10-06-Windows-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:13:35.1126006Z   restore-keys: poetry-2026-10-06-Windows-
+poetry-2026-10-06-
+
+2026-10-06T14:13:35.1126336Z   enableCrossOsArchive: true
+2026-10-06T14:13:35.1126559Z   fail-on-cache-miss: false
+2026-10-06T14:13:35.1126770Z   lookup-only: false
+2026-10-06T14:13:35.1126953Z   save-always: false
+2026-10-06T14:13:35.1127124Z env:
+2026-10-06T14:13:35.1127308Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:13:35.1127535Z ##[endgroup]
+2026-10-06T14:13:36.0391755Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/8101edbf-845b-4693-813d-cf71c984be69/cache.tzst -P -C D:/a/poetry/poetry --force-local --use-compress-program "zstd -d"
+2026-10-06T14:13:37.7796129Z Cache restored successfully
+2026-10-06T14:13:37.7963260Z Cache restored from key: poetry-2026-10-06-Windows-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:13:37.8133365Z ##[end-action id=__self.cache;outcome=success;conclusion=success;duration_ms=2835]
+2026-10-06T14:13:37.8136660Z ##[start-action display=Run poetry install ${ARGS};id=__self.__run]
+2026-10-06T14:13:56.7048090Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+2026-10-06T14:13:56.7048520Z with:
+2026-10-06T14:13:56.7048698Z   path: .mypy_cache
+2026-10-06T14:13:56.7049135Z   key: mypy-Windows-py3.15.0-rc.3-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:13:56.7049704Z   restore-keys: mypy-Windows-py3.15.0-rc.3-
+mypy-Windows-
+
+2026-10-06T14:13:56.7050039Z   enableCrossOsArchive: false
+2026-10-06T14:13:56.7050271Z   fail-on-cache-miss: false
+2026-10-06T14:13:56.7050489Z   lookup-only: false
+2026-10-06T14:13:56.7050673Z   save-always: false
+2026-10-06T14:13:56.7050850Z env:
+2026-10-06T14:13:56.7051029Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:13:56.7051284Z ##[endgroup]
+2026-10-06T14:13:57.3119388Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/608acdc5-7548-4d52-8b14-865195b7f96e/cache.tzst -P -C D:/a/poetry/poetry --force-local --use-compress-program "zstd -d"
+2026-10-06T14:13:59.1709485Z Cache restored successfully
+2026-10-06T14:13:59.1838136Z Cache restored from key: mypy-Windows-py3.15.0-rc.2-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:13:59.2116449Z ##[group]Run poetry run mypy
+2026-10-06T14:13:59.2116814Z [36;1mpoetry run mypy[0m
+2026-10-06T14:13:59.2132734Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-10-06T14:13:59.2133154Z env:
+2026-10-06T14:13:59.2133367Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:13:59.2133628Z ##[endgroup]
+2026-10-06T14:14:03.1978290Z [command]"C:\Program Files\Git\usr\bin\tar.exe" --posix -cf cache.tzst --exclude cache.tzst -P -C D:/a/poetry/poetry --files-from manifest.txt --force-local --use-compress-program "zstd -T0"
+2026-10-06T14:14:04.8779538Z Sent 12414424 of 12414424 (100.0%), 32.7 MBs/sec
+2026-10-06T14:14:04.9922052Z Cache saved with key: mypy-Windows-py3.15.0-rc.3-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:14:05.0219612Z Post job cleanup.
+2026-10-06T14:14:05.0223474Z ##[start-action display=Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9;id=__f44ec1d3-62bd-44e8-b49f-eae6fdfe27da.cache]
+2026-10-06T14:14:05.1391035Z Post job cleanup.
+2026-10-06T14:14:05.3055119Z Cache hit occurred on the primary key poetry-2026-10-06-Windows-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a, not saving cache.
+2026-10-06T14:14:05.3180766Z ##[end-action id=__f44ec1d3-62bd-44e8-b49f-eae6fdfe27da.cache;outcome=success;conclusion=success;duration_ms=295]
+2026-10-06T14:14:05.3551072Z Post job cleanup.

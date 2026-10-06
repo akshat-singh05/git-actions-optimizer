@@ -1,17 +1,26 @@
 """
 Command-line interface for gha-optimizer.
 
-Usage:
-    gha-optimizer analyze <workflow> [--repo-root <path>] [--model <tabular|gnn>]
-    gha-optimizer serve [--host <host>] [--port <port>]
-    gha-optimizer train --repo <owner/repo> [--limit <n>]
-    gha-optimizer evaluate [--workflow <path>]
+Real-data workflow::
+
+    gha-optimizer ingest --repo owner/repo [--since 40d] [--workflow ci.yml] [--max-runs N]
+    gha-optimizer ingest-status --repo owner/repo
+    gha-optimizer build-dataset --repo owner/repo        # per-commit graph features + dataset
+    gha-optimizer dataset-report --repo owner/repo       # writes docs/DATASET_REPORT.md
+    gha-optimizer train --repo owner/repo [--workflow ci.yml]
+    gha-optimizer analyze <workflow.yml> --repo owner/repo [--changed a,b]
+    gha-optimizer evaluate <workflow.yml> --repo owner/repo
+    gha-optimizer serve [--host H] [--port P]
+
+``analyze`` / ``evaluate`` / ``train`` use **ingested history only**.  With too little
+history they say so and exit with status 2 — there is no synthetic fallback.
 """
 from __future__ import annotations
 
 import argparse
 import logging
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 logging.basicConfig(
@@ -21,51 +30,291 @@ logging.basicConfig(
 logger = logging.getLogger("gha-optimizer")
 
 
-def cmd_analyze(args: argparse.Namespace) -> None:
-    """Run the optimization pipeline on a local workflow file."""
-    from examples.synthetic_history import generate_history
-    from gha_optimizer.pipeline import run_pipeline
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+def _parse_since(value: str, now: datetime | None = None) -> datetime:
+    """``40d`` (days back from now) or an ISO date/datetime (UTC) -> naive-UTC datetime."""
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    value = value.strip()
+    if value.endswith("d") and value[:-1].isdigit():
+        return now - timedelta(days=int(value[:-1]))
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None) if parsed.tzinfo else parsed
+
+
+def _use_db(args: argparse.Namespace) -> None:
+    """Point the ORM session at ``--db`` (must run before the session module is imported)."""
+    import os
+
+    if getattr(args, "db", None):
+        os.environ["DATABASE_URL"] = args.db
+
+
+def _load_real_history(repo: str, workflow_repo_path: str):
+    """Ingested history for one workflow; exits with status 2 (cold start) instead of inventing data."""
+    from gha_optimizer.ingestion.history import load_history
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    try:
+        return load_history(db, repo, workflow_repo_path)
+    finally:
+        db.close()
+
+
+def _decline(exc: Exception) -> None:
+    print(f"\nDeclining to predict: {exc}")
+    print("No synthetic or default values are substituted. Ingest real history first, e.g.:\n"
+          "  gha-optimizer ingest --repo <owner/repo> --since 40d\n"
+          "  gha-optimizer build-dataset --repo <owner/repo>")
+    sys.exit(2)
+
+
+# ---------------------------------------------------------------------------
+# analyze / evaluate
+# ---------------------------------------------------------------------------
+
+def _analysis_inputs(args: argparse.Namespace):
+    from gha_optimizer.ingestion.workspace import (
+        default_repo_root,
+        tracked_source_files,
+        workflow_repo_path,
+        working_tree_changes,
+    )
 
     workflow_path = Path(args.workflow)
-    repo_root = Path(args.repo_root) if args.repo_root else workflow_path.parent.parent
-    out_path = (
-        repo_root / ".github" / "workflows" / f"{workflow_path.stem}.optimized.yml"
-    )
+    repo_root = Path(args.repo_root) if args.repo_root else default_repo_root(workflow_path)
+    wf_repo_path = workflow_repo_path(workflow_path, repo_root, getattr(args, "workflow_path", None))
+    tracked = args.files.split(",") if args.files else tracked_source_files(repo_root)
+    changed = args.changed.split(",") if args.changed else working_tree_changes(repo_root)
+    if not changed:
+        print("No changed files: pass --changed a,b (or have uncommitted changes in --repo-root).")
+        sys.exit(1)
+    return workflow_path, repo_root, wf_repo_path, tracked, changed
 
-    tracked_files = args.files.split(",") if args.files else [
-        "src/app.py",
-        "src/utils.py",
-        "src/api/routes.py",
-        "tests/unit/test_app.py",
-        "tests/integration/test_api.py",
-        "requirements.txt",
-    ]
 
-    changed_files = args.changed.split(",") if args.changed else [
-        "src/api/routes.py",
-        "requirements.txt",
-    ]
+def cmd_analyze(args: argparse.Namespace) -> None:
+    """Run the optimization pipeline on a local workflow file using ingested history."""
+    _use_db(args)
+    from gha_optimizer.ingestion.history import InsufficientHistoryError
+    from gha_optimizer.pipeline import run_pipeline
 
-    logger.info("Analyzing workflow: %s", workflow_path)
-    logger.info("Model backend: %s", args.model)
+    workflow_path, repo_root, wf_repo_path, tracked, changed = _analysis_inputs(args)
+    out_path = repo_root / ".github" / "workflows" / f"{workflow_path.stem}.optimized.yml"
 
-    history = generate_history(n_runs=args.history_size)
-
-    plan, explanation = run_pipeline(
-        workflow_path=workflow_path,
-        repo_root=repo_root,
-        tracked_files=tracked_files,
-        history=history,
-        changed_files=changed_files,
-        out_path=out_path,
-        model_backend=args.model,
-    )
+    logger.info("Analyzing %s (history: %s :: %s), model backend: %s", workflow_path, args.repo, wf_repo_path, args.model)
+    history = _load_real_history(args.repo, wf_repo_path)
+    try:
+        plan, explanation = run_pipeline(
+            workflow_path=workflow_path,
+            repo_root=repo_root,
+            tracked_files=tracked,
+            history=history,
+            changed_files=changed,
+            out_path=out_path,
+            model_backend=args.model,
+            workflow_repo_path=wf_repo_path,
+        )
+    except InsufficientHistoryError as exc:
+        _decline(exc)
+        return
 
     print(explanation)
-    print(f"\n✅ Optimized workflow written to: {out_path}")
-    print(f"⏱  Time saved: {plan.time_saved_pct:.1f}%")
-    print(f"💰 Cost saved: {plan.cost_saved_pct:.1f}%")
-    print(f"⚡ Energy saved: {plan.energy_saved_pct:.1f}%")
+    print(f"\nProposed workflow written to: {out_path}  (your original file is untouched)")
+    print(f"ESTIMATED time saved:   {plan.time_saved_pct:.1f}%   (from predicted durations, not measured)")
+    print(f"ESTIMATED cost saved:   {plan.cost_saved_pct:.1f}%")
+    print(f"ESTIMATED energy saved: {plan.energy_saved_pct:.1f}%")
+
+
+def cmd_evaluate(args: argparse.Namespace) -> None:
+    """Ablation over scheduler α/β/γ weights using ingested history (ESTIMATED figures)."""
+    _use_db(args)
+    import tempfile
+
+    from gha_optimizer.ingestion.history import InsufficientHistoryError
+    from gha_optimizer.pipeline import run_pipeline
+
+    workflow_path, repo_root, wf_repo_path, tracked, changed = _analysis_inputs(args)
+    history = _load_real_history(args.repo, wf_repo_path)
+
+    configs = [
+        ("α=0.7, β=0.3, γ=0.0 (no energy)", 0.7, 0.3, 0.0),
+        ("α=0.7, β=0.25, γ=0.05 (balanced)", 0.7, 0.25, 0.05),
+        ("α=0.9, β=0.1, γ=0.0 (speed-first)", 0.9, 0.1, 0.0),
+        ("α=0.3, β=0.7, γ=0.0 (cost-first)", 0.3, 0.7, 0.0),
+    ]
+    print("=" * 70)
+    print("Ablation: scheduler weight configurations (all figures ESTIMATED, not measured)")
+    print("=" * 70)
+    for label, alpha, beta, gamma in configs:
+        with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
+            out_path = f.name
+        try:
+            plan, _ = run_pipeline(
+                workflow_path=workflow_path, repo_root=repo_root, tracked_files=tracked, history=history,
+                changed_files=changed, out_path=out_path, alpha=alpha, beta=beta, gamma=gamma,
+                workflow_repo_path=wf_repo_path,
+            )
+        except InsufficientHistoryError as exc:
+            _decline(exc)
+            return
+        print(f"\n{label}:")
+        print(f"  est. wall-clock: {plan.baseline_wall_clock_seconds:.0f}s → {plan.estimated_wall_clock_seconds:.0f}s ({plan.time_saved_pct:+.1f}%)")
+        print(f"  est. cost: ${plan.baseline_cost_usd:.5f} → ${plan.estimated_cost_usd:.5f} ({plan.cost_saved_pct:+.1f}%)")
+        print(f"  est. energy: {plan.baseline_energy_wh:.2f}Wh → {plan.estimated_energy_wh:.2f}Wh ({plan.energy_saved_pct:+.1f}%)")
+        print(f"  jobs skipped: {sum(1 for j in plan.jobs if j.skip_recommended)}/{len(plan.jobs)}")
+
+
+# ---------------------------------------------------------------------------
+# ingest / dataset / train
+# ---------------------------------------------------------------------------
+
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """Ingest real GitHub Actions history (runs, jobs, steps, diffs, log-derived cache labels)."""
+    _use_db(args)
+    from gha_optimizer.config import config
+    from gha_optimizer.ingestion.github_client import GithubClient
+    from gha_optimizer.ingestion.ingest import IngestOptions, RepoIngestor
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    token = args.token or config.github.token
+    if not token:
+        print("Error: a GitHub token is required (set GITHUB_TOKEN or pass --token); "
+              "job logs cannot be downloaded unauthenticated.")
+        sys.exit(1)
+
+    since = _parse_since(args.since)
+    until = _parse_since(args.until) if args.until else None
+    init_db()
+    summary = {}
+    for repo in args.repo:
+        client = GithubClient(token=token, repo=repo)
+        options = IngestOptions(
+            since=since,
+            until=until,
+            workflows=args.workflow or None,
+            max_runs=args.max_runs,
+            fetch_logs=not args.no_logs,
+            log_budget=args.log_budget,
+            log_policy=args.log_policy,
+            log_workers=args.log_workers,
+            use_mirror=not args.no_mirror,
+            mirror_root=Path(args.mirror_root),
+        )
+        db = SessionLocal()
+        try:
+            logger.info("=== ingesting %s since %s ===", repo, since.isoformat())
+            summary[repo] = RepoIngestor(repo, client, db, options).run()
+        finally:
+            db.close()
+    print("\nIngestion summary:")
+    for repo, counters in summary.items():
+        print(f"  {repo}: {dict(counters)}")
+
+
+def cmd_ingest_status(args: argparse.Namespace) -> None:
+    """Print real row counts for an ingested repository (SQL, not estimates)."""
+    _use_db(args)
+    import json
+
+    from gha_optimizer.ingestion.ingest import ingestion_status
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    try:
+        print(json.dumps(ingestion_status(db, args.repo), indent=2, default=str))
+    finally:
+        db.close()
+
+
+def cmd_build_dataset(args: argparse.Namespace) -> None:
+    """Compute per-commit graph features for ingested runs, then build + save the dataset."""
+    _use_db(args)
+    from gha_optimizer.features.dataset import build_dataset
+    from gha_optimizer.features.graph_features import compute_repo_graph_features
+    from gha_optimizer.ingestion.mirror import RepoMirror
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    try:
+        if not args.no_graph:
+            mirror = RepoMirror(args.repo, Path(args.mirror_root))
+            mirror.ensure(refresh=False)
+            owner_repo = args.repo.replace("/", "__")
+            cache_path = Path(args.cache_dir) / f"graph_parse_{owner_repo}.sqlite"
+            logger.info("computing per-commit graph features for %s ...", args.repo)
+            counters = compute_repo_graph_features(db, args.repo, mirror, cache_path, args.workflow_path)
+            print(f"graph features: {counters}")
+        df, info = build_dataset(db, args.repo, args.workflow_path)
+        print(f"dataset: {info}")
+        if not df.empty:
+            out = Path(args.out) if args.out else Path(".gha_optimizer/datasets") / f"{args.repo.replace('/', '__')}.csv"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(out, index=False)
+            print(f"saved {len(df)} rows to {out}")
+    finally:
+        db.close()
+
+
+def cmd_dataset_report(args: argparse.Namespace) -> None:
+    """Write docs/DATASET_REPORT.md from the database (all figures computed)."""
+    _use_db(args)
+    from gha_optimizer.features.dataset_report import generate_report
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    try:
+        text = generate_report(db, args.repo)
+    finally:
+        db.close()
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"wrote {out} ({len(text.splitlines())} lines)")
+
+
+def cmd_train(args: argparse.Namespace) -> None:
+    """Train the three models on the ingested dataset (temporal-holdout metrics) and save them."""
+    _use_db(args)
+    from gha_optimizer.config import config
+    from gha_optimizer.features.dataset import build_dataset
+    from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
+    from gha_optimizer.models.duration_estimator import DurationEstimator
+    from gha_optimizer.models.failure_predictor import FailurePredictor
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    try:
+        df, info = build_dataset(db, args.repo, args.workflow_path)
+    finally:
+        db.close()
+    if df.empty or df["run_id"].nunique() < config.model.min_history_runs:
+        _decline(RuntimeError(f"only {df['run_id'].nunique() if not df.empty else 0} ingested runs "
+                              f"(< {config.model.min_history_runs})"))
+    logger.info("dataset: %s", info)
+    model_dir = Path(args.output)
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, model, fname in (
+        ("Cache-miss predictor", CacheMissPredictor(), "cache_miss.joblib"),
+        ("Failure predictor", FailurePredictor(), "failure.joblib"),
+        ("Duration estimator", DurationEstimator(), "duration.joblib"),
+    ):
+        try:
+            metrics = model.fit(df)
+        except ValueError as exc:
+            print(f"{name}: NOT TRAINED — {exc}")
+            continue
+        model.save(model_dir / fname)
+        print(f"{name}: {metrics}")
+    print(f"\nModels saved to: {model_dir}")
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -85,169 +334,89 @@ def cmd_serve(args: argparse.Namespace) -> None:
     )
 
 
-def cmd_train(args: argparse.Namespace) -> None:
-    """Fetch history from a GitHub repo and train models."""
-    from gha_optimizer.config import config
-    from gha_optimizer.ingestion.github_client import GithubClient
+# ---------------------------------------------------------------------------
+# argument parsing
+# ---------------------------------------------------------------------------
 
-    token = args.token or config.github.token
-    if not token:
-        print(
-            "Error: GitHub token required. Set GITHUB_TOKEN env var "
-            "or pass --token."
-        )
-        sys.exit(1)
-
-    logger.info("Fetching history from %s (limit=%d)", args.repo, args.limit)
-    client = GithubClient(token=token, repo=args.repo)
-    records = client.fetch_recent_runs(limit=args.limit)
-
-    if not records:
-        print("No workflow run records found.")
-        sys.exit(1)
-
-    logger.info("Fetched %d run-job records. Training models...", len(records))
-
-    # Build a minimal workflow + graph for training
-    from examples.synthetic_history import generate_history
-    from gha_optimizer.ingestion.workflow_parser import parse_workflow
-    from gha_optimizer.pipeline import build_dependency_graph
-    from gha_optimizer.features.feature_extraction import build_training_frame
-    from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
-    from gha_optimizer.models.failure_predictor import FailurePredictor
-    from gha_optimizer.models.duration_estimator import DurationEstimator
-
-    # Use sample workflow as template
-    sample_wf = Path(__file__).resolve().parent.parent / "examples" / "sample_workflow.yml"
-    sample_repo = Path(__file__).resolve().parent.parent / "examples" / "sample_repo"
-
-    if sample_wf.exists():
-        workflow = parse_workflow(sample_wf)
-        graph = build_dependency_graph(workflow, sample_repo)
-    else:
-        print("Warning: sample workflow not found, using minimal graph")
-        import networkx as nx
-        graph = nx.DiGraph()
-
-    train_df = build_training_frame(graph, records)
-    logger.info("Training frame: %d rows", len(train_df))
-
-    model_dir = Path(args.output)
-    model_dir.mkdir(parents=True, exist_ok=True)
-
-    cache_model = CacheMissPredictor()
-    cache_metrics = cache_model.fit(train_df)
-    cache_model.save(model_dir / "cache_miss.joblib")
-    print(f"Cache-miss predictor: {cache_metrics}")
-
-    failure_model = FailurePredictor()
-    failure_metrics = failure_model.fit(train_df)
-    failure_model.save(model_dir / "failure.joblib")
-    print(f"Failure predictor: {failure_metrics}")
-
-    duration_model = DurationEstimator()
-    duration_metrics = duration_model.fit(train_df)
-    duration_model.save(model_dir / "duration.joblib")
-    print(f"Duration estimator: {duration_metrics}")
-
-    print(f"\n✅ Models saved to: {model_dir}")
+def _add_db(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--db", help="database URL (default: DATABASE_URL or sqlite:///gha_optimizer.db)")
 
 
-def cmd_evaluate(args: argparse.Namespace) -> None:
-    """Run an ablation study comparing pipeline configurations."""
-    from examples.synthetic_history import generate_history
-    from gha_optimizer.pipeline import run_pipeline
-
-    workflow = Path(args.workflow)
-    repo_root = workflow.parent.parent if args.repo_root is None else Path(args.repo_root)
-
-    tracked_files = [
-        "src/app.py", "src/utils.py", "src/api/routes.py",
-        "tests/unit/test_app.py", "tests/integration/test_api.py",
-        "requirements.txt",
-    ]
-    changed_files = ["src/api/routes.py", "requirements.txt"]
-
-    history = generate_history(n_runs=200)
-
-    configs = [
-        ("α=0.7, β=0.3, γ=0.0 (no energy)", 0.7, 0.3, 0.0),
-        ("α=0.7, β=0.25, γ=0.05 (balanced)", 0.7, 0.25, 0.05),
-        ("α=0.9, β=0.1, γ=0.0 (speed-first)", 0.9, 0.1, 0.0),
-        ("α=0.3, β=0.7, γ=0.0 (cost-first)", 0.3, 0.7, 0.0),
-    ]
-
-    print("=" * 70)
-    print("Ablation Study: Scheduler Weight Configurations")
-    print("=" * 70)
-
-    for label, alpha, beta, gamma in configs:
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
-            out_path = f.name
-
-        plan, _ = run_pipeline(
-            workflow_path=workflow,
-            repo_root=repo_root,
-            tracked_files=tracked_files,
-            history=history,
-            changed_files=changed_files,
-            out_path=out_path,
-            alpha=alpha,
-            beta=beta,
-            gamma=gamma,
-        )
-
-        print(f"\n{label}:")
-        print(f"  Wall-clock: {plan.baseline_wall_clock_seconds:.0f}s → "
-              f"{plan.estimated_wall_clock_seconds:.0f}s "
-              f"({plan.time_saved_pct:+.1f}%)")
-        print(f"  Cost: ${plan.baseline_cost_usd:.5f} → "
-              f"${plan.estimated_cost_usd:.5f} "
-              f"({plan.cost_saved_pct:+.1f}%)")
-        print(f"  Energy: {plan.baseline_energy_wh:.2f}Wh → "
-              f"{plan.estimated_energy_wh:.2f}Wh "
-              f"({plan.energy_saved_pct:+.1f}%)")
-        print(f"  Jobs skipped: "
-              f"{sum(1 for j in plan.jobs if j.skip_recommended)}/{len(plan.jobs)}")
+def _add_analysis_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("workflow", help="Path to the workflow YAML file (a checkout of the ingested repo)")
+    p.add_argument("--repo", required=True, help="owner/repo whose ingested history to use")
+    p.add_argument("--repo-root", help="Repository checkout root (default: inferred from the workflow path)")
+    p.add_argument("--workflow-path", help="repo-relative workflow path (default: relative to --repo-root)")
+    p.add_argument("--files", help="Comma-separated tracked source files (default: git ls-files)")
+    p.add_argument("--changed", help="Comma-separated changed files (default: git diff --name-only HEAD)")
+    _add_db(p)
 
 
 def main() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
+        except (AttributeError, ValueError):
+            pass
+
     parser = argparse.ArgumentParser(
         prog="gha-optimizer",
         description="ML-based predictive scheduler for GitHub Actions CI/CD pipelines",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # --- analyze ---
-    p_analyze = subparsers.add_parser("analyze", help="Analyze and optimize a workflow")
-    p_analyze.add_argument("workflow", help="Path to the workflow YAML file")
-    p_analyze.add_argument("--repo-root", help="Repository root directory")
+    p_analyze = subparsers.add_parser("analyze", help="Analyze and optimize a workflow from ingested history")
+    _add_analysis_args(p_analyze)
     p_analyze.add_argument("--model", default="tabular", choices=["tabular", "gnn"])
-    p_analyze.add_argument("--files", help="Comma-separated tracked files")
-    p_analyze.add_argument("--changed", help="Comma-separated changed files")
-    p_analyze.add_argument("--history-size", type=int, default=150)
 
-    # --- serve ---
+    p_eval = subparsers.add_parser("evaluate", help="Scheduler-weight ablation from ingested history")
+    _add_analysis_args(p_eval)
+
     p_serve = subparsers.add_parser("serve", help="Start the API server")
     p_serve.add_argument("--host", default="0.0.0.0")
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--reload", action="store_true")
 
-    # --- train ---
-    p_train = subparsers.add_parser("train", help="Fetch data and train models")
+    p_train = subparsers.add_parser("train", help="Train models on the ingested dataset")
     p_train.add_argument("--repo", required=True, help="owner/repo")
-    p_train.add_argument("--token", help="GitHub personal access token")
-    p_train.add_argument("--limit", type=int, default=200)
+    p_train.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
     p_train.add_argument("--output", default=".gha_optimizer/models")
+    _add_db(p_train)
 
-    # --- evaluate ---
-    p_eval = subparsers.add_parser("evaluate", help="Run ablation study")
-    p_eval.add_argument(
-        "--workflow",
-        default=str(Path(__file__).resolve().parent.parent / "examples" / "sample_workflow.yml"),
-    )
-    p_eval.add_argument("--repo-root", default=None)
+    p_ing = subparsers.add_parser("ingest", help="Ingest real GitHub Actions history into the database")
+    p_ing.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
+    p_ing.add_argument("--since", default="40d", help="'40d' (days back) or an ISO date (UTC); default 40d")
+    p_ing.add_argument("--until", help="ISO date (UTC); default now")
+    p_ing.add_argument("--workflow", action="append",
+                       help="workflow path, file name or name (repeatable); default: auto-select multi-job workflows with needs")
+    p_ing.add_argument("--max-runs", type=int, help="stop after this many fully processed runs (newest first)")
+    p_ing.add_argument("--no-logs", action="store_true", help="skip job-log download (cache labels stay NULL)")
+    p_ing.add_argument("--log-budget", type=int, help="max job-log downloads in this invocation")
+    p_ing.add_argument("--log-policy", default="cache-capable", choices=["cache-capable", "all"])
+    p_ing.add_argument("--log-workers", type=int, default=6, help="concurrent log downloads within a run")
+    p_ing.add_argument("--no-mirror", action="store_true",
+                       help="do not clone a local git mirror (workflow YAML then costs one API call per run)")
+    p_ing.add_argument("--mirror-root", default=".gha_optimizer/mirrors")
+    p_ing.add_argument("--token", help="GitHub token (default: GITHUB_TOKEN)")
+    _add_db(p_ing)
+
+    p_ist = subparsers.add_parser("ingest-status", help="Show real row counts for an ingested repo")
+    p_ist.add_argument("--repo", required=True)
+    _add_db(p_ist)
+
+    p_bd = subparsers.add_parser("build-dataset", help="Per-commit graph features + dataset for an ingested repo")
+    p_bd.add_argument("--repo", required=True)
+    p_bd.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
+    p_bd.add_argument("--no-graph", action="store_true", help="skip graph-feature computation (structural features stay NaN)")
+    p_bd.add_argument("--mirror-root", default=".gha_optimizer/mirrors")
+    p_bd.add_argument("--cache-dir", default=".gha_optimizer/cache")
+    p_bd.add_argument("--out", help="CSV output path")
+    _add_db(p_bd)
+
+    p_dr = subparsers.add_parser("dataset-report", help="Write docs/DATASET_REPORT.md from the database")
+    p_dr.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
+    p_dr.add_argument("--out", default="docs/DATASET_REPORT.md")
+    _add_db(p_dr)
 
     args = parser.parse_args()
 
@@ -257,9 +426,13 @@ def main() -> None:
 
     commands = {
         "analyze": cmd_analyze,
+        "evaluate": cmd_evaluate,
         "serve": cmd_serve,
         "train": cmd_train,
-        "evaluate": cmd_evaluate,
+        "ingest": cmd_ingest,
+        "ingest-status": cmd_ingest_status,
+        "build-dataset": cmd_build_dataset,
+        "dataset-report": cmd_dataset_report,
     }
     commands[args.command](args)
 

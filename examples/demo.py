@@ -1,17 +1,20 @@
 """
-Runs the full six-layer pipeline end to end on a synthetic example:
+Runs the full six-layer pipeline end to end on a REAL ingested repository:
 
-    python examples/demo.py
+    gha-optimizer ingest --repo owner/repo --since 40d     # once: fetch real history
+    python examples/demo.py --repo owner/repo [--workflow .github/workflows/ci.yml]
 
-Produces:
-  - examples/sample_repo/.github/workflows/ci.optimized.yml
-  - a printed explanation of the schedule + model metrics
+The repository tree is exported from the local git mirror (default-branch tip), the
+changed files are the real diff of the most recent ingested run of the workflow, and
+the models are trained on the real ingested history.  With too little history the demo
+says so and exits — there is no synthetic fallback.
 
-Run from the project root so ``gha_optimizer`` is importable
-(or ``pip install -e .`` first).
+Run from the project root so ``gha_optimizer`` is importable (or ``pip install -e .``).
 """
 from __future__ import annotations
 
+import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -21,58 +24,60 @@ if sys.stdout.encoding != "utf-8":
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from examples.synthetic_history import generate_history
-from gha_optimizer.pipeline import run_pipeline
 
-REPO_ROOT = Path(__file__).resolve().parent / "sample_repo"
-WORKFLOW_PATH = Path(__file__).resolve().parent / "sample_workflow.yml"
-OUT_PATH = REPO_ROOT / ".github" / "workflows" / "ci.optimized.yml"
+def main() -> int:
+    parser = argparse.ArgumentParser(description="End-to-end demo on a real ingested repository")
+    parser.add_argument("--repo", required=True, help="owner/repo (must have been ingested)")
+    parser.add_argument("--workflow", help="repo-relative workflow path (default: the most-ingested workflow)")
+    parser.add_argument("--db", help="database URL (default: DATABASE_URL or sqlite:///gha_optimizer.db)")
+    args = parser.parse_args()
+    if args.db:
+        os.environ["DATABASE_URL"] = args.db
 
-TRACKED_FILES = [
-    "src/app.py",
-    "src/utils.py",
-    "src/api/routes.py",
-    "tests/unit/test_app.py",
-    "tests/integration/test_api.py",
-    "requirements.txt",
-]
+    from gha_optimizer.ingestion.history import InsufficientHistoryError
+    from gha_optimizer.ingestion.workspace import prepare_repo_snapshot
+    from gha_optimizer.pipeline import run_pipeline
+    from gha_optimizer.server.db.session import SessionLocal, init_db
 
-# Simulate a developer's current, not-yet-merged diff: they touched the
-# integration-relevant route file AND the lockfile, which should (a) mark
-# integration_tests as structurally impacted, and (b) predict a cache miss
-# for every job downstream of the requirements.txt change.
-CHANGED_FILES = ["src/api/routes.py", "requirements.txt"]
+    init_db()
+    db = SessionLocal()
+    try:
+        snap = prepare_repo_snapshot(db, args.repo, args.workflow)
+    except (InsufficientHistoryError, LookupError) as exc:
+        print(f"Cannot run the demo: {exc}\nIngest real history first: gha-optimizer ingest --repo {args.repo}")
+        return 2
+    finally:
+        db.close()
 
-
-def main():
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    history = generate_history(n_runs=150)
-
-    plan, explanation = run_pipeline(
-        workflow_path=WORKFLOW_PATH,
-        repo_root=REPO_ROOT,
-        tracked_files=TRACKED_FILES,
-        history=history,
-        changed_files=CHANGED_FILES,
-        out_path=OUT_PATH,
-    )
+    out_path = snap.root / ".github" / "workflows" / f"{snap.workflow_path.stem}.optimized.yml"
+    print(f"Repository: {snap.repo} @ {snap.sha[:10]}   workflow: {snap.workflow_repo_path}")
+    print(f"Current diff (real files of ingested run {snap.changed_from_run}): {snap.changed_files[:8]}"
+          + (" ..." if len(snap.changed_files) > 8 else ""))
+    try:
+        plan, explanation = run_pipeline(
+            workflow_path=snap.workflow_path,
+            repo_root=snap.root,
+            tracked_files=snap.tracked_files,
+            history=snap.history,
+            changed_files=snap.changed_files,
+            out_path=out_path,
+            workflow_repo_path=snap.workflow_repo_path,
+        )
+    except InsufficientHistoryError as exc:
+        print(f"Declining to predict: {exc}")
+        return 2
 
     print(explanation)
-    print(f"\n✅ Optimized workflow written to: {OUT_PATH}")
-    print(f"\n📊 Schedule summary:")
-    print(f"   ⏱  Wall-clock: {plan.baseline_wall_clock_seconds:.0f}s → "
-          f"{plan.estimated_wall_clock_seconds:.0f}s "
+    print(f"\nProposed workflow written to: {out_path}")
+    print("\nSchedule summary (ESTIMATED from predicted durations — not measured executions):")
+    print(f"   Wall-clock: {plan.baseline_wall_clock_seconds:.0f}s -> {plan.estimated_wall_clock_seconds:.0f}s "
           f"({plan.time_saved_pct:+.1f}%)")
-    print(f"   💰 Cost: ${plan.baseline_cost_usd:.5f} → "
-          f"${plan.estimated_cost_usd:.5f} "
-          f"({plan.cost_saved_pct:+.1f}%)")
-    print(f"   ⚡ Energy: {plan.baseline_energy_wh:.2f}Wh → "
-          f"{plan.estimated_energy_wh:.2f}Wh "
-          f"({plan.energy_saved_pct:+.1f}%)")
-    print(f"   🌿 CO₂: {plan.baseline_co2_grams:.2f}g → "
-          f"{plan.estimated_co2_grams:.2f}g "
-          f"({plan.co2_saved_pct:+.1f}%)")
+    print(f"   Cost:   ${plan.baseline_cost_usd:.5f} -> ${plan.estimated_cost_usd:.5f} ({plan.cost_saved_pct:+.1f}%)")
+    print(f"   Energy: {plan.baseline_energy_wh:.2f}Wh -> {plan.estimated_energy_wh:.2f}Wh ({plan.energy_saved_pct:+.1f}%)")
+    print(f"   CO2:    {plan.baseline_co2_grams:.2f}g -> {plan.estimated_co2_grams:.2f}g ({plan.co2_saved_pct:+.1f}%)")
+    print("   (cost / energy / CO2 use configuration constants in gha_optimizer/config.py, not measurements)")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

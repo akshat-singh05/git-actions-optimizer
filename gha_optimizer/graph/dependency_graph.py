@@ -48,11 +48,13 @@ def build_dependency_graph(
     workflow,
     repo_root: Path,
     tracked_files: Optional[List[str]] = None,
+    source_graph: Optional[nx.MultiDiGraph] = None,
 ) -> nx.MultiDiGraph:
     """
     Build the unified heterogeneous dependency graph.
 
-    1. Parse source files with language-specific AST parsers.
+    1. Parse source files with language-specific AST parsers (or use a
+       pre-built ``source_graph``, e.g. assembled from cached per-blob parses).
     2. Parse the workflow YAML into CI/CD nodes.
     3. Fuse the two domains with cross-domain edges.
 
@@ -64,15 +66,14 @@ def build_dependency_graph(
     from gha_optimizer.graph.fusion import GraphFusion
 
     repo_root = Path(repo_root)
-    builder = GraphBuilder(repo_root)
-
-    if tracked_files:
-        source_paths = [
-            repo_root / f for f in tracked_files if (repo_root / f).exists()
-        ]
-        builder.build_from_source(source_paths)
-
-    source_graph = builder.get_graph()
+    if source_graph is None:
+        builder = GraphBuilder(repo_root)
+        if tracked_files:
+            source_paths = [
+                repo_root / f for f in tracked_files if (repo_root / f).exists()
+            ]
+            builder.build_from_source(source_paths)
+        source_graph = builder.get_graph()
 
     ci_builder = GraphBuilder(repo_root)
     ci_builder.build_from_workflow(workflow)
@@ -172,6 +173,29 @@ def cache_keys_touched_by(
     return touched
 
 
+def cache_key_touched_for_job(
+    g: nx.DiGraph | nx.MultiDiGraph,
+    changed_files: List[str],
+    job_id: str,
+) -> bool:
+    """
+    True if a cache key **restored by this job** can be invalidated by the diff.
+
+    ``cache_keys_touched_by`` answers for the whole workflow; the cache-miss label
+    is per job, so the feature intersects that set with the ``CacheKey`` nodes the
+    job points at (``RESTORES_CACHE`` edges, created for ``actions/cache`` steps).
+    """
+    job_node = _job_node_id(job_id)
+    if job_node not in g:
+        return False
+    job_keys = {
+        _strip_prefix(n, NodeType.CACHE_KEY)
+        for n in g.successors(job_node)
+        if g.nodes[n].get("node_type") == NodeType.CACHE_KEY.value
+    }
+    return bool(job_keys & cache_keys_touched_by(g, changed_files))
+
+
 def graph_distance_to_job(
     g: nx.DiGraph | nx.MultiDiGraph,
     file_path: str,
@@ -197,6 +221,39 @@ def graph_distance_to_job(
         return nx.shortest_path_length(undirected, src, dst)
     except (nx.NetworkXNoPath, nx.NodeNotFound):
         return -1
+
+
+def graph_distances_from_files(
+    g: nx.DiGraph | nx.MultiDiGraph,
+    changed_files: List[str],
+    job_ids: List[str],
+) -> dict:
+    """
+    ``{job_id: min over changed files of graph_distance_to_job(file, job)}`` in a
+    single breadth-first traversal of the undirected projection (``-1.0`` when no
+    changed file is in the graph or no path exists).
+
+    Equivalent to calling :func:`graph_distance_to_job` per (file, job) pair, but
+    without copying the graph each time — needed for graphs built from real repos.
+    """
+    from collections import deque
+
+    sources = [_file_node_id(f) for f in changed_files if _file_node_id(f) in g]
+    dist: dict = {s: 0 for s in sources}
+    queue = deque(sources)
+    while queue:
+        u = queue.popleft()
+        for v in list(g.successors(u)) + list(g.predecessors(u)):
+            if v not in dist:
+                dist[v] = dist[u] + 1
+                queue.append(v)
+    return {job: float(dist.get(_job_node_id(job), -1)) for job in job_ids}
+
+
+def any_changed_file_in_graph(g: nx.DiGraph | nx.MultiDiGraph, changed_files: List[str]) -> bool:
+    """True if at least one changed file is a ``File::`` node.  When False,
+    :func:`impacted_jobs_for_diff` falls back to "all jobs impacted"."""
+    return any(_file_node_id(f) in g for f in changed_files)
 
 
 def graph_summary(g: nx.DiGraph | nx.MultiDiGraph) -> dict:

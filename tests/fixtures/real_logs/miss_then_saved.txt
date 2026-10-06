@@ -1,0 +1,52 @@
+2026-10-06T14:12:45.2438867Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+2026-10-06T14:12:45.2439324Z with:
+2026-10-06T14:12:45.2439962Z   path: C:\Users\runneradmin\AppData\Local\pypoetry\Cache/artifacts
+C:\Users\runneradmin\AppData\Local\pypoetry\Cache/cache
+
+2026-10-06T14:12:45.2441001Z   key: poetry-2026-10-06-Windows-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:12:45.2441741Z   restore-keys: poetry-2026-10-06-Windows-
+poetry-2026-10-06-
+
+2026-10-06T14:12:45.2442173Z   enableCrossOsArchive: true
+2026-10-06T14:12:45.2442470Z   fail-on-cache-miss: false
+2026-10-06T14:12:45.2442767Z   lookup-only: false
+2026-10-06T14:12:45.2443010Z   save-always: false
+2026-10-06T14:12:45.2443238Z env:
+2026-10-06T14:12:45.2443470Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:12:45.2443772Z ##[endgroup]
+2026-10-06T14:12:45.8810995Z Cache not found for input keys: poetry-2026-10-06-Windows-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a, poetry-2026-10-06-Windows-, poetry-2026-10-06-
+2026-10-06T14:12:45.8918025Z ##[end-action id=__self.cache;outcome=success;conclusion=success;duration_ms=778]
+2026-10-06T14:12:45.8921534Z ##[start-action display=Run poetry install ${ARGS};id=__self.__run]
+2026-10-06T14:12:57.9001890Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+2026-10-06T14:12:57.9002312Z with:
+2026-10-06T14:12:57.9002488Z   path: .mypy_cache
+2026-10-06T14:12:57.9002912Z   key: mypy-Windows-py3.11.9-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:12:57.9003436Z   restore-keys: mypy-Windows-py3.11.9-
+mypy-Windows-
+
+2026-10-06T14:12:57.9003744Z   enableCrossOsArchive: false
+2026-10-06T14:12:57.9003982Z   fail-on-cache-miss: false
+2026-10-06T14:12:57.9004192Z   lookup-only: false
+2026-10-06T14:12:57.9004377Z   save-always: false
+2026-10-06T14:12:57.9004548Z env:
+2026-10-06T14:12:57.9004724Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:12:57.9004961Z ##[endgroup]
+2026-10-06T14:12:59.5965786Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/da6ebba9-6898-47a9-8ea1-cdd371cf1715/cache.tzst -P -C D:/a/poetry/poetry --force-local --use-compress-program "zstd -d"
+2026-10-06T14:13:01.3953867Z Cache restored successfully
+2026-10-06T14:13:01.4081138Z Cache restored from key: mypy-Windows-py3.11.9-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:13:01.4356401Z ##[group]Run poetry run mypy
+2026-10-06T14:13:01.4356732Z [36;1mpoetry run mypy[0m
+2026-10-06T14:13:01.4371300Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-10-06T14:13:01.4371701Z env:
+2026-10-06T14:13:01.4371900Z   PYTHONWARNDEFAULTENCODING: true
+2026-10-06T14:13:01.4372159Z ##[endgroup]
+2026-10-06T14:13:04.9702271Z Success: no issues found in 380 source files
+2026-10-06T14:13:05.1878891Z Post job cleanup.
+2026-10-06T14:13:05.3409380Z Cache hit occurred on the primary key mypy-Windows-py3.11.9-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a, not saving cache.
+2026-10-06T14:13:05.3725703Z Post job cleanup.
+2026-10-06T14:13:05.3729692Z ##[start-action display=Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9;id=__f9e1d562-b22d-459b-9df5-b53edd3c7629.cache]
+2026-10-06T14:13:07.5056304Z Sent 5111808 of 51919508 (9.8%), 4.9 MBs/sec
+2026-10-06T14:13:08.5196792Z Sent 51919508 of 51919508 (100.0%), 24.6 MBs/sec
+2026-10-06T14:13:09.0345485Z Cache saved with key: poetry-2026-10-06-Windows-efc804ad7fbce2e4362f10e4ee55aa2850686573ad7eaa94a2502c726818113a
+2026-10-06T14:13:09.0488585Z ##[end-action id=__f9e1d562-b22d-459b-9df5-b53edd3c7629.cache;outcome=success;conclusion=success;duration_ms=3675]
+2026-10-06T14:13:09.0688236Z Post job cleanup.

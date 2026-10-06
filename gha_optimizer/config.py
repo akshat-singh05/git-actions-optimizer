@@ -35,6 +35,14 @@ class ModelConfig(BaseModel):
     test_size: float = 0.25
     cv_folds: int = 5
 
+    # Cold-start policy (a *policy* threshold, not a statistically derived one):
+    # below this many ingested runs the system declines to predict.
+    min_history_runs: int = 30
+    # Labelled rows the cache-miss model needs (both classes present).
+    min_cache_labels: int = 30
+    # Fraction of runs (by time) held out as the temporal test set.
+    temporal_test_fraction: float = 0.2
+
     model_dir: Path = Field(
         default_factory=lambda: Path(os.environ.get("GHA_MODEL_DIR", ".gha_optimizer/models"))
     )
@@ -90,7 +98,7 @@ class ServerConfig(BaseModel):
 
 class AppConfig(BaseSettings):
     """Top-level configuration aggregating all sub-configs."""
-    
+
     # Environment configs that can override defaults
     database_url: str = Field(
         default="postgresql://postgres:postgres@db:5432/gha_optimizer",
@@ -109,8 +117,8 @@ class AppConfig(BaseSettings):
     server: ServerConfig = Field(default_factory=ServerConfig)
 
     model_config = SettingsConfigDict(
-        env_file=".env", 
-        env_file_encoding="utf-8", 
+        env_file=".env",
+        env_file_encoding="utf-8",
         extra="ignore"
     )
 

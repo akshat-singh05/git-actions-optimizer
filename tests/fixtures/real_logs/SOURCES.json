@@ -1,0 +1,132 @@
+{
+  "miss_then_saved": {
+    "repo": "python-poetry/poetry",
+    "run_id": 37476938514,
+    "job_id": 112314787023,
+    "job_name": "Windows (Python 3.11) / mypy",
+    "outcome": "miss",
+    "n_events": 4,
+    "excerpt_lines": 52,
+    "kinds": [
+      [
+        "restore_miss",
+        null
+      ],
+      [
+        "restore_hit",
+        "exact"
+      ],
+      [
+        "primary_hit_not_saved",
+        null
+      ],
+      [
+        "saved",
+        null
+      ]
+    ]
+  },
+  "partial_hit": {
+    "repo": "python-poetry/poetry",
+    "run_id": 37476938514,
+    "job_id": 112314787897,
+    "job_name": "Windows (Python 3.15) / mypy",
+    "outcome": "partial_hit",
+    "n_events": 4,
+    "excerpt_lines": 53,
+    "kinds": [
+      [
+        "restore_hit",
+        "exact"
+      ],
+      [
+        "restore_hit",
+        "partial"
+      ],
+      [
+        "saved",
+        null
+      ],
+      [
+        "primary_hit_not_saved",
+        null
+      ]
+    ]
+  },
+  "exact_hit_actions_cache": {
+    "repo": "python-poetry/poetry",
+    "run_id": 37476938514,
+    "job_id": 112314788398,
+    "job_name": "macOS aarch64 (Python 3.12) / mypy",
+    "outcome": "exact_hit",
+    "n_events": 4,
+    "excerpt_lines": 53,
+    "kinds": [
+      [
+        "restore_hit",
+        "exact"
+      ],
+      [
+        "restore_hit",
+        "exact"
+      ],
+      [
+        "primary_hit_not_saved",
+        null
+      ],
+      [
+        "primary_hit_not_saved",
+        null
+      ]
+    ]
+  },
+  "setup_uv_miss": {
+    "repo": "fastapi/fastapi",
+    "run_id": 37473947508,
+    "job_id": 112304353268,
+    "job_name": "regression-test",
+    "outcome": "miss",
+    "n_events": 1,
+    "excerpt_lines": 41,
+    "kinds": [
+      [
+        "restore_miss",
+        null
+      ]
+    ]
+  },
+  "setup_not_found_line": {
+    "repo": "prometheus/prometheus",
+    "run_id": 37468587278,
+    "job_id": 112285826850,
+    "job_name": "Go tests on Windows",
+    "outcome": "miss",
+    "n_events": 1,
+    "excerpt_lines": 12,
+    "kinds": [
+      [
+        "restore_miss",
+        null
+      ]
+    ]
+  },
+  "setup_go_hit": {
+    "repo": "prometheus/prometheus",
+    "run_id": 37463458714,
+    "job_id": 112268522766,
+    "job_name": "Go tests on Windows",
+    "outcome": "exact_hit",
+    "n_events": 2,
+    "excerpt_lines": 78,
+    "kinds": [
+      [
+        "restore_hit",
+        "exact"
+      ],
+      [
+        "primary_hit_not_saved",
+        null
+      ]
+    ]
+  }
+}

@@ -1,26 +1,34 @@
 """
 Model C — Duration Estimator (regression).
 
-Predicts per-job runtime in seconds, optionally with quantile regression
-for uncertainty estimation (P10/P50/P90 bands).  Feeds directly into the
-cost-aware runner allocator in ``gha_optimizer.scheduler.optimizer``.
+Predicts per-job runtime in seconds from real ``completed_at - started_at``
+timestamps (success/failure rows only; cancelled/skipped jobs have no duration
+label), optionally with quantile models (P10/P50/P90).  Feeds the cost-aware
+runner allocator in ``gha_optimizer.scheduler.optimizer``.
+
+Evaluation is a temporal holdout compared against the naive baseline "predict the
+job's strictly-prior decayed mean duration" — a model that cannot beat that
+baseline is not evidence of learning.
 """
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.model_selection import KFold, cross_val_predict, train_test_split
-from sklearn.metrics import (
-    mean_absolute_error,
-    mean_absolute_percentage_error,
-    r2_score,
-)
+from sklearn.base import clone
+from sklearn.ensemble import HistGradientBoostingRegressor
 
 from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
+from gha_optimizer.models.evaluation import (
+    chronological,
+    permutation_importance_dict,
+    regression_report,
+    temporal_split,
+    usable_features,
+)
 
 try:
     from xgboost import XGBRegressor
@@ -40,129 +48,102 @@ class DurationEstimator:
         learning_rate: float = 0.08,
         random_state: int = 13,
         quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
+        test_fraction: float | None = None,
     ):
+        from gha_optimizer.config import config
+
         self.random_state = random_state
         self.quantiles = quantiles
+        self.test_fraction = test_fraction if test_fraction is not None else config.model.temporal_test_fraction
 
-        use_xgb = (backend == "auto" and _HAS_XGBOOST) or backend == "xgboost"
         if backend == "xgboost" and not _HAS_XGBOOST:
             raise ImportError("XGBoost requested but not installed.")
-
+        use_xgb = _HAS_XGBOOST if backend == "auto" else backend == "xgboost"
         if use_xgb:
-            self.model = XGBRegressor(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                learning_rate=learning_rate,
+            self.model: Any = XGBRegressor(
+                n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
                 random_state=random_state,
             )
             self._backend_name = "xgboost"
         else:
-            self.model = GradientBoostingRegressor(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                learning_rate=learning_rate,
+            self.model = HistGradientBoostingRegressor(
+                max_iter=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
                 random_state=random_state,
             )
-            self._backend_name = "sklearn"
+            self._backend_name = "sklearn-hist"
 
-        # Quantile regression models (sklearn only — uses loss='quantile')
-        self._quantile_models: dict[float, GradientBoostingRegressor] = {}
+        # Quantile regression models (sklearn backend only)
+        self._quantile_models: dict[float, Any] = {}
         if not use_xgb:
             for q in quantiles:
-                self._quantile_models[q] = GradientBoostingRegressor(
-                    n_estimators=n_estimators,
-                    max_depth=max_depth,
-                    learning_rate=learning_rate,
-                    random_state=random_state,
-                    loss="quantile",
-                    alpha=q,
+                self._quantile_models[q] = HistGradientBoostingRegressor(
+                    max_iter=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
+                    random_state=random_state, loss="quantile", quantile=q,
                 )
 
         self._fitted = False
+        self._features: list[str] = list(FEATURE_COLUMNS)
         self._feature_importance: dict[str, float] = {}
 
-    def fit(self, df: pd.DataFrame, cv: bool = True) -> dict:
-        """
-        Train the model and compute validation metrics.
+    def fit(self, df: pd.DataFrame) -> dict:
+        """Train on ``label_duration``; return temporal-holdout metrics incl. the naive baseline."""
+        d = chronological(df).dropna(subset=["label_duration"])
+        metrics: dict[str, Any] = {
+            "backend": self._backend_name,
+            "n_rows_total": int(len(df)),
+            "n_rows_labelled": int(len(d)),
+            "n_rows_excluded_null_label": int(len(df) - len(d)),
+        }
+        if len(d) < 2:
+            raise ValueError(f"duration model needs labelled rows (labelled={len(d)})")
+        y_all = d["label_duration"].astype(float)
+        features = usable_features(d, FEATURE_COLUMNS)
+        metrics["features_dropped_all_nan"] = [c for c in FEATURE_COLUMNS if c not in features]
 
-        Returns dict with MAE, MAPE, R², and backend info.
-        """
-        X = df[FEATURE_COLUMNS].copy()
-        y = df["label_duration"]
-
-        if cv and len(y) >= 20:
-            metrics = self._fit_with_cv(X, y)
-        else:
-            metrics = self._fit_holdout(X, y)
-
-        # Train quantile models on full data
-        for q, qmodel in self._quantile_models.items():
-            qmodel.fit(X, y)
-
-        if hasattr(self.model, "feature_importances_"):
-            self._feature_importance = dict(
-                zip(FEATURE_COLUMNS, self.model.feature_importances_)
+        train, test, info = temporal_split(d, self.test_fraction)
+        importance: dict[str, float] = {}
+        if len(test) and len(train) >= 2:
+            train_feats = usable_features(train, FEATURE_COLUMNS)
+            holdout_model = clone(self.model).fit(train[train_feats].astype(float), train["label_duration"].astype(float))
+            X_test = test[train_feats].astype(float)
+            y_test = test["label_duration"].astype(float)
+            pred = np.maximum(holdout_model.predict(X_test), 0.0)
+            baseline = test["historical_mean_duration"].astype(float).to_numpy()
+            metrics["validation"] = f"temporal holdout (last {int(self.test_fraction * 100)}% of runs)"
+            metrics.update(info)
+            metrics.update(regression_report(y_test, pred, baseline))
+            importance = permutation_importance_dict(
+                holdout_model, X_test, y_test, "neg_mean_absolute_error", self.random_state
             )
+        else:
+            metrics["validation"] = "none: no temporal holdout possible (too few runs)"
 
+        X_all = d[features].astype(float)
+        self._features = features
+        self.model.fit(X_all, y_all)
+        for qmodel in self._quantile_models.values():
+            qmodel.fit(X_all, y_all)
+        self._fitted = True
+        if hasattr(self.model, "feature_importances_"):
+            importance = dict(zip(features, self.model.feature_importances_))
+        self._feature_importance = importance
         return metrics
 
-    def _fit_with_cv(self, X: pd.DataFrame, y: pd.Series) -> dict:
-        kf = KFold(n_splits=5, shuffle=True, random_state=self.random_state)
-
-        preds = cross_val_predict(self.model, X, y, cv=kf)
-
-        # Refit on full data
-        self.model.fit(X, y)
-        self._fitted = True
-
-        return {
-            "backend": self._backend_name,
-            "validation": "5-fold CV",
-            "mae_seconds": round(mean_absolute_error(y, preds), 2),
-            "mape": round(mean_absolute_percentage_error(y, preds), 4),
-            "r2": round(r2_score(y, preds), 4),
-        }
-
-    def _fit_holdout(self, X: pd.DataFrame, y: pd.Series) -> dict:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.25, random_state=self.random_state
-        )
-        self.model.fit(X_train, y_train)
-        self._fitted = True
-
-        preds = self.model.predict(X_test)
-        return {
-            "backend": self._backend_name,
-            "validation": "holdout 75/25",
-            "mae_seconds": round(mean_absolute_error(y_test, preds), 2),
-            "mape": round(mean_absolute_percentage_error(y_test, preds), 4),
-            "r2": round(r2_score(y_test, preds), 4),
-        }
-
     def predict(self, df: pd.DataFrame) -> pd.Series:
-        """Return point-estimate duration in seconds per row."""
+        """Point-estimate duration in seconds per row (clamped at 0)."""
         if not self._fitted:
             raise RuntimeError("Call fit() before predict().")
-        preds = self.model.predict(df[FEATURE_COLUMNS])
-        # Clamp to non-negative
+        preds = self.model.predict(df[self._features].astype(float))
         return pd.Series(np.maximum(preds, 0.0), index=df.index)
 
     def predict_quantiles(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Return a DataFrame with columns like ``q0.1``, ``q0.5``, ``q0.9``
-        for each input row.  Only available when using the sklearn backend.
-        """
+        """Columns ``q0.1``, ``q0.5``, ``q0.9`` per row (sklearn backend only)."""
         if not self._quantile_models:
-            # Fallback: return the point estimate for all quantiles
             p = self.predict(df)
-            return pd.DataFrame(
-                {f"q{q}": p for q in self.quantiles}, index=df.index
-            )
-
+            return pd.DataFrame({f"q{q}": p for q in self.quantiles}, index=df.index)
         result = {}
         for q, qmodel in self._quantile_models.items():
-            preds = qmodel.predict(df[FEATURE_COLUMNS])
-            result[f"q{q}"] = np.maximum(preds, 0.0)
+            result[f"q{q}"] = np.maximum(qmodel.predict(df[self._features].astype(float)), 0.0)
         return pd.DataFrame(result, index=df.index)
 
     @property
@@ -173,11 +154,8 @@ class DurationEstimator:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
-            {
-                "model": self.model,
-                "quantile_models": self._quantile_models,
-                "backend": self._backend_name,
-            },
+            {"model": self.model, "quantile_models": self._quantile_models, "backend": self._backend_name,
+             "features": self._features},
             path,
         )
 
@@ -185,5 +163,6 @@ class DurationEstimator:
         data = joblib.load(path)
         self.model = data["model"]
         self._quantile_models = data.get("quantile_models", {})
-        self._backend_name = data.get("backend", "sklearn")
+        self._backend_name = data.get("backend", "sklearn-hist")
+        self._features = data.get("features", list(FEATURE_COLUMNS))
         self._fitted = True

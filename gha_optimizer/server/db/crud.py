@@ -1,80 +1,6 @@
-import json
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from . import models
-
-def insert_run(db: Session, record: dict):
-    """Insert a workflow run record, splitting data between WorkflowRun and WorkflowJob tables."""
-    # Upsert the run-level record (deduplicates on run_id)
-    existing_run = db.query(models.WorkflowRun).filter(
-        models.WorkflowRun.run_id == record["run_id"]
-    ).first()
-
-    if not existing_run:
-        db_run = models.WorkflowRun(
-            run_id=record["run_id"],
-            commit_sha=record.get("commit_sha"),
-            repo=record.get("repo"),
-            conclusion=record.get("conclusion"),
-            timestamp=record.get("timestamp"),
-        )
-        db.add(db_run)
-        db.flush()  # ensure run_id is available for the job FK
-
-    # Upsert the per-job record
-    existing_job = db.query(models.WorkflowJob).filter(
-        models.WorkflowJob.run_id == record["run_id"],
-        models.WorkflowJob.job_id == record.get("job_id", "unknown"),
-    ).first()
-
-    if existing_job:
-        existing_job.conclusion = record.get("conclusion")
-        existing_job.duration_seconds = record.get("duration_seconds")
-        existing_job.cache_hit = bool(record.get("cache_hit", False))
-        existing_job.runner_label = record.get("runner_label")
-    else:
-        db_job = models.WorkflowJob(
-            run_id=record["run_id"],
-            job_id=record.get("job_id", "unknown"),
-            conclusion=record.get("conclusion"),
-            duration_seconds=record.get("duration_seconds"),
-            cache_hit=bool(record.get("cache_hit", False)),
-            runner_label=record.get("runner_label"),
-        )
-        db.add(db_job)
-
-    db.commit()
-
-def get_recent_runs(db: Session, repo: str = None, limit: int = 500):
-    """Retrieve recent run-job records by joining WorkflowRun and WorkflowJob."""
-    query = (
-        db.query(models.WorkflowRun, models.WorkflowJob)
-        .join(models.WorkflowJob, models.WorkflowRun.run_id == models.WorkflowJob.run_id)
-        .order_by(desc(models.WorkflowRun.timestamp))
-    )
-    if repo:
-        query = query.filter(models.WorkflowRun.repo == repo)
-
-    results = []
-    for run, job in query.limit(limit).all():
-        results.append({
-            "run_id": run.run_id,
-            "commit_sha": run.commit_sha,
-            "repo": run.repo,
-            "job_id": job.job_id,
-            "conclusion": job.conclusion,
-            "duration_seconds": job.duration_seconds,
-            "cache_hit": job.cache_hit,
-            "runner_label": job.runner_label,
-            "timestamp": run.timestamp,
-            # Fields not in normalized schema — return defaults
-            "files_changed": [],
-            "author": "unknown",
-            "branch": "main",
-            "loc_added": 0,
-            "loc_deleted": 0,
-        })
-    return results
 
 def insert_optimization_result(db: Session, result: dict):
     db_result = models.OptimizationResult(
@@ -98,7 +24,7 @@ def get_optimization_history(db: Session, repo: str = None, limit: int = 50):
     if repo:
         query = query.filter(models.OptimizationResult.repo == repo)
     return [
-        {c.name: getattr(row, c.name) for c in row.__table__.columns} 
+        {c.name: getattr(row, c.name) for c in row.__table__.columns}
         for row in query.limit(limit).all()
     ]
 
@@ -137,7 +63,7 @@ def get_prediction_accuracy(db: Session, limit: int = 100):
 def insert_model_version(db: Session, model_type: str, version: str, metrics: dict, artifact_path: str, training_samples: int):
     # Deactivate previous versions
     db.query(models.ModelVersion).filter(models.ModelVersion.model_type == model_type).update({"is_active": False})
-    
+
     new_version = models.ModelVersion(
         model_type=model_type,
         version=version,
@@ -152,9 +78,9 @@ def insert_model_version(db: Session, model_type: str, version: str, metrics: di
 def get_active_model(db: Session, model_type: str):
     row = db.query(models.ModelVersion).filter(
         models.ModelVersion.model_type == model_type,
-        models.ModelVersion.is_active == True
+        models.ModelVersion.is_active.is_(True)
     ).order_by(desc(models.ModelVersion.created_at)).first()
-    
+
     if row:
         return {c.name: getattr(row, c.name) for c in row.__table__.columns}
     return None

@@ -128,9 +128,9 @@ class PredictionStatus(str, Enum):
 class PredictionResult(BaseModel):
     """ML prediction for a single job."""
     job_id: str
-    cache_miss_probability: float = 0.0
-    failure_probability: float = 0.0
-    predicted_duration_seconds: float = 60.0
+    cache_miss_probability: Optional[float] = None   # None = not predicted (never a default)
+    failure_probability: Optional[float] = None
+    predicted_duration_seconds: Optional[float] = None
     status: PredictionStatus = PredictionStatus.UNTRAINED
     model_version: Optional[str] = None
     message: str = ""

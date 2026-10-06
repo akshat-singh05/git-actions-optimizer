@@ -375,8 +375,19 @@
     }
 
     function renderDashboard(d) {
-        const s = d.summary;
         const content = document.getElementById('content');
+        if (d.declined) {
+            content.innerHTML = `
+                <div style="padding:28px; max-width:760px">
+                    <h2 style="color:var(--amber)">Declining to predict</h2>
+                    <p style="margin:12px 0; color:var(--text)">${escapeHtml(d.reason || '')}</p>
+                    <p style="color:var(--text-dim); font-size:13px">${escapeHtml(d.hint || '')}</p>
+                    <p style="color:var(--text-dim); font-size:12px; margin-top:16px">
+                        No synthetic or default values are substituted when there is not enough real ingested history.</p>
+                </div>`;
+            return;
+        }
+        const s = d.summary;
 
         content.innerHTML = `
             <!-- Summary Cards -->
@@ -481,12 +492,12 @@
             ${renderStep(5, 'Impact Analysis', `${d.step5_impact.primary_impacted_jobs.length} jobs impacted`, 'badge-info', false, `
                 <div class="two-col">
                     <div class="compact-card">
-                        <h4>Change: <span style="color:var(--pink)">src/database.py</span></h4>
+                        <h4>Change: <span style="color:var(--pink)">${escapeHtml(d.step5_impact.primary_change)}</span> <span style="color:var(--text-dim)">(+ rest of the most recent run's real diff)</span></h4>
                         <div class="kv"><span class="k">Impacted Jobs</span><span class="v">${d.step5_impact.primary_impacted_jobs.join(', ')}</span></div>
                         <div class="kv"><span class="k">Cache Keys</span><span class="v">${d.step5_impact.primary_cache_touched.length ? d.step5_impact.primary_cache_touched.join(', ') : 'none'}</span></div>
                     </div>
                     <div class="compact-card">
-                        <h4>Change: <span style="color:var(--amber)">requirements.txt</span></h4>
+                        <h4>Change: <span style="color:var(--amber)">${escapeHtml(d.step5_impact.comparison_change || '(no previous different run)')}</span></h4>
                         <div class="kv"><span class="k">Impacted Jobs</span><span class="v">${d.step5_impact.comparison_impacted_jobs.join(', ')}</span></div>
                         <div class="kv"><span class="k">Cache Keys</span><span class="v">${d.step5_impact.comparison_cache_touched.length ? escapeHtml(d.step5_impact.comparison_cache_touched.join(', ')) : 'none'}</span></div>
                     </div>
@@ -507,14 +518,14 @@
             `)}
 
             <!-- Step 7: ML Models -->
-            ${renderStep(7, 'ML Model Training & Prediction', `3 models trained`, 'badge-pass', true, `
+            ${renderStep(7, 'ML Model Training & Prediction', `${d.summary.models_trained} models trained`, 'badge-pass', true, `
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
                     ${renderModelCard('Cache-Miss Predictor', d.step7_models.cache_miss)}
                     ${renderModelCard('Failure Predictor', d.step7_models.failure)}
                     ${renderModelCard('Duration Estimator', d.step7_models.duration)}
                     ${renderModelCard('GNN Predictor', d.step7_models.gnn)}
                 </div>
-                <div class="section-label">Predictions for src/database.py change</div>
+                <div class="section-label">Predictions for the current diff (${d.data_source.history_runs} real ingested runs of ${escapeHtml(d.data_source.repo)})</div>
                 <table>
                     <tr><th>Job</th><th>P(Cache Miss)</th><th>P(Failure)</th><th>Duration (s)</th></tr>
                     ${Object.entries(d.step7_models.predictions).map(([j, p]) => `
@@ -614,7 +625,10 @@
                     <strong style="color:var(--amber)">NOTE:</strong> Cost/energy may increase when the scheduler selects
                     faster (more expensive) runners to reduce wall-clock time.
                     This is the expected behavior of the α/β/γ weighted objective function.
-                    All predictions produced by real trained sklearn GBT models on 120 synthetic history runs — no fabricated values.
+                    Predictions come from models trained on ${d.data_source.history_rows} real ingested (run, job) rows from
+                    ${d.data_source.history_runs} runs of ${escapeHtml(d.data_source.repo)}. Every improvement figure on this page is
+                    <strong>ESTIMATED</strong> from predicted durations (cost/energy/CO₂ additionally use configuration constants);
+                    none is a measured execution.
                 </div>
             `)}
 

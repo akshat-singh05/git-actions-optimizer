@@ -16,11 +16,10 @@ import hmac
 import logging
 import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Header, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from gha_optimizer.config import config
@@ -28,7 +27,6 @@ from gha_optimizer.schemas import (
     HealthStatus,
     OptimizationRequest,
     OptimizationResultSchema,
-    WebhookEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -205,43 +203,46 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
 
     try:
         from pathlib import Path
+        from gha_optimizer.ingestion.history import InsufficientHistoryError, load_history
+        from gha_optimizer.ingestion.workspace import tracked_source_files, workflow_repo_path
         from gha_optimizer.pipeline import run_pipeline
         from gha_optimizer.server.db import crud
-        from examples.synthetic_history import generate_history
 
         workflow_path = Path(request.workflow_path)
         if not workflow_path.exists():
             raise HTTPException(status_code=404, detail=f"Workflow file not found: {workflow_path}")
 
         repo_root = workflow_path.parent.parent.parent
+        wf_repo_path = workflow_repo_path(workflow_path, repo_root)
 
-        # Get history from DB or generate synthetic
-        history_records = crud.get_recent_runs(db, repo=request.repo, limit=200)
-        if len(history_records) < 20:
-            history = generate_history(n_runs=150)
-        else:
-            from gha_optimizer.ingestion.github_client import WorkflowRunRecord
-            history = [
-                WorkflowRunRecord(**{k: v for k, v in rec.items() if k in WorkflowRunRecord.__dataclass_fields__})
-                for rec in history_records
-            ]
+        # Real ingested history only.  No synthetic fallback: with too little history the
+        # pipeline raises InsufficientHistoryError and we decline with HTTP 422.
+        history = load_history(db, request.repo, wf_repo_path)
 
         import tempfile
         with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
             out_path = f.name
 
-        plan, explanation = run_pipeline(
-            workflow_path=workflow_path,
-            repo_root=repo_root,
-            tracked_files=request.changed_files,
-            history=history,
-            changed_files=request.changed_files,
-            out_path=out_path,
-            model_backend=request.model_backend,
-            alpha=request.alpha,
-            beta=request.beta,
-            gamma=request.gamma,
-        )
+        try:
+            plan, explanation = run_pipeline(
+                workflow_path=workflow_path,
+                repo_root=repo_root,
+                tracked_files=tracked_source_files(repo_root) or request.changed_files,
+                history=history,
+                changed_files=request.changed_files,
+                out_path=out_path,
+                model_backend=request.model_backend,
+                alpha=request.alpha,
+                beta=request.beta,
+                gamma=request.gamma,
+                workflow_repo_path=wf_repo_path,
+            )
+        except InsufficientHistoryError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "insufficient_history", "reason": exc.reason, "details": exc.details,
+                        "hint": "ingest real history first: gha-optimizer ingest --repo <owner/repo>"},
+            )
 
         # Read the generated YAML
         optimized_yaml = Path(out_path).read_text(encoding="utf-8")

@@ -1,35 +1,37 @@
 """
 Model A — Cache-Miss Predictor (tabular baseline).
 
-Predicts P(cache_miss) for a given job on the current diff.  Uses Gradient
-Boosted Trees with cross-validation, feature-importance extraction, and
-optional XGBoost backend.
+Predicts P(cache_miss) for a job on the current diff, trained on **log-derived**
+labels only.  Rows whose cache label is NULL (no log / no cache line) are excluded
+— never defaulted — and counted in the returned metrics.
 
-The GNN-based upgrade (Model D — the primary patent-differentiating
-component) operates directly on the ``networkx.DiGraph`` from
-``gha_optimizer.graph.dependency_graph`` and lives in
-``gnn_cache_predictor.py``; it does not require changing any other layer's
-interface so the two can be evaluated independently (ablation study).
+Estimator: gradient-boosted trees that accept NaN natively
+(``HistGradientBoostingClassifier``; XGBoost when importable), because real
+features are legitimately missing at cold start.  Evaluation is a **temporal
+holdout** (see :mod:`gha_optimizer.models.evaluation`), not shuffled CV.
+
+The GNN-based upgrade lives in ``gnn_cache_predictor.py`` and does not change
+this interface.
 """
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import joblib
-import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.model_selection import StratifiedKFold, cross_val_predict, train_test_split
-from sklearn.metrics import (
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
+from sklearn.base import clone
+from sklearn.ensemble import HistGradientBoostingClassifier
 
 from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
+from gha_optimizer.models.evaluation import (
+    binary_report,
+    chronological,
+    permutation_importance_dict,
+    temporal_split,
+    usable_features,
+)
 
-# Try XGBoost as a drop-in upgrade
 try:
     from xgboost import XGBClassifier
     _HAS_XGBOOST = True
@@ -47,121 +49,76 @@ class CacheMissPredictor:
         max_depth: int = 3,
         learning_rate: float = 0.08,
         random_state: int = 13,
+        test_fraction: float | None = None,
     ):
-        """
-        Parameters
-        ----------
-        backend : "auto" | "sklearn" | "xgboost"
-            ``"auto"`` uses XGBoost if available, else sklearn GBT.
-        """
+        """``backend``: ``"auto"`` (XGBoost if installed, else sklearn hist-GBT) | ``"sklearn"`` | ``"xgboost"``."""
+        from gha_optimizer.config import config
+
         self.random_state = random_state
+        self.test_fraction = test_fraction if test_fraction is not None else config.model.temporal_test_fraction
 
-        if backend == "auto":
-            use_xgb = _HAS_XGBOOST
-        elif backend == "xgboost":
-            if not _HAS_XGBOOST:
-                raise ImportError("XGBoost requested but not installed.")
-            use_xgb = True
-        else:
-            use_xgb = False
-
+        if backend == "xgboost" and not _HAS_XGBOOST:
+            raise ImportError("XGBoost requested but not installed.")
+        use_xgb = _HAS_XGBOOST if backend == "auto" else backend == "xgboost"
         if use_xgb:
-            self.model = XGBClassifier(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                learning_rate=learning_rate,
-                random_state=random_state,
-                eval_metric="logloss",
-                use_label_encoder=False,
+            self.model: Any = XGBClassifier(
+                n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
+                random_state=random_state, eval_metric="logloss",
             )
             self._backend_name = "xgboost"
         else:
-            self.model = GradientBoostingClassifier(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                learning_rate=learning_rate,
+            self.model = HistGradientBoostingClassifier(
+                max_iter=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
                 random_state=random_state,
             )
-            self._backend_name = "sklearn"
+            self._backend_name = "sklearn-hist"
 
         self._fitted = False
+        self._features: list[str] = list(FEATURE_COLUMNS)
         self._feature_importance: dict[str, float] = {}
 
-    def fit(self, df: pd.DataFrame, cv: bool = True) -> dict:
-        """
-        Train the model.
-
-        Parameters
-        ----------
-        df : Training dataframe with ``FEATURE_COLUMNS`` + ``label_cache_hit``.
-        cv : If True, report cross-validated metrics instead of a single
-             holdout split (more robust for small datasets).
-
-        Returns
-        -------
-        dict with precision, recall, f1, roc_auc (if applicable).
-        """
-        X = df[FEATURE_COLUMNS].copy()
-        y = 1 - df["label_cache_hit"]  # predict MISS, not hit
-
-        if cv and len(y) >= 20 and y.nunique() > 1:
-            metrics = self._fit_with_cv(X, y)
-        else:
-            metrics = self._fit_holdout(X, y)
-
-        # Extract feature importance
-        if hasattr(self.model, "feature_importances_"):
-            self._feature_importance = dict(
-                zip(FEATURE_COLUMNS, self.model.feature_importances_)
+    def fit(self, df: pd.DataFrame) -> dict:
+        """Train on ``label_cache_hit`` (predicting MISS = 1 - hit); return temporal-holdout metrics."""
+        d = chronological(df).dropna(subset=["label_cache_hit"])
+        metrics: dict[str, Any] = {
+            "backend": self._backend_name,
+            "n_rows_total": int(len(df)),
+            "n_rows_labelled": int(len(d)),
+            "n_rows_excluded_null_label": int(len(df) - len(d)),
+        }
+        y_all = 1 - d["label_cache_hit"].astype(int)
+        if len(d) == 0 or y_all.nunique() < 2:
+            raise ValueError(
+                f"cache-miss model needs labelled rows of both classes "
+                f"(labelled={len(d)}, classes={sorted(y_all.unique().tolist())})"
             )
+        metrics["miss_rate_all_labelled"] = round(float(y_all.mean()), 4)
+        features = usable_features(d, FEATURE_COLUMNS)
+        metrics["features_dropped_all_nan"] = [c for c in FEATURE_COLUMNS if c not in features]
 
-        return metrics
+        train, test, info = temporal_split(d, self.test_fraction)
+        y_train = 1 - train["label_cache_hit"].astype(int)
+        importance: dict[str, float] = {}
+        if len(test) and y_train.nunique() == 2:
+            train_feats = usable_features(train, FEATURE_COLUMNS)
+            holdout_model = clone(self.model).fit(train[train_feats].astype(float), y_train)
+            X_test = test[train_feats].astype(float)
+            y_test = 1 - test["label_cache_hit"].astype(int)
+            prob = holdout_model.predict_proba(X_test)[:, 1]
+            metrics["validation"] = f"temporal holdout (last {int(self.test_fraction * 100)}% of runs)"
+            metrics.update(info)
+            metrics["miss_rate_train"] = round(float(y_train.mean()), 4)
+            metrics.update(binary_report(y_test, prob, 0.5))
+            importance = permutation_importance_dict(holdout_model, X_test, y_test, "neg_log_loss", self.random_state)
+        else:
+            metrics["validation"] = "none: no temporal holdout possible (too few runs or one class in the training period)"
 
-    def _fit_with_cv(self, X: pd.DataFrame, y: pd.Series) -> dict:
-        """Stratified 5-fold cross-validation."""
-        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
-
-        probs = cross_val_predict(
-            self.model, X, y, cv=skf, method="predict_proba"
-        )[:, 1]
-        preds = (probs >= 0.5).astype(int)
-
-        # Refit on full data for production use
-        self.model.fit(X, y)
+        self.model.fit(d[features].astype(float), y_all)  # production fit on all labelled history
+        self._features = features
         self._fitted = True
-
-        metrics = {
-            "backend": self._backend_name,
-            "validation": "5-fold CV",
-            "precision": round(precision_score(y, preds, zero_division=0), 4),
-            "recall": round(recall_score(y, preds, zero_division=0), 4),
-            "f1": round(f1_score(y, preds, zero_division=0), 4),
-        }
-        if y.nunique() > 1:
-            metrics["roc_auc"] = round(roc_auc_score(y, probs), 4)
-        return metrics
-
-    def _fit_holdout(self, X: pd.DataFrame, y: pd.Series) -> dict:
-        """Single train/test split fallback."""
-        stratify = y if y.nunique() > 1 else None
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.25, random_state=self.random_state, stratify=stratify
-        )
-        self.model.fit(X_train, y_train)
-        self._fitted = True
-
-        preds = self.model.predict(X_test)
-        probs = self.model.predict_proba(X_test)[:, 1]
-
-        metrics = {
-            "backend": self._backend_name,
-            "validation": "holdout 75/25",
-            "precision": round(precision_score(y_test, preds, zero_division=0), 4),
-            "recall": round(recall_score(y_test, preds, zero_division=0), 4),
-            "f1": round(f1_score(y_test, preds, zero_division=0), 4),
-        }
-        if y_test.nunique() > 1:
-            metrics["roc_auc"] = round(roc_auc_score(y_test, probs), 4)
+        if hasattr(self.model, "feature_importances_"):
+            importance = dict(zip(features, self.model.feature_importances_))
+        self._feature_importance = importance
         return metrics
 
     def predict_proba(self, df: pd.DataFrame) -> pd.Series:
@@ -169,26 +126,22 @@ class CacheMissPredictor:
         if not self._fitted:
             raise RuntimeError("Call fit() before predict_proba().")
         return pd.Series(
-            self.model.predict_proba(df[FEATURE_COLUMNS])[:, 1], index=df.index
+            self.model.predict_proba(df[self._features].astype(float))[:, 1], index=df.index
         )
 
     @property
     def feature_importance(self) -> dict[str, float]:
-        """Feature name → importance (higher = more predictive)."""
+        """Feature name -> importance (permutation importance on the temporal holdout, or native)."""
         return dict(sorted(self._feature_importance.items(), key=lambda x: -x[1]))
 
     def save(self, path: str | Path) -> None:
-        """Persist the trained model."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(
-            {"model": self.model, "backend": self._backend_name},
-            path,
-        )
+        joblib.dump({"model": self.model, "backend": self._backend_name, "features": self._features}, path)
 
     def load(self, path: str | Path) -> None:
-        """Load a previously saved model."""
         data = joblib.load(path)
         self.model = data["model"]
-        self._backend_name = data.get("backend", "sklearn")
+        self._backend_name = data.get("backend", "sklearn-hist")
+        self._features = data.get("features", list(FEATURE_COLUMNS))
         self._fitted = True

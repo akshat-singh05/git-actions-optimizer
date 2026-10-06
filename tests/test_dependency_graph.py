@@ -16,8 +16,8 @@ from gha_optimizer.graph.dependency_graph import (
 )
 from gha_optimizer.ingestion.workflow_parser import parse_workflow
 
-FIXTURE_WORKFLOW = Path(__file__).resolve().parent.parent / "examples" / "sample_workflow.yml"
-FIXTURE_REPO = Path(__file__).resolve().parent.parent / "examples" / "sample_repo"
+FIXTURE_WORKFLOW = Path(__file__).resolve().parent / "fixtures" / "sample_workflow.yml"
+FIXTURE_REPO = Path(__file__).resolve().parent / "fixtures" / "sample_repo"
 
 TRACKED_FILES = [
     "src/app.py",

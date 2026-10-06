@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Optional, Set
 
 import networkx as nx
 
