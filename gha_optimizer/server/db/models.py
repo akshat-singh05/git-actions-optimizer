@@ -1,6 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, UniqueConstraint, JSON, ForeignKey, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import BigInteger, Column, Integer, String, Float, Boolean, DateTime, UniqueConstraint, JSON, ForeignKey, Text
 from .session import Base
 
 # -----------------------------------------------------------------------------
@@ -15,6 +14,10 @@ class Repository(Base):
     language = Column(String)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     is_active = Column(Boolean, default=True)
+    # Real-ingestion metadata (NULL = not yet observed)
+    license_spdx = Column(String)
+    mirror_path = Column(String)
+    last_ingested_at = Column(DateTime)
 
 class Branch(Base):
     __tablename__ = "branches"
@@ -52,23 +55,190 @@ class WorkflowRun(Base):
     commit_sha = Column(String)
     repo = Column(String, index=True)
     conclusion = Column(String)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    timestamp = Column(String)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)  # row-insert time, NOT the GitHub run time
+    timestamp = Column(String)  # GitHub run created_at (ISO-8601 UTC)
+
+    # --- real GitHub Actions fields; NULL means "not observed", never a default ---
+    github_workflow_id = Column(BigInteger, index=True)
+    workflow_path = Column(String, index=True)
+    workflow_name = Column(String)
+    workflow_blob_sha = Column(String)     # blob of the workflow YAML at head_sha (NULL = not resolved)
+    event = Column(String, index=True)
+    status = Column(String)
+    head_branch = Column(String)
+    run_number = Column(Integer)
+    run_attempt = Column(Integer)
+    actor_login = Column(String)
+    triggering_actor_login = Column(String)
+    gh_created_at = Column(DateTime, index=True)
+    gh_run_started_at = Column(DateTime)
+    gh_updated_at = Column(DateTime)
+    pr_number = Column(Integer)
+    pr_base_sha = Column(String)
+    diff_source = Column(String)           # 'commit' | 'compare_pr' | NULL (diff not fetched)
+    diff_base_sha = Column(String)
+    diff_files_total = Column(Integer)
+    loc_added = Column(Integer)
+    loc_deleted = Column(Integer)
+    jobs_fetched_at = Column(DateTime)
+    jobs_total = Column(Integer)
 
 class WorkflowJob(Base):
+    """One GitHub job (a matrix cell is its own row). ``job_id`` keeps its legacy
+    meaning (the job's display name); ``job_key`` is the workflow-YAML key."""
     __tablename__ = "workflow_jobs"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     run_id = Column(String, ForeignKey("workflow_runs.run_id"), index=True)
     job_id = Column(String, nullable=False)
     conclusion = Column(String)
-    duration_seconds = Column(Float)
-    cache_hit = Column(Boolean)
+    duration_seconds = Column(Float)       # completed_at - started_at, NULL if either missing
+    cache_hit = Column(Boolean)            # NULL = no log-derived label (see cache_label_status)
     runner_label = Column(String)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    
+
+    # --- real GitHub Actions fields ---
+    github_job_id = Column(BigInteger, unique=True, index=True)
+    job_name = Column(String)
+    job_key = Column(String, index=True)   # NULL = could not be mapped to a YAML job key
+    mapping_source = Column(String)        # 'blob_at_sha' | 'unmapped'
+    status = Column(String)
+    gh_created_at = Column(DateTime)       # when the job was queued
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    queue_seconds = Column(Float)
+    runner_name = Column(String)
+    runner_group_name = Column(String)
+    labels = Column(JSON)
+    run_attempt = Column(Integer)
+    cache_outcome = Column(String)         # miss | partial_hit | exact_hit | hit_unresolved | NULL
+    cache_label_status = Column(String)    # why cache_hit is NULL (or 'labelled')
+
     __table_args__ = (
         UniqueConstraint('run_id', 'job_id', name='uq_workflow_jobs_run_job'),
     )
+
+class WorkflowStep(Base):
+    """Per-step timing/conclusion from the jobs API ``steps`` array."""
+    __tablename__ = "workflow_steps"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    github_job_id = Column(BigInteger, ForeignKey("workflow_jobs.github_job_id"), index=True, nullable=False)
+    number = Column(Integer, nullable=False)
+    name = Column(String)
+    status = Column(String)
+    conclusion = Column(String)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    duration_seconds = Column(Float)
+
+    __table_args__ = (
+        UniqueConstraint('github_job_id', 'number', name='uq_workflow_steps_job_number'),
+    )
+
+class RunChangedFile(Base):
+    """Files changed by a run's diff (see WorkflowRun.diff_source for the scope)."""
+    __tablename__ = "run_changed_files"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String, ForeignKey("workflow_runs.run_id"), index=True, nullable=False)
+    filename = Column(String, nullable=False)
+    status = Column(String)
+    additions = Column(Integer)
+    deletions = Column(Integer)
+    previous_filename = Column(String)
+
+    __table_args__ = (
+        UniqueConstraint('run_id', 'filename', name='uq_run_changed_files'),
+    )
+
+class JobCacheEvent(Base):
+    """One cache-related line parsed from a real job log."""
+    __tablename__ = "job_cache_events"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    github_job_id = Column(BigInteger, ForeignKey("workflow_jobs.github_job_id"), index=True, nullable=False)
+    seq = Column(Integer, nullable=False)
+    line_no = Column(Integer)
+    step_name = Column(String)             # the '##[group]Run ...' step the line belongs to
+    action = Column(String)                # e.g. actions/cache, actions/setup-go
+    kind = Column(String, nullable=False)  # restore_hit | restore_miss | saved | primary_hit_not_saved
+    cache_key = Column(Text)               # key (or key list) reported on the line
+    primary_key = Column(Text)             # 'key:' input from the step header, when present
+    restore_kind = Column(String)          # exact | partial | unresolved (restore_hit only)
+    raw_line = Column(Text)
+
+    __table_args__ = (
+        UniqueConstraint('github_job_id', 'seq', name='uq_job_cache_events'),
+    )
+
+class JobLogFetch(Base):
+    """Ledger: a job's log is downloaded at most once; the outcome is recorded here."""
+    __tablename__ = "job_log_fetches"
+    github_job_id = Column(BigInteger, primary_key=True, autoincrement=False)
+    run_id = Column(String, index=True)
+    status = Column(String, nullable=False)  # parsed_events | parsed_no_events | expired | unavailable |
+                                             # skipped_not_cache_capable | skipped_budget | skipped_not_attempted | error
+    http_status = Column(Integer)
+    bytes_downloaded = Column(BigInteger)
+    n_lines = Column(Integer)
+    n_cache_events = Column(Integer)
+    parser_version = Column(String)
+    fetched_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class WorkflowBlob(Base):
+    """Workflow YAML blobs (content-addressed) used to map API job names to YAML job keys."""
+    __tablename__ = "workflow_blobs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    repo = Column(String, nullable=False, index=True)
+    blob_sha = Column(String, nullable=False)
+    path = Column(String)
+    content = Column(Text)
+
+    __table_args__ = (
+        UniqueConstraint('repo', 'blob_sha', name='uq_workflow_blobs'),
+    )
+
+class RunGraphFeatures(Base):
+    """Graph-derived features for (run, job key), computed on the dependency graph
+    built from the repository tree at the run's head sha."""
+    __tablename__ = "run_graph_features"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String, ForeignKey("workflow_runs.run_id"), index=True, nullable=False)
+    job_key = Column(String, nullable=False)
+    job_structurally_impacted = Column(Integer)
+    cache_key_touched = Column(Integer)
+    dep_graph_distance = Column(Float)
+    any_changed_file_in_graph = Column(Integer)  # 0 => the 'all jobs impacted' fallback fired
+    graph_nodes = Column(Integer)
+    graph_edges = Column(Integer)
+    computed_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('run_id', 'job_key', name='uq_run_graph_features'),
+    )
+
+class IngestionProgress(Base):
+    """Resumable-ingestion checkpoints, one row per (repo, stage, key)."""
+    __tablename__ = "ingestion_progress"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    repo = Column(String, nullable=False, index=True)
+    stage = Column(String, nullable=False)
+    key = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    detail = Column(JSON, default=dict)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('repo', 'stage', 'key', name='uq_ingestion_progress'),
+    )
+
+class IngestionRun(Base):
+    """One row per CLI/worker ingestion invocation (audit trail of real progress)."""
+    __tablename__ = "ingestion_runs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    repo = Column(String, nullable=False, index=True)
+    started_at = Column(DateTime, default=datetime.datetime.utcnow)
+    finished_at = Column(DateTime)
+    status = Column(String)
+    args = Column(JSON, default=dict)
+    counters = Column(JSON, default=dict)
 
 class Runner(Base):
     __tablename__ = "runners"

@@ -1,0 +1,12 @@
+2026-10-06T13:09:35.5291890Z ##[group]Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+2026-10-06T13:09:35.5292130Z with:
+2026-10-06T13:09:35.5292236Z   go-version: 1.27.x
+2026-10-06T13:09:35.5292351Z   check-latest: false
+2026-10-06T13:09:35.5293747Z   token: ***
+2026-10-06T13:09:35.5294113Z   cache: true
+2026-10-06T13:09:35.5294231Z ##[endgroup]
+2026-10-06T13:09:46.6077317Z C:\Users\runneradmin\go\pkg\mod
+2026-10-06T13:09:46.6097322Z C:\Users\runneradmin\AppData\Local\go-build
+2026-10-06T13:09:46.8893815Z Cache is not found
+2026-10-06T13:09:46.8913740Z go version go1.27.1 windows/amd64
+2026-10-06T13:09:46.8913871Z 

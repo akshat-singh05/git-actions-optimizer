@@ -73,9 +73,9 @@ class PythonParser(BaseLanguageParser):
 
         # File node
         try:
-            rel_path = str(file_path.relative_to(self.repo_root))
+            rel_path = file_path.relative_to(self.repo_root).as_posix()  # posix: GitHub paths use '/'
         except ValueError:
-            rel_path = str(file_path)
+            rel_path = file_path.as_posix()
         file_node_id = self.generate_node_id(NodeType.FILE, rel_path)
         nodes.append(NodeMetadata(
             unique_id=file_node_id,

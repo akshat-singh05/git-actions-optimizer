@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 import logging
 from collections import Counter
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 import networkx as nx
 

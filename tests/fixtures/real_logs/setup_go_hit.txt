@@ -1,0 +1,78 @@
+2026-10-06T12:28:28.8556622Z ##[group]Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+2026-10-06T12:28:28.8557095Z with:
+2026-10-06T12:28:28.8557279Z   go-version: 1.27.x
+2026-10-06T12:28:28.8558510Z   check-latest: false
+2026-10-06T12:28:28.8562389Z   token: ***
+2026-10-06T12:28:28.8562610Z   cache: true
+2026-10-06T12:28:28.8562796Z ##[endgroup]
+2026-10-06T12:28:55.6853438Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/b2324fd2-c6db-4ac6-8b97-712856df7439/cache.tzst -P -C D:/a/prometheus/prometheus --force-local --use-compress-program "zstd -d"
+2026-10-06T12:31:16.4926057Z Cache restored successfully
+2026-10-06T12:31:16.5462396Z Cache restored from key: setup-go-Windows-x64-go-1.27.1-ba84a4cbc6f1a0a1b7f39a47aa8e2aa758d74e6080d3089dd068dbb6d6cea549
+2026-10-06T12:31:16.5483671Z go version go1.27.1 windows/amd64
+2026-10-06T12:31:16.5483905Z 
+2026-10-06T12:40:28.9658290Z     --- PASS: FuzzParseExpr/seed#2309 (0.00s)
+2026-10-06T12:40:28.9658461Z     --- PASS: FuzzParseExpr/seed#2310 (0.00s)
+2026-10-06T12:40:28.9658595Z     --- PASS: FuzzParseExpr/seed#2311 (0.00s)
+2026-10-06T12:40:28.9658728Z     --- PASS: FuzzParseExpr/seed#2312 (0.00s)
+2026-10-06T12:40:28.9658854Z     --- PASS: FuzzParseExpr/seed#2313 (0.00s)
+2026-10-06T12:40:28.9658990Z     --- PASS: FuzzParseExpr/seed#2314 (0.00s)
+2026-10-06T12:40:28.9659122Z     --- PASS: FuzzParseExpr/seed#2315 (0.00s)
+2026-10-06T12:40:28.9659247Z     --- PASS: FuzzParseExpr/seed#2316 (0.00s)
+2026-10-06T12:40:28.9659427Z     --- PASS: FuzzParseExpr/seed#2317 (0.00s)
+2026-10-06T12:40:28.9659562Z     --- PASS: FuzzParseExpr/seed#2318 (0.00s)
+2026-10-06T12:40:28.9659688Z     --- PASS: FuzzParseExpr/seed#2319 (0.00s)
+2026-10-06T12:40:28.9659823Z     --- PASS: FuzzParseExpr/seed#2320 (0.00s)
+2026-10-06T12:40:28.9659954Z     --- PASS: FuzzParseExpr/seed#2321 (0.00s)
+2026-10-06T12:40:28.9660082Z     --- PASS: FuzzParseExpr/seed#2322 (0.00s)
+2026-10-06T12:40:28.9660213Z     --- PASS: FuzzParseExpr/seed#2323 (0.00s)
+2026-10-06T12:40:28.9660343Z     --- PASS: FuzzParseExpr/seed#2324 (0.00s)
+2026-10-06T12:40:28.9660477Z     --- PASS: FuzzParseExpr/seed#2325 (0.00s)
+2026-10-06T12:40:28.9660608Z     --- PASS: FuzzParseExpr/seed#2326 (0.00s)
+2026-10-06T12:40:28.9660736Z     --- PASS: FuzzParseExpr/seed#2327 (0.00s)
+2026-10-06T12:40:28.9660871Z     --- PASS: FuzzParseExpr/seed#2328 (0.00s)
+2026-10-06T12:40:28.9661003Z     --- PASS: FuzzParseExpr/seed#2329 (0.00s)
+2026-10-06T12:40:28.9661129Z     --- PASS: FuzzParseExpr/seed#2330 (0.00s)
+2026-10-06T12:40:28.9661262Z     --- PASS: FuzzParseExpr/seed#2331 (0.00s)
+2026-10-06T12:40:28.9661398Z     --- PASS: FuzzParseExpr/seed#2332 (0.00s)
+2026-10-06T12:40:28.9661523Z     --- PASS: FuzzParseExpr/seed#2333 (0.00s)
+2026-10-06T12:40:28.9661656Z     --- PASS: FuzzParseExpr/seed#2334 (0.00s)
+2026-10-06T12:40:28.9661790Z     --- PASS: FuzzParseExpr/seed#2335 (0.00s)
+2026-10-06T12:40:28.9661853Z PASS
+2026-10-06T12:40:28.9662027Z ok  	github.com/prometheus/prometheus/util/fuzzing	0.267s
+2026-10-06T12:40:28.9662200Z ?   	github.com/prometheus/prometheus/util/gate	[no test files]
+2026-10-06T12:40:28.9662323Z === RUN   TestCompressionHandler_PlainText
+2026-10-06T12:40:28.9662468Z --- PASS: TestCompressionHandler_PlainText (0.00s)
+2026-10-06T12:40:28.9662572Z === RUN   TestCompressionHandler_Gzip
+2026-10-06T12:40:28.9662700Z --- PASS: TestCompressionHandler_Gzip (0.00s)
+2026-10-06T12:40:28.9662812Z === RUN   TestCompressionHandler_Deflate
+2026-10-06T12:40:28.9662944Z --- PASS: TestCompressionHandler_Deflate (0.00s)
+2026-10-06T12:40:28.9663071Z === RUN   TestCompressionHandler_ContentLength
+2026-10-06T12:40:28.9663252Z === RUN   TestCompressionHandler_ContentLength//implicit_status
+2026-10-06T12:40:28.9663409Z === RUN   TestCompressionHandler_ContentLength//explicit_status
+2026-10-06T12:40:28.9663566Z === RUN   TestCompressionHandler_ContentLength//empty_body
+2026-10-06T12:40:28.9663717Z === RUN   TestCompressionHandler_ContentLength//no_content
+2026-10-06T12:40:28.9663896Z === RUN   TestCompressionHandler_ContentLength/gzip/implicit_status
+2026-10-06T12:40:28.9664082Z === RUN   TestCompressionHandler_ContentLength/gzip/explicit_status
+2026-10-06T12:40:28.9664244Z === RUN   TestCompressionHandler_ContentLength/gzip/empty_body
+2026-10-06T12:40:28.9664457Z === RUN   TestCompressionHandler_ContentLength/gzip/no_content
+2026-10-06T12:40:28.9664656Z === RUN   TestCompressionHandler_ContentLength/deflate/implicit_status
+2026-10-06T12:40:28.9664841Z === RUN   TestCompressionHandler_ContentLength/deflate/explicit_status
+2026-10-06T12:40:28.9665025Z === RUN   TestCompressionHandler_ContentLength/deflate/empty_body
+2026-10-06T12:40:28.9665233Z === RUN   TestCompressionHandler_ContentLength/deflate/no_content
+2026-10-06T12:40:28.9665373Z --- PASS: TestCompressionHandler_ContentLength (0.02s)
+2026-10-06T12:40:28.9665632Z     --- PASS: TestCompressionHandler_ContentLength//implicit_status (0.00s)
+2026-10-06T12:40:28.9665884Z     --- PASS: TestCompressionHandler_ContentLength//explicit_status (0.00s)
+2026-10-06T12:40:28.9666149Z     --- PASS: TestCompressionHandler_ContentLength//empty_body (0.00s)
+2026-10-06T12:40:28.9666380Z     --- PASS: TestCompressionHandler_ContentLength//no_content (0.00s)
+2026-10-06T12:40:28.9666660Z     --- PASS: TestCompressionHandler_ContentLength/gzip/implicit_status (0.00s)
+2026-10-06T12:40:28.9666919Z     --- PASS: TestCompressionHandler_ContentLength/gzip/explicit_status (0.00s)
+2026-10-06T12:40:28.9667174Z     --- PASS: TestCompressionHandler_ContentLength/gzip/empty_body (0.00s)
+2026-10-06T12:40:28.9667459Z     --- PASS: TestCompressionHandler_ContentLength/gzip/no_content (0.00s)
+2026-10-06T12:40:28.9667745Z     --- PASS: TestCompressionHandler_ContentLength/deflate/implicit_status (0.00s)
+2026-10-06T12:40:28.9668023Z     --- PASS: TestCompressionHandler_ContentLength/deflate/explicit_status (0.00s)
+2026-10-06T12:40:28.9668291Z     --- PASS: TestCompressionHandler_ContentLength/deflate/empty_body (0.00s)
+2026-10-06T12:40:29.2932310Z C:\Users\runneradmin\AppData\Local\go-build
+2026-10-06T12:40:29.2973113Z C:\Users\runneradmin\go\pkg\mod
+2026-10-06T12:40:29.3000475Z Cache hit occurred on the primary key setup-go-Windows-x64-go-1.27.1-ba84a4cbc6f1a0a1b7f39a47aa8e2aa758d74e6080d3089dd068dbb6d6cea549, not saving cache.
+2026-10-06T12:40:29.3358078Z Post job cleanup.
+2026-10-06T12:40:29.5590999Z [command]"C:\Program Files\Git\bin\git.exe" version

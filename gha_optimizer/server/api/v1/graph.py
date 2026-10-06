@@ -17,7 +17,7 @@ Endpoints:
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List
 
 import networkx as nx
 from fastapi import APIRouter, Depends, HTTPException, Query

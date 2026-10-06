@@ -12,7 +12,6 @@ All tasks implement:
 """
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from pathlib import Path
@@ -45,60 +44,70 @@ def _err(task_name: str, correlation_id: str, msg: str, *args) -> None:
 )
 def sync_repository(self, repo: str, token: Optional[str] = None) -> Dict[str, Any]:
     """
-    Fetch repository metadata, workflow files, and recent run history
-    from GitHub.  Stores results in the database.
+    Ingest the last week of real GitHub Actions history for ``repo`` (runs, jobs, steps,
+    diffs, log-derived cache labels) through the ingestion service.  Idempotent and resumable.
     """
     cid = str(uuid.uuid4())[:8]
     _log("sync_repository", cid, "Starting sync for %s", repo)
 
     try:
+        from datetime import datetime, timedelta, timezone
+
+        from gha_optimizer.config import config
         from gha_optimizer.ingestion.github_client import GithubClient
-        from gha_optimizer.server.db.session import SessionLocal
-        from gha_optimizer.server.db import crud
+        from gha_optimizer.ingestion.ingest import IngestOptions, RepoIngestor
+        from gha_optimizer.server.db.session import SessionLocal, init_db
 
-        client = GithubClient(token=token, repo=repo)
+        token = token or config.github.token
+        if not token:
+            return {"status": "blocked", "reason": "no_github_token", "repo": repo}
 
-        # Fetch workflow files
-        workflow_files = client.fetch_workflow_files()
-        _log("sync_repository", cid, "Found %d workflow files", len(workflow_files))
-
-        # Fetch recent runs
-        records = client.fetch_recent_runs(limit=100)
-        _log("sync_repository", cid, "Fetched %d run-job records", len(records))
-
-        # Store in database
+        init_db()
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
         db = SessionLocal()
         try:
-            for rec in records:
-                crud.insert_run(db, {
-                    "run_id": rec.run_id,
-                    "commit_sha": rec.commit_sha,
-                    "repo": repo,
-                    "job_id": rec.job_id,
-                    "conclusion": rec.conclusion,
-                    "duration_seconds": rec.duration_seconds,
-                    "cache_hit": rec.cache_hit,
-                    "author": rec.author,
-                    "branch": rec.branch,
-                    "runner_label": rec.runner_label,
-                    "files_changed": rec.files_changed,
-                    "loc_added": rec.loc_added,
-                    "loc_deleted": rec.loc_deleted,
-                    "timestamp": rec.timestamp,
-                })
+            counters = RepoIngestor(repo, GithubClient(token=token, repo=repo), db, IngestOptions(since=since)).run()
         finally:
             db.close()
-
-        return {
-            "status": "complete",
-            "correlation_id": cid,
-            "repo": repo,
-            "workflow_files": len(workflow_files),
-            "run_records": len(records),
-        }
+        return {"status": "complete", "correlation_id": cid, "repo": repo, "counters": counters}
 
     except Exception as exc:
         _err("sync_repository", cid, "Failed: %s", exc)
+        raise self.retry(exc=exc)
+
+
+@celery_app.task(
+    bind=True,
+    name="gha_optimizer.ingest_run",
+    max_retries=3,
+    default_retry_delay=30,
+    time_limit=900,
+)
+def ingest_run(self, repo: str, run_id: str, token: Optional[str] = None) -> Dict[str, Any]:
+    """Ingest a single completed workflow run (triggered by a ``workflow_run`` webhook)."""
+    cid = str(uuid.uuid4())[:8]
+    try:
+        from datetime import datetime, timezone
+
+        from gha_optimizer.config import config
+        from gha_optimizer.ingestion.github_client import GithubClient
+        from gha_optimizer.ingestion.ingest import IngestOptions, RepoIngestor
+        from gha_optimizer.server.db.session import SessionLocal, init_db
+
+        token = token or config.github.token
+        if not token:
+            return {"status": "blocked", "reason": "no_github_token", "repo": repo, "run_id": run_id}
+        init_db()
+        db = SessionLocal()
+        try:
+            ing = RepoIngestor(repo, GithubClient(token=token, repo=repo), db,
+                               IngestOptions(since=datetime.now(timezone.utc).replace(tzinfo=None)))
+            counters = ing.ingest_single_run(run_id)
+        finally:
+            db.close()
+        return {"status": "complete", "correlation_id": cid, "repo": repo, "run_id": run_id, "counters": counters}
+    except Exception as exc:
+        _err("ingest_run", cid, "Failed: %s", exc)
         raise self.retry(exc=exc)
 
 
@@ -192,7 +201,7 @@ def _handle_pull_request(cid: str, repo: str, payload: dict) -> dict:
 
 
 def _handle_workflow_run(cid: str, repo: str, payload: dict) -> dict:
-    """Handle workflow_run event: record execution results for feedback."""
+    """Handle workflow_run event: ingest the *real* run (jobs, timings, logs), never a placeholder row."""
     action = payload.get("action", "")
     run = payload.get("workflow_run", {})
 
@@ -200,38 +209,14 @@ def _handle_workflow_run(cid: str, repo: str, payload: dict) -> dict:
         return {"status": "ignored", "reason": f"action={action}"}
 
     run_id = str(run.get("id", ""))
-    conclusion = run.get("conclusion", "unknown")
-    head_sha = run.get("head_sha", "")
-
-    _log("process_webhook", cid, "Workflow run %s completed: %s", run_id, conclusion)
-
-    from gha_optimizer.server.db.session import SessionLocal
-    from gha_optimizer.server.db import crud
-
-    db = SessionLocal()
-    try:
-        crud.insert_run(db, {
-            "run_id": run_id,
-            "commit_sha": head_sha,
-            "repo": repo,
-            "job_id": run.get("name", "workflow"),
-            "conclusion": conclusion,
-            "duration_seconds": 0,
-            "cache_hit": False,
-            "author": run.get("actor", {}).get("login", "unknown"),
-            "branch": run.get("head_branch", "main"),
-            "runner_label": "ubuntu-latest",
-            "files_changed": [],
-            "timestamp": run.get("created_at"),
-        })
-    finally:
-        db.close()
-
+    _log("process_webhook", cid, "Workflow run %s completed: %s", run_id, run.get("conclusion"))
+    task = ingest_run.delay(repo, run_id)
     return {
         "status": "processed",
         "event_type": "workflow_run",
         "run_id": run_id,
-        "conclusion": conclusion,
+        "conclusion": run.get("conclusion"),
+        "ingest_task_id": task.id,
     }
 
 
@@ -324,67 +309,41 @@ def generate_dependency_graph(
 )
 def extract_features(self, repo: str, commit_sha: str) -> Dict[str, Any]:
     """
-    Extract ML features from the graph and commit data.
-    Builds a training frame from historical records.
+    Build the feature frame from the real ingested history of ``repo``
+    (strictly-prior historical features, per-commit graph features where computed).
     """
     cid = str(uuid.uuid4())[:8]
     _log("extract_features", cid, "Extracting features for %s@%s", repo, commit_sha[:8])
 
     try:
-        from gha_optimizer.server.db.session import SessionLocal
-        from gha_optimizer.server.db import crud
-        from gha_optimizer.ingestion.github_client import WorkflowRunRecord
+        from gha_optimizer.config import config
+        from gha_optimizer.features.dataset import build_dataset
+        from gha_optimizer.server.db.session import SessionLocal, init_db
 
+        init_db()
         db = SessionLocal()
         try:
-            recent = crud.get_recent_runs(db, repo=repo, limit=200)
+            train_df, info = build_dataset(db, repo)
         finally:
             db.close()
 
-        _log("extract_features", cid, "Found %d historical records", len(recent))
+        n_runs = int(train_df["run_id"].nunique()) if len(train_df) else 0
+        _log("extract_features", cid, "Found %d dataset rows from %d runs", len(train_df), n_runs)
 
-        if len(recent) < 5:
+        if n_runs < config.model.min_history_runs:
             return {
                 "status": "blocked",
                 "reason": "insufficient_data",
-                "record_count": len(recent),
+                "runs": n_runs,
+                "required_runs": config.model.min_history_runs,
             }
-
-        # Convert DB records to WorkflowRunRecords and build features
-        records = []
-        for rec in recent:
-            records.append(WorkflowRunRecord(
-                run_id=rec["run_id"],
-                commit_sha=rec.get("commit_sha", ""),
-                files_changed=rec.get("files_changed", []),
-                job_id=rec.get("job_id", "unknown"),
-                duration_seconds=rec.get("duration_seconds", 0.0),
-                conclusion=rec.get("conclusion", "unknown"),
-                cache_hit=bool(rec.get("cache_hit", False)),
-                author=rec.get("author", "unknown"),
-                timestamp=rec.get("timestamp", ""),
-                branch=rec.get("branch", "main"),
-                runner_label=rec.get("runner_label", "ubuntu-latest"),
-                loc_added=rec.get("loc_added", 0),
-                loc_deleted=rec.get("loc_deleted", 0),
-            ))
-
-        # Build a minimal graph for feature extraction
-        import networkx as nx
-        from gha_optimizer.features.feature_extraction import build_training_frame
-        graph = nx.DiGraph()
-        train_df = build_training_frame(graph, records)
-
-        _log("extract_features", cid,
-             "Built training frame: %d rows × %d cols",
-             len(train_df), train_df.shape[1])
 
         return {
             "status": "complete",
             "correlation_id": cid,
             "repo": repo,
             "commit_sha": commit_sha,
-            "records_used": len(recent),
+            "runs_used": n_runs,
             "feature_rows": len(train_df),
             "feature_columns": train_df.shape[1],
         }
@@ -405,23 +364,24 @@ def extract_features(self, repo: str, commit_sha: str) -> Dict[str, Any]:
 )
 def retrain_models(self, repo: str, force: bool = False) -> Dict[str, Any]:
     """
-    Retrain ML models using historical data from the database.
-    Checks for drift first, then fits cache-miss, failure, and duration models.
+    Retrain ML models on the real ingested dataset of ``repo``.
+    Checks for drift first, then fits cache-miss, failure and duration models; a model whose
+    labels are insufficient (e.g. no log-derived cache labels) is reported as not trained.
     """
     cid = str(uuid.uuid4())[:8]
     _log("retrain_models", cid, "Retraining models for %s (force=%s)", repo, force)
 
     try:
-        from gha_optimizer.server.db.session import SessionLocal
+        from gha_optimizer.server.db.session import SessionLocal, init_db
         from gha_optimizer.server.db import crud
         from gha_optimizer.feedback.drift_detector import DriftDetector
-        from gha_optimizer.ingestion.github_client import WorkflowRunRecord
-        from gha_optimizer.features.feature_extraction import build_training_frame
+        from gha_optimizer.features.dataset import build_dataset
         from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
         from gha_optimizer.models.failure_predictor import FailurePredictor
         from gha_optimizer.models.duration_estimator import DurationEstimator
         from gha_optimizer.config import config
 
+        init_db()
         db = SessionLocal()
         try:
             # Check drift first
@@ -437,81 +397,46 @@ def retrain_models(self, repo: str, force: bool = False) -> Dict[str, Any]:
                     "drift_report": drift_report.summary,
                 }
 
-            # Get training data
-            raw_records = crud.get_recent_runs(db, repo=repo, limit=500)
-            if len(raw_records) < 20:
-                _log("retrain_models", cid,
-                     "Insufficient training data (%d records, need 20+)", len(raw_records))
+            train_df, _info = build_dataset(db, repo)
+            n_runs = int(train_df["run_id"].nunique()) if len(train_df) else 0
+            if n_runs < config.model.min_history_runs:
+                _log("retrain_models", cid, "Insufficient training data (%d runs, need %d)",
+                     n_runs, config.model.min_history_runs)
                 return {
                     "status": "blocked",
                     "reason": "insufficient_data",
-                    "record_count": len(raw_records),
+                    "runs": n_runs,
+                    "required_runs": config.model.min_history_runs,
                 }
 
-            # Convert to WorkflowRunRecords
-            records = []
-            for rec in raw_records:
-                records.append(WorkflowRunRecord(
-                    run_id=rec["run_id"],
-                    commit_sha=rec.get("commit_sha", ""),
-                    files_changed=rec.get("files_changed", []),
-                    job_id=rec.get("job_id", "unknown"),
-                    duration_seconds=rec.get("duration_seconds", 0.0),
-                    conclusion=rec.get("conclusion", "unknown"),
-                    cache_hit=bool(rec.get("cache_hit", False)),
-                    author=rec.get("author", "unknown"),
-                    timestamp=rec.get("timestamp", ""),
-                    branch=rec.get("branch", "main"),
-                    runner_label=rec.get("runner_label", "ubuntu-latest"),
-                    loc_added=rec.get("loc_added", 0),
-                    loc_deleted=rec.get("loc_deleted", 0),
-                ))
+            _log("retrain_models", cid, "Retraining with %d rows from %d runs", len(train_df), n_runs)
 
-            _log("retrain_models", cid, "Retraining with %d records", len(records))
-
-            # Build training frame
-            import networkx as nx
-            graph = nx.DiGraph()
-            train_df = build_training_frame(graph, records)
-
-            # Train all three models
             model_dir = config.model.model_dir
             model_dir.mkdir(parents=True, exist_ok=True)
+            version = str(uuid.uuid4())[:8]
+            results: Dict[str, Any] = {}
+            for kind, model, fname in (
+                ("cache_miss", CacheMissPredictor(), "cache_miss.joblib"),
+                ("failure", FailurePredictor(), "failure.joblib"),
+                ("duration", DurationEstimator(), "duration.joblib"),
+            ):
+                try:
+                    metrics = model.fit(train_df)
+                except ValueError as exc:  # labels insufficient: report, do not fabricate
+                    results[kind] = {"status": "not_trained", "reason": str(exc)}
+                    continue
+                model.save(model_dir / fname)
+                crud.insert_model_version(db, kind, version, metrics, str(model_dir / fname), len(train_df))
+                results[kind] = {"status": "trained", "metrics": metrics}
 
-            cache_model = CacheMissPredictor()
-            cache_metrics = cache_model.fit(train_df)
-            cache_model.save(model_dir / "cache_miss.joblib")
-
-            failure_model = FailurePredictor()
-            failure_metrics = failure_model.fit(train_df)
-            failure_model.save(model_dir / "failure.joblib")
-
-            duration_model = DurationEstimator()
-            duration_metrics = duration_model.fit(train_df)
-            duration_model.save(model_dir / "duration.joblib")
-
-            _log("retrain_models", cid,
-                 "Retraining complete. Cache: %s, Failure: %s, Duration: %s",
-                 cache_metrics, failure_metrics, duration_metrics)
-
-            # Record model versions in DB
-            import uuid as _uuid
-            version = str(_uuid.uuid4())[:8]
-            crud.insert_model_version(db, "cache_miss", version, cache_metrics,
-                                      str(model_dir / "cache_miss.joblib"), len(train_df))
-            crud.insert_model_version(db, "failure", version, failure_metrics,
-                                      str(model_dir / "failure.joblib"), len(train_df))
-            crud.insert_model_version(db, "duration", version, duration_metrics,
-                                      str(model_dir / "duration.joblib"), len(train_df))
-
+            _log("retrain_models", cid, "Retraining complete: %s", {k: v["status"] for k, v in results.items()})
             return {
                 "status": "complete",
                 "correlation_id": cid,
-                "records_used": len(records),
+                "rows_used": len(train_df),
+                "runs_used": n_runs,
                 "drift_report": drift_report.summary,
-                "cache_metrics": cache_metrics,
-                "failure_metrics": failure_metrics,
-                "duration_metrics": duration_metrics,
+                "models": results,
                 "model_version": version,
             }
 

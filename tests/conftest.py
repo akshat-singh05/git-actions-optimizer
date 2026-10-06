@@ -17,6 +17,10 @@ from gha_optimizer.ingestion.workflow_parser import parse_workflow, WorkflowSpec
 from gha_optimizer.ingestion.github_client import WorkflowRunRecord
 
 
+# tests/fixtures holds data (a toy repo with its own test files, real log excerpts): never collect it
+collect_ignore_glob = ["fixtures/*"]
+
+
 # ─── Sample Workflow YAML ───────────────────────────────────────────
 
 SAMPLE_WORKFLOW_YAML = {
@@ -137,14 +141,14 @@ def sample_repo_root(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def synthetic_history() -> list[WorkflowRunRecord]:
-    """Generate a small synthetic history for testing."""
-    from examples.synthetic_history import generate_history
-    return generate_history(n_runs=30, seed=42)
+    """SYNTHETIC test input (seeded RNG) — wiring tests only, never a result."""
+    from tests.fixtures.synthetic_history import generate_synthetic_test_history
+    return generate_synthetic_test_history(n_runs=30, seed=42)
 
 
 @pytest.fixture
 def sample_history() -> list[WorkflowRunRecord]:
-    """Minimal history records for unit tests."""
+    """SYNTHETIC test input (seeded RNG) — wiring tests only, never a result."""
     records = []
     import random
     rng = random.Random(99)

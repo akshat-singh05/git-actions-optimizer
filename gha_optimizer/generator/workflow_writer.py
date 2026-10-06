@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import difflib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -107,7 +108,12 @@ def _yaml_dump_with_header(data: dict) -> str:
         "# Review carefully before merging — all changes are reversible.\n"
         "# ──────────────────────────────────────────────────────────────\n\n"
     )
+    # PyYAML (YAML 1.1) loads the workflow key `on:` as the boolean True; dumping it back would write
+    # `true:` and silently break the triggers of the proposed workflow.
+    data = {("on" if key is True else key): value for key, value in data.items()}
     body = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+    # PyYAML also quotes the string key 'on'; GitHub workflow files write it bare
+    body = re.sub(r"(?m)^'on':", "on:", body, count=1)
     return header + body
 
 
@@ -150,8 +156,8 @@ def explain_changes(plan: SchedulePlan) -> str:
         "",
         "### Summary",
         "",
-        f"| Metric | Baseline | Optimized | Savings |",
-        f"|--------|----------|-----------|---------|",
+        "| Metric | Baseline | Optimized | Savings |",
+        "|--------|----------|-----------|---------|",
         f"| ⏱ Wall-clock | {plan.baseline_wall_clock_seconds:.0f}s "
         f"| {plan.estimated_wall_clock_seconds:.0f}s "
         f"| {abs(plan.time_saved_pct):.1f}% {time_word} |",

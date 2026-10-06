@@ -15,13 +15,14 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional
 
 import networkx as nx
 
+from gha_optimizer.config import config
 from gha_optimizer.features.feature_extraction import (
     build_inference_frame,
     build_training_frame,
+    compute_history_stats,
 )
 from gha_optimizer.generator.workflow_writer import (
     explain_changes,
@@ -31,6 +32,7 @@ from gha_optimizer.generator.workflow_writer import (
 )
 from gha_optimizer.graph.dependency_graph import build_dependency_graph
 from gha_optimizer.ingestion.github_client import WorkflowRunRecord
+from gha_optimizer.ingestion.history import require_history
 from gha_optimizer.ingestion.workflow_parser import WorkflowSpec, parse_workflow
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
 from gha_optimizer.models.duration_estimator import DurationEstimator
@@ -66,6 +68,7 @@ def run_pipeline(
     alpha: float | None = None,
     beta: float | None = None,
     gamma: float | None = None,
+    workflow_repo_path: str | None = None,
 ) -> tuple[SchedulePlan, str]:
     """
     Run the full optimization pipeline end to end.
@@ -75,11 +78,16 @@ def run_pipeline(
     workflow_path : Path to the GitHub Actions workflow YAML.
     repo_root : Path to the repository root.
     tracked_files : List of source files to include in the graph.
-    history : Historical workflow run records for training.
+    history : **Real ingested** workflow run records for this workflow (see
+        :func:`gha_optimizer.ingestion.history.load_history`).  There is no synthetic
+        fallback: with too little history this raises
+        :class:`~gha_optimizer.ingestion.history.InsufficientHistoryError`.
     changed_files : Files changed in the current diff.
     out_path : Where to write the optimized workflow YAML.
     model_backend : ``"tabular"`` (default) or ``"gnn"``.
     alpha, beta, gamma : Scheduler objective weights (time, cost, energy).
+    workflow_repo_path : repo-relative path of the workflow (e.g. ``.github/workflows/ci.yml``),
+        used to select that workflow's records when ``history`` mixes several.
 
     Returns
     -------
@@ -97,6 +105,16 @@ def run_pipeline(
         trace_id, workflow.name,
         len(workflow.jobs),
         len(workflow.job_dag_edges()),
+    )
+
+    # Cold start: decline to predict rather than invent numbers.
+    if workflow_repo_path:
+        history = [r for r in history if r.workflow_path in (None, workflow_repo_path)]
+    require_history(
+        history,
+        workflow.jobs.keys(),
+        min_runs=config.model.min_history_runs,
+        need_cache_labels=config.model.min_cache_labels,
     )
 
     # ──────────────────────────────────────────────────────────────
@@ -132,27 +150,8 @@ def run_pipeline(
     logger.info("[%s] Failure predictor: %s", trace_id, failure_metrics)
     logger.info("[%s] Duration estimator: %s", trace_id, duration_metrics)
 
-    # Build per-job history stats for the inference frame
-    history_stats = {}
-    for job_id, grp in train_df.groupby("job_id"):
-        fail_list = grp["label_failed"].tolist()
-        cache_list = grp["label_cache_hit"].tolist()
-        history_stats[job_id] = {
-            "failure_rate": grp["historical_failure_rate"].iloc[-1]
-            if len(grp) > 0
-            else 0.1,
-            "mean_duration": grp["historical_mean_duration"].iloc[-1]
-            if len(grp) > 0
-            else 60.0,
-            "cache_miss_rate": 1 - (sum(cache_list) / len(cache_list))
-            if cache_list
-            else 0.15,
-            "recent_failure_streak": _streak(fail_list, 1),
-            "recent_success_streak": _streak(fail_list, 0),
-            "cache_key_stability": (sum(cache_list) / len(cache_list))
-            if cache_list
-            else 0.85,
-        }
+    # Per-job statistics over the FULL history (== strictly prior to the run being scored)
+    history_stats, _ = compute_history_stats(history, workflow_path=workflow_repo_path)
 
     infer_df = build_inference_frame(
         simple_graph, list(workflow.jobs.keys()), changed_files, history_stats
@@ -169,19 +168,26 @@ def run_pipeline(
     for job_id in workflow.jobs:
         predictions.append(PredictionResult(
             job_id=job_id,
-            cache_miss_probability=cache_miss_prob.get(job_id, 0.0),
-            failure_probability=failure_prob.get(job_id, 0.0),
-            predicted_duration_seconds=duration_pred.get(job_id, 60.0),
+            cache_miss_probability=cache_miss_prob[job_id],
+            failure_probability=failure_prob[job_id],
+            predicted_duration_seconds=duration_pred[job_id],
             status=PredictionStatus.PREDICTED,
             model_version=trace_id,
         ))
 
-    # Optionally override cache-miss with GNN predictions
+    # Optionally override cache-miss with GNN predictions.  The GNN path degrades to
+    # tabular on any import/training failure; that outcome is reported, never hidden.
     gnn_metrics = None
+    gnn_note = None
     if model_backend == "gnn":
         gnn_metrics = _try_gnn_prediction(
             simple_graph, history, changed_files, cache_miss_prob
         )
+        if gnn_metrics is None:
+            gnn_note = (
+                "GNN backend was requested but did NOT run (torch/torch-geometric unavailable or "
+                "training failed) — all cache-miss probabilities above are TABULAR."
+            )
 
     # ──────────────────────────────────────────────────────────────
     # Layer 4 — Optimization / Scheduling
@@ -208,16 +214,35 @@ def run_pipeline(
     # Generate diff if original file exists
     diff = generate_diff(workflow_path, optimized_yaml)
 
-    # Model metrics summary
+    # Data provenance + model metrics summary (all figures computed from the ingested history)
+    n_runs = len({r.run_id for r in history})
+    stamps = sorted(r.timestamp for r in history if r.timestamp)
+    with_graph = sum(1 for r in history if r.graph_features is not None)
     model_lines = [
         "",
-        "### Model validation metrics",
+        "### Training data (real ingested history)",
+        f"- {len(history)} (run, job) rows from {n_runs} runs, "
+        f"{stamps[0] if stamps else 'n/a'} -> {stamps[-1] if stamps else 'n/a'}",
+        f"- rows with per-commit graph features: {with_graph}/{len(history)}"
+        + ("" if with_graph else "  (structural features are NaN: run `gha-optimizer build-dataset` first)"),
+        "- improvement figures in this report are ESTIMATED from predicted durations; they are not measured executions",
+        "",
+        "### Model validation metrics (temporal holdout)",
         f"- Cache-miss predictor: {cache_metrics}",
         f"- Failure predictor: {failure_metrics}",
         f"- Duration estimator: {duration_metrics}",
     ]
     if gnn_metrics:
         model_lines.append(f"- GNN cache predictor: {gnn_metrics}")
+    if gnn_note:
+        model_lines.append(f"- {gnn_note}")
+    labelled_jobs = {r.job_id for r in history if r.cache_hit is not None}
+    unsupported = [j for j in workflow.jobs if j not in labelled_jobs]
+    if unsupported:
+        model_lines.append(
+            f"- P(cache miss) for {unsupported} is NOT backed by any log-derived label for that job "
+            "(the model extrapolates its overall base rate); it is informational only and is not used by the scheduler"
+        )
 
     # Feature importance
     model_lines.append("")
@@ -239,23 +264,13 @@ def run_pipeline(
         commit_sha="local",
         predictions=predictions,
     )
+    logger.debug("[%s] decision trace: %s", trace_id, trace.model_dump_json())
     logger.info(
-        "[%s] Pipeline complete. Time saved: %.1f%%, Cost saved: %.1f%%",
+        "[%s] Pipeline complete. Estimated time saved: %.1f%%, estimated cost saved: %.1f%%",
         trace_id, plan.time_saved_pct, plan.cost_saved_pct,
     )
 
     return plan, full_explanation
-
-
-def _streak(values: list, target) -> int:
-    """Count consecutive trailing occurrences of ``target``."""
-    count = 0
-    for v in reversed(values):
-        if v == target:
-            count += 1
-        else:
-            break
-    return count
 
 
 def _try_gnn_prediction(
@@ -292,8 +307,12 @@ def _try_gnn_prediction(
             graphs.append(graph)
             changed_list.append(run_records[0].files_changed)
             labels = {
-                rec.job_id: int(not rec.cache_hit) for rec in run_records
+                rec.job_id: int(not rec.cache_hit) for rec in run_records if rec.cache_hit is not None
             }
+            if not labels:  # no log-derived labels in this run: it cannot supervise the GNN
+                graphs.pop()
+                changed_list.pop()
+                continue
             labels_list.append(labels)
 
         gnn = GNNCachePredictor(epochs=30, hidden_channels=32, num_layers=2)

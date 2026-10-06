@@ -1,32 +1,38 @@
 """
 Model B — Job Failure Predictor.
 
-Upgraded from the baseline logistic-regression to Gradient Boosted Trees,
-with cross-validation, ROC-AUC, sequence-aware features (recent streaks),
-and threshold calibration.
+Gradient-boosted trees (NaN-capable) over structural, historical and temporal
+features.  Failures are the rare class in real CI history (1–13% of job rows in
+the ingested repositories), so evaluation is a **temporal holdout** reported as
+PR-AUC *against the test-period prevalence*, plus Brier score vs the base-rate
+predictor.  The decision threshold is chosen on a validation tail of the
+*training* period — never on the test set.
 
-A production upgrade would further replace this with a sequence model
-(LSTM / small Transformer) consuming each job's ordered execution history
-to capture temporal patterns that a tabular model can only approximate.
+The label is ``label_failed``: 1 = failure/timed-out, 0 = success; cancelled and
+skipped jobs carry no label and are excluded (counted in the metrics).
+
+A production upgrade would replace this with a sequence model over each job's
+ordered execution history.
 """
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import joblib
-import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.model_selection import StratifiedKFold, cross_val_predict, train_test_split
-from sklearn.metrics import (
-    f1_score,
-    precision_recall_curve,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
+from sklearn.base import clone
+from sklearn.ensemble import HistGradientBoostingClassifier
 
 from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
+from gha_optimizer.models.evaluation import (
+    binary_report,
+    chronological,
+    permutation_importance_dict,
+    pick_threshold,
+    temporal_split,
+    usable_features,
+)
 
 try:
     from xgboost import XGBClassifier
@@ -45,132 +51,99 @@ class FailurePredictor:
         max_depth: int = 3,
         learning_rate: float = 0.08,
         random_state: int = 13,
+        test_fraction: float | None = None,
     ):
-        self.random_state = random_state
+        from gha_optimizer.config import config
 
-        use_xgb = (backend == "auto" and _HAS_XGBOOST) or backend == "xgboost"
+        self.random_state = random_state
+        self.test_fraction = test_fraction if test_fraction is not None else config.model.temporal_test_fraction
+
         if backend == "xgboost" and not _HAS_XGBOOST:
             raise ImportError("XGBoost requested but not installed.")
-
+        use_xgb = _HAS_XGBOOST if backend == "auto" else backend == "xgboost"
         if use_xgb:
-            self.model = XGBClassifier(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                learning_rate=learning_rate,
-                random_state=random_state,
-                scale_pos_weight=3.0,  # address class imbalance (failures are rarer)
-                eval_metric="logloss",
-                use_label_encoder=False,
+            self.model: Any = XGBClassifier(
+                n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
+                random_state=random_state, eval_metric="logloss",
             )
             self._backend_name = "xgboost"
         else:
-            self.model = GradientBoostingClassifier(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                learning_rate=learning_rate,
+            self.model = HistGradientBoostingClassifier(
+                max_iter=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
                 random_state=random_state,
             )
-            self._backend_name = "sklearn"
+            self._backend_name = "sklearn-hist"
 
         self._fitted = False
         self._optimal_threshold: float = 0.5
+        self._features: list[str] = list(FEATURE_COLUMNS)
         self._feature_importance: dict[str, float] = {}
 
-    def fit(self, df: pd.DataFrame, cv: bool = True) -> dict:
-        """
-        Train the model and compute validation metrics.
-
-        Returns dict with precision, recall, f1, roc_auc, and the
-        optimal probability threshold.
-        """
-        X = df[FEATURE_COLUMNS].copy()
-        y = df["label_failed"]
-
-        if cv and len(y) >= 20 and y.nunique() > 1:
-            metrics = self._fit_with_cv(X, y)
-        else:
-            metrics = self._fit_holdout(X, y)
-
-        if hasattr(self.model, "feature_importances_"):
-            self._feature_importance = dict(
-                zip(FEATURE_COLUMNS, self.model.feature_importances_)
+    def fit(self, df: pd.DataFrame) -> dict:
+        """Train on ``label_failed``; return temporal-holdout metrics."""
+        d = chronological(df).dropna(subset=["label_failed"])
+        y_all = d["label_failed"].astype(int)
+        metrics: dict[str, Any] = {
+            "backend": self._backend_name,
+            "n_rows_total": int(len(df)),
+            "n_rows_labelled": int(len(d)),
+            "n_rows_excluded_null_label": int(len(df) - len(d)),
+        }
+        if len(d) == 0 or y_all.nunique() < 2:
+            raise ValueError(
+                f"failure model needs both outcomes in the labelled history "
+                f"(labelled={len(d)}, positives={int(y_all.sum()) if len(d) else 0})"
             )
+        metrics["failure_rate_all_labelled"] = round(float(y_all.mean()), 4)
+        features = usable_features(d, FEATURE_COLUMNS)
+        metrics["features_dropped_all_nan"] = [c for c in FEATURE_COLUMNS if c not in features]
 
-        return metrics
+        train, test, info = temporal_split(d, self.test_fraction)
+        y_train = train["label_failed"].astype(int)
+        importance: dict[str, float] = {}
+        if len(test) and y_train.nunique() == 2:
+            # threshold from a validation tail of the training period
+            inner_train, inner_val, _ = temporal_split(train, 0.25)
+            threshold, how = 0.5, "default 0.5 (training period too short for a validation tail)"
+            if len(inner_val) and inner_train["label_failed"].nunique() == 2:
+                inner_feats = usable_features(inner_train, FEATURE_COLUMNS)
+                m_val = clone(self.model).fit(inner_train[inner_feats].astype(float), inner_train["label_failed"].astype(int))
+                p_val = m_val.predict_proba(inner_val[inner_feats].astype(float))[:, 1]
+                threshold, how = pick_threshold(inner_val["label_failed"].astype(int), p_val)
+            self._optimal_threshold = threshold
 
-    def _fit_with_cv(self, X: pd.DataFrame, y: pd.Series) -> dict:
-        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
+            train_feats = usable_features(train, FEATURE_COLUMNS)
+            holdout_model = clone(self.model).fit(train[train_feats].astype(float), y_train)
+            X_test = test[train_feats].astype(float)
+            y_test = test["label_failed"].astype(int)
+            prob = holdout_model.predict_proba(X_test)[:, 1]
+            metrics["validation"] = f"temporal holdout (last {int(self.test_fraction * 100)}% of runs)"
+            metrics.update(info)
+            metrics["failure_rate_train"] = round(float(y_train.mean()), 4)
+            metrics["threshold_selection"] = how
+            metrics.update(binary_report(y_test, prob, threshold))
+            importance = permutation_importance_dict(holdout_model, X_test, y_test, "neg_log_loss", self.random_state)
+        else:
+            metrics["validation"] = "none: no temporal holdout possible (too few runs or one outcome in the training period)"
 
-        probs = cross_val_predict(
-            self.model, X, y, cv=skf, method="predict_proba"
-        )[:, 1]
-
-        # Find optimal threshold via F1 maximization on CV predictions
-        self._optimal_threshold = self._find_optimal_threshold(y, probs)
-        preds = (probs >= self._optimal_threshold).astype(int)
-
-        # Refit on full data
-        self.model.fit(X, y)
+        self.model.fit(d[features].astype(float), y_all)  # production fit on all labelled history
+        self._features = features
         self._fitted = True
-
-        metrics = {
-            "backend": self._backend_name,
-            "validation": "5-fold CV",
-            "precision": round(precision_score(y, preds, zero_division=0), 4),
-            "recall": round(recall_score(y, preds, zero_division=0), 4),
-            "f1": round(f1_score(y, preds, zero_division=0), 4),
-            "optimal_threshold": round(self._optimal_threshold, 4),
-        }
-        if y.nunique() > 1:
-            metrics["roc_auc"] = round(roc_auc_score(y, probs), 4)
+        if hasattr(self.model, "feature_importances_"):
+            importance = dict(zip(features, self.model.feature_importances_))
+        self._feature_importance = importance
         return metrics
-
-    def _fit_holdout(self, X: pd.DataFrame, y: pd.Series) -> dict:
-        stratify = y if y.nunique() > 1 else None
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.25, random_state=self.random_state, stratify=stratify
-        )
-        self.model.fit(X_train, y_train)
-        self._fitted = True
-
-        probs = self.model.predict_proba(X_test)[:, 1]
-        self._optimal_threshold = self._find_optimal_threshold(y_test, probs)
-        preds = (probs >= self._optimal_threshold).astype(int)
-
-        metrics = {
-            "backend": self._backend_name,
-            "validation": "holdout 75/25",
-            "precision": round(precision_score(y_test, preds, zero_division=0), 4),
-            "recall": round(recall_score(y_test, preds, zero_division=0), 4),
-            "f1": round(f1_score(y_test, preds, zero_division=0), 4),
-            "optimal_threshold": round(self._optimal_threshold, 4),
-        }
-        if y_test.nunique() > 1:
-            metrics["roc_auc"] = round(roc_auc_score(y_test, probs), 4)
-        return metrics
-
-    @staticmethod
-    def _find_optimal_threshold(y_true: pd.Series, y_proba: np.ndarray) -> float:
-        """Pick the probability threshold maximizing F1."""
-        if y_true.nunique() <= 1:
-            return 0.5
-        precision, recall, thresholds = precision_recall_curve(y_true, y_proba)
-        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
-        best_idx = f1_scores.argmax()
-        if best_idx < len(thresholds):
-            return float(thresholds[best_idx])
-        return 0.5
 
     def predict_proba(self, df: pd.DataFrame) -> pd.Series:
         """Return P(failure) per row."""
         if not self._fitted:
             raise RuntimeError("Call fit() before predict_proba().")
         return pd.Series(
-            self.model.predict_proba(df[FEATURE_COLUMNS])[:, 1], index=df.index
+            self.model.predict_proba(df[self._features].astype(float))[:, 1], index=df.index
         )
 
     def predict(self, df: pd.DataFrame) -> pd.Series:
-        """Return binary failure predictions using the optimal threshold."""
+        """Binary failure predictions at the validation-selected threshold."""
         probs = self.predict_proba(df)
         return (probs >= self._optimal_threshold).astype(int)
 
@@ -182,17 +155,15 @@ class FailurePredictor:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
-            {
-                "model": self.model,
-                "backend": self._backend_name,
-                "threshold": self._optimal_threshold,
-            },
+            {"model": self.model, "backend": self._backend_name, "threshold": self._optimal_threshold,
+             "features": self._features},
             path,
         )
 
     def load(self, path: str | Path) -> None:
         data = joblib.load(path)
         self.model = data["model"]
-        self._backend_name = data.get("backend", "sklearn")
+        self._backend_name = data.get("backend", "sklearn-hist")
         self._optimal_threshold = data.get("threshold", 0.5)
+        self._features = data.get("features", list(FEATURE_COLUMNS))
         self._fitted = True

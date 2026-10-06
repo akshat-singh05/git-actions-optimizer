@@ -246,9 +246,16 @@ def _parse_concurrency(body: Any) -> dict[str, Any] | None:
 def parse_workflow(path: str | Path) -> WorkflowSpec:
     """Parse a workflow YAML file into a normalized ``WorkflowSpec``."""
     path = Path(path)
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return parse_workflow_text(path.read_text(encoding="utf-8"), default_name=path.stem)
 
-    name = raw.get("name", path.stem)
+
+def parse_workflow_text(text: str, default_name: str = "workflow") -> WorkflowSpec:
+    """Parse workflow YAML *text* (e.g. a blob read from git at a given commit)."""
+    raw = yaml.safe_load(text)
+    if not isinstance(raw, dict):
+        raise ValueError("workflow YAML is not a mapping")
+
+    name = raw.get("name") or default_name
 
     # --- Triggers ---
     on_block = raw.get("on", raw.get(True, {}))  # YAML parses `on:` as True

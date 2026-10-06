@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from examples.synthetic_history import generate_history
+from tests.fixtures.synthetic_history import generate_synthetic_test_history
 from gha_optimizer.features.feature_extraction import (
     FEATURE_COLUMNS,
     build_inference_frame,
@@ -14,8 +14,8 @@ from gha_optimizer.features.feature_extraction import (
 from gha_optimizer.graph.dependency_graph import build_dependency_graph
 from gha_optimizer.ingestion.workflow_parser import parse_workflow
 
-FIXTURE_WORKFLOW = Path(__file__).resolve().parent.parent / "examples" / "sample_workflow.yml"
-FIXTURE_REPO = Path(__file__).resolve().parent.parent / "examples" / "sample_repo"
+FIXTURE_WORKFLOW = Path(__file__).resolve().parent / "fixtures" / "sample_workflow.yml"
+FIXTURE_REPO = Path(__file__).resolve().parent / "fixtures" / "sample_repo"
 
 TRACKED_FILES = [
     "src/app.py", "src/utils.py", "src/api/routes.py",
@@ -27,7 +27,7 @@ TRACKED_FILES = [
 def _setup():
     workflow = parse_workflow(FIXTURE_WORKFLOW)
     graph = build_dependency_graph(workflow, FIXTURE_REPO, TRACKED_FILES)
-    history = generate_history(n_runs=30)
+    history = generate_synthetic_test_history(n_runs=30)
     return graph, history, workflow
 
 

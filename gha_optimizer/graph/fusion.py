@@ -14,13 +14,10 @@ from __future__ import annotations
 import fnmatch
 import logging
 import re
-from datetime import datetime
-from typing import Dict, List, Optional, Set
 
 import networkx as nx
 
 from gha_optimizer.graph.models import (
-    EdgeMetadata,
     EdgeType,
     NodeType,
     ProvenanceRecord,
@@ -102,10 +99,6 @@ class GraphFusion:
             (r"gradle\s+test", "gradle"),
         ]
 
-        job_nodes = {
-            n: d for n, d in g.nodes(data=True)
-            if d.get("node_type") == NodeType.WORKFLOW_JOB.value
-        }
         step_nodes = {
             n: d for n, d in g.nodes(data=True)
             if d.get("node_type") == NodeType.WORKFLOW_STEP.value

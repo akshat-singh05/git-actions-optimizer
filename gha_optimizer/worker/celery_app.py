@@ -1,4 +1,3 @@
-import os
 from celery import Celery
 from gha_optimizer.config import config
 

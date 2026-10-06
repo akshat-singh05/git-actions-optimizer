@@ -200,7 +200,6 @@ def create_training_batch(
     the set of changed files + the observed cache-hit/miss labels.
     """
     _check_torch()
-    from torch_geometric.data import Batch
 
     data_list = []
     for g, changed, labels in zip(graphs, changed_files_list, job_labels_list):
