@@ -23,6 +23,7 @@ from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
 
+from gha_optimizer.graph.dependency_graph import GRAPH_FEATURE_VERSION
 from gha_optimizer.ingestion.github_client import WorkflowRunRecord
 from gha_optimizer.server.db import models as m
 
@@ -123,7 +124,9 @@ def load_history(
     gf: dict[tuple[str, str], m.RunGraphFeatures] = {}
     for i in range(0, len(run_ids), 500):
         chunk = run_ids[i:i + 500]
-        for row in db.query(m.RunGraphFeatures).filter(m.RunGraphFeatures.run_id.in_(chunk)).all():
+        for row in db.query(m.RunGraphFeatures).filter(
+            m.RunGraphFeatures.run_id.in_(chunk), m.RunGraphFeatures.feature_version == GRAPH_FEATURE_VERSION
+        ).all():  # rows of an older feature definition are unknown, not "current but zero"
             gf[(row.run_id, row.job_key)] = row
 
     records: list[WorkflowRunRecord] = []

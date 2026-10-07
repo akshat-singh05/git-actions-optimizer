@@ -204,7 +204,7 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
     try:
         from pathlib import Path
         from gha_optimizer.ingestion.history import InsufficientHistoryError, load_history
-        from gha_optimizer.ingestion.workspace import tracked_source_files, workflow_repo_path
+        from gha_optimizer.ingestion.workspace import tracked_files, workflow_repo_path
         from gha_optimizer.pipeline import run_pipeline
         from gha_optimizer.server.db import crud
 
@@ -227,7 +227,7 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
             plan, explanation = run_pipeline(
                 workflow_path=workflow_path,
                 repo_root=repo_root,
-                tracked_files=tracked_source_files(repo_root) or request.changed_files,
+                tracked_files=tracked_files(repo_root) or request.changed_files,
                 history=history,
                 changed_files=request.changed_files,
                 out_path=out_path,

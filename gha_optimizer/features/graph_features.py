@@ -33,11 +33,9 @@ from sqlalchemy.orm import Session
 
 from gha_optimizer.graph.builder import GraphBuilder
 from gha_optimizer.graph.dependency_graph import (
-    any_changed_file_in_graph,
+    GRAPH_FEATURE_VERSION,
     build_dependency_graph,
-    cache_key_touched_for_job,
-    graph_distances_from_files,
-    impacted_jobs_for_diff,
+    job_graph_features,
 )
 from gha_optimizer.ingestion.mirror import RepoMirror
 from gha_optimizer.ingestion.workflow_parser import parse_workflow_text
@@ -47,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go"}
 EXCLUDED_DIRS = ("node_modules/", "vendor/", "third_party/", "dist/", "build/", ".git/", "__pycache__/")
+NO_NODE_DIRS = ("node_modules/", ".git/")  # not even a path-only File node
 MAX_PATH_LEN = 240  # Windows MAX_PATH guard for the temporary materialisation of a blob
 MAX_SOURCE_BYTES = 1_000_000
 
@@ -142,7 +141,12 @@ class GraphFeatureComputer:
 
     def source_graph(self, commit: str) -> nx.MultiDiGraph:
         graph = nx.MultiDiGraph()
-        files = [(p, b) for p, b in self.mirror.list_tree(commit) if _wanted(p)]
+        tree = self.mirror.list_tree(commit)
+        files = [(p, b) for p, b in tree if _wanted(p)]
+        # every other file is a path-only node, so a change to docs / a lock file / a Makefile can be
+        # traced (or shown to reach no job) instead of being "not in the graph"
+        self._builder.graph = graph
+        self._builder.add_file_nodes([p for p, _ in tree if not any(f"/{d}" in "/" + p for d in NO_NODE_DIRS)])
         reader = None
         try:
             for path, blob in files:
@@ -172,22 +176,24 @@ class GraphFeatureComputer:
         except Exception as exc:
             logger.warning("workflow YAML at %s not parseable: %s", commit[:8], exc)
             return None
-        return build_dependency_graph(workflow, self._tmp, source_graph=self.source_graph(commit))
+
+        def read_file(path: str) -> str | None:  # local reusable workflows / composite actions, at this commit
+            got = self.mirror.read_file(commit, path)
+            return got[1].decode("utf-8", "replace") if got else None
+
+        return build_dependency_graph(workflow, self._tmp, source_graph=self.source_graph(commit), read_file=read_file)
 
     @staticmethod
     def features(g: nx.MultiDiGraph, changed_files: list[str], job_keys: list[str]) -> dict[str, dict[str, float]]:
-        impacted = impacted_jobs_for_diff(g, changed_files)
-        dists = graph_distances_from_files(g, changed_files, job_keys)
-        in_graph = float(any_changed_file_in_graph(g, changed_files))
-        return {
-            j: {
-                "job_structurally_impacted": float(j in impacted),
-                "cache_key_touched": float(cache_key_touched_for_job(g, changed_files, j)),
-                "dep_graph_distance": dists.get(j, -1.0),
-                "any_changed_file_in_graph": in_graph,
-            }
-            for j in job_keys
-        }
+        return job_graph_features(g, changed_files, job_keys)
+
+
+def _db_int(x: float) -> int | None:
+    return None if x != x else int(x)  # NaN -> NULL (unknown)
+
+
+def _db_float(x: float) -> float | None:
+    return None if x != x else float(x)
 
 
 def compute_repo_graph_features(
@@ -205,7 +211,7 @@ def compute_repo_graph_features(
     if that fails the run simply has no graph features (they stay NULL downstream).
     """
     counters = {"runs_total": 0, "runs_computed": 0, "runs_skipped_existing": 0, "runs_no_commit": 0,
-                "runs_no_workflow": 0, "rows_written": 0}
+                "runs_no_workflow": 0, "rows_written": 0, "rows_recomputed": 0}
     q = db.query(m.WorkflowRun).filter(
         m.WorkflowRun.repo == repo, m.WorkflowRun.jobs_fetched_at.isnot(None), m.WorkflowRun.diff_source.isnot(None)
     )
@@ -221,7 +227,8 @@ def compute_repo_graph_features(
         for i, run in enumerate(runs, 1):
             keys = sorted({k for (k,) in db.query(m.WorkflowJob.job_key).filter(
                 m.WorkflowJob.run_id == run.run_id, m.WorkflowJob.job_key.isnot(None)).distinct()})
-            have = {k for (k,) in db.query(m.RunGraphFeatures.job_key).filter_by(run_id=run.run_id)}
+            have = {k for (k,) in db.query(m.RunGraphFeatures.job_key).filter_by(
+                run_id=run.run_id, feature_version=GRAPH_FEATURE_VERSION)}
             todo = [k for k in keys if k not in have]
             if not todo:
                 counters["runs_skipped_existing"] += 1
@@ -246,13 +253,19 @@ def compute_repo_graph_features(
             files = [f for (f,) in db.query(m.RunChangedFile.filename).filter_by(run_id=run.run_id)]
             feats = computer.features(g, files, todo)
             now = datetime.now(timezone.utc).replace(tzinfo=None)
+            stale = db.query(m.RunGraphFeatures).filter(
+                m.RunGraphFeatures.run_id == run.run_id, m.RunGraphFeatures.job_key.in_(todo),
+                m.RunGraphFeatures.feature_version != GRAPH_FEATURE_VERSION)
+            counters["rows_recomputed"] += stale.delete(synchronize_session=False)
             for k, f in feats.items():
                 db.add(m.RunGraphFeatures(
                     run_id=run.run_id, job_key=k,
-                    job_structurally_impacted=int(f["job_structurally_impacted"]),
-                    cache_key_touched=int(f["cache_key_touched"]),
-                    dep_graph_distance=f["dep_graph_distance"],
-                    any_changed_file_in_graph=int(f["any_changed_file_in_graph"]),
+                    job_structurally_impacted=_db_int(f["job_structurally_impacted"]),
+                    cache_key_touched=_db_int(f["cache_key_touched"]),
+                    dep_graph_distance=_db_float(f["dep_graph_distance"]),
+                    any_changed_file_in_graph=_db_int(f["any_changed_file_in_graph"]),
+                    job_has_file_links=_db_int(f["job_has_file_links"]),
+                    feature_version=GRAPH_FEATURE_VERSION,
                     graph_nodes=g.number_of_nodes(), graph_edges=g.number_of_edges(), computed_at=now,
                 ))
                 counters["rows_written"] += 1

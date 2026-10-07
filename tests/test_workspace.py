@@ -17,7 +17,7 @@ from gha_optimizer.ingestion.ingest import IngestOptions, RepoIngestor
 from gha_optimizer.ingestion.workspace import (
     default_repo_root,
     prepare_repo_snapshot,
-    tracked_source_files,
+    tracked_files,
     workflow_repo_path,
 )
 from gha_optimizer.server.db.session import Base
@@ -58,7 +58,8 @@ def test_snapshot_exports_the_tree_and_carries_real_diffs(env):
     db, mirror_root, snap_root = env
     snap = prepare_repo_snapshot(db, "o/r", snapshot_root=snap_root, mirror_root=mirror_root)
     assert snap.workflow_repo_path == ".github/workflows/ci.yml" and snap.workflow_path.exists()
-    assert snap.tracked_files == ["src/a.py"]                              # README.md is not a parseable source file
+    assert snap.source_files == ["src/a.py"]                               # README.md is not a parseable source file
+    assert "README.md" in snap.tracked_files and "src/a.py" in snap.tracked_files   # but it is a File node of the graph
     assert (snap.root / "src" / "a.py").read_text(encoding="utf-8").startswith("def f")
     assert snap.changed_files == ["requirements.txt", "src/a.py"]          # real diff rows of the newest run (PR compare)
     assert snap.alt_changed_files == ["src/a.py"]                          # previous, different run (commit diff)
@@ -83,4 +84,4 @@ def test_workspace_path_helpers(tmp_path):
     assert workflow_repo_path(wf, root, "custom/path.yml") == "custom/path.yml"
     (root / "m.py").write_text("x = 1\n", encoding="utf-8")
     (root / "notes.txt").write_text("x\n", encoding="utf-8")
-    assert tracked_source_files(Path(root)) == ["m.py"]
+    assert sorted(tracked_files(Path(root))) == [".github/workflows/ci.yml", "m.py", "notes.txt"]  # every file, not only sources

@@ -37,6 +37,72 @@ def _fmt(ts: Any) -> str:
     return str(ts)[:19].replace("T", " ") + " UTC" if ts is not None else "n/a"
 
 
+def graph_quality(db: Session, repo: str) -> dict[str, Any]:
+    """Coverage of the stored (current-version) graph features and their association with whether the
+    job was actually executed or skipped.  Everything is counted from ``run_graph_features`` and
+    ``workflow_jobs``; nothing is estimated."""
+    from gha_optimizer.graph.dependency_graph import GRAPH_FEATURE_VERSION
+
+    gf, runs, jobs = m.RunGraphFeatures, m.WorkflowRun, m.WorkflowJob
+    rows = (
+        db.query(gf).join(runs, runs.run_id == gf.run_id)
+        .filter(runs.repo == repo, gf.feature_version == GRAPH_FEATURE_VERSION).all()
+    )
+    stale = (
+        db.query(func.count(gf.id)).join(runs, runs.run_id == gf.run_id)
+        .filter(runs.repo == repo, gf.feature_version != GRAPH_FEATURE_VERSION).scalar() or 0
+    )
+    conclusions: dict[tuple[str, str], list[str | None]] = {}
+    for run_id, key, concl in (
+        db.query(jobs.run_id, jobs.job_key, jobs.conclusion).join(runs, runs.run_id == jobs.run_id)
+        .filter(runs.repo == repo, jobs.job_key.isnot(None)).all()
+    ):
+        conclusions.setdefault((run_id, key), []).append(concl)
+
+    q: dict[str, Any] = {"rows": len(rows), "stale_rows": stale}
+    q["no_file_in_graph"] = sum(1 for r in rows if r.any_changed_file_in_graph == 0)
+    q["with_file_links"] = sum(1 for r in rows if r.job_has_file_links == 1)
+    q["impacted_1"] = sum(1 for r in rows if r.job_structurally_impacted == 1)
+    q["impacted_0"] = sum(1 for r in rows if r.job_structurally_impacted == 0)
+    q["impacted_unknown"] = sum(1 for r in rows if r.job_structurally_impacted is None)
+    q["touched_1"] = sum(1 for r in rows if r.cache_key_touched == 1)
+    q["touched_0"] = sum(1 for r in rows if r.cache_key_touched == 0)
+    q["touched_unknown"] = sum(1 for r in rows if r.cache_key_touched is None)
+    q["distinct_distance"] = len({r.dep_graph_distance for r in rows if r.dep_graph_distance is not None})
+
+    # executed vs skipped: a (run, job key) is skipped when every matrix cell was skipped
+    def outcome(r: Any) -> str | None:
+        cs = conclusions.get((r.run_id, r.job_key)) or []
+        if not cs:
+            return None
+        return "skipped" if all(c == "skipped" for c in cs) else "executed"
+
+    labelled = [(r, outcome(r)) for r in rows if r.job_structurally_impacted is not None]
+    labelled = [(r, o) for r, o in labelled if o is not None]
+    gated_keys = {
+        key for key in {r.job_key for r, _ in labelled}
+        if {o for r, o in labelled if r.job_key == key} == {"skipped", "executed"}
+    }
+
+    def table(subset: list[tuple[Any, str]]) -> dict[str, Any]:
+        t = {(i, o): 0 for i in (0, 1) for o in ("skipped", "executed")}
+        for r, o in subset:
+            t[(int(r.job_structurally_impacted), o)] += 1
+        out: dict[str, Any] = {f"i{i}_{o}": n for (i, o), n in t.items()}
+        try:
+            from scipy.stats import fisher_exact
+            out["fisher_p"] = float(fisher_exact([[t[(1, "skipped")], t[(1, "executed")]],
+                                                  [t[(0, "skipped")], t[(0, "executed")]]])[1]) if subset else None
+        except Exception:  # scipy missing or degenerate table
+            out["fisher_p"] = None
+        return out
+
+    q["assoc_all"] = table(labelled)
+    q["assoc_gated"] = table([(r, o) for r, o in labelled if r.job_key in gated_keys])
+    q["gated_jobs"] = sorted(gated_keys)
+    return q
+
+
 def _repo_collection(db: Session, repo: str) -> dict[str, Any]:
     runs, jobs = m.WorkflowRun, m.WorkflowJob
     out: dict[str, Any] = {}
@@ -239,29 +305,86 @@ def generate_report(
 
     # ---- 7. graph feature quality
     out.append("## 7. Graph-feature quality\n")
+    from gha_optimizer.graph.dependency_graph import GRAPH_FEATURE_VERSION
+
+    qual = {r: graph_quality(db, r) for r in repos}
     rows = []
-    notes: list[str] = []
+    for r in repos:
+        q = qual[r]
+        if not q["rows"]:
+            continue
+        rows.append([r, q["rows"], f"{q['no_file_in_graph']} ({_pct(q['no_file_in_graph'], q['rows'])})",
+                     f"{q['with_file_links']} ({_pct(q['with_file_links'], q['rows'])})",
+                     f"{q['impacted_1']} ({_pct(q['impacted_1'], q['rows'])})",
+                     f"{q['impacted_0']} ({_pct(q['impacted_0'], q['rows'])})",
+                     f"{q['impacted_unknown']} ({_pct(q['impacted_unknown'], q['rows'])})",
+                     q["touched_1"], q["touched_0"], q["touched_unknown"], q["distinct_distance"]])
+    out.append(f"Feature definition version {GRAPH_FEATURE_VERSION}. `impacted` = a changed file reaches the job through "
+               "File -> (Directory | BuildTarget) -> Job edges and `needs`; **unknown** = the job has no file-level evidence in its graph "
+               "(e.g. it only runs `make` targets or remote actions), which is NOT the same as unaffected.\n")
+    out.append(_table(["repo", "(run, job) rows", "no changed file in graph", "job has file evidence", "impacted = 1",
+                       "impacted = 0", "impacted unknown", "cache touched = 1", "cache touched = 0", "cache unknown",
+                       "distinct distances"], rows))
+    for r in repos:
+        q = qual[r]
+        if q["stale_rows"]:
+            out.append(f"* **{r}**: {q['stale_rows']} stored rows are from an older feature definition and are ignored "
+                       "(rerun `build-dataset`).\n")
+        if q["rows"] and q["impacted_unknown"] / q["rows"] > 0.5:
+            out.append(f"* **{r}**: `job_structurally_impacted` is unknown for {_pct(q['impacted_unknown'], q['rows'])} of rows.\n")
+        if q["rows"] and q["impacted_1"] == 0:
+            out.append(f"* **{r}**: no row is impacted via a real graph path - the feature carries no information here.\n")
+
+    out.append("### 7.1 Does `impacted` agree with what the workflow actually did?\n")
+    out.append("Ground truth available without any model: whether a job was **skipped** (every matrix cell skipped) or "
+               "**executed**.  A job that runs on every change is never skipped, so the all-jobs row is diluted by jobs the "
+               "workflow does not gate; the second row restricts to jobs that were both skipped and executed in this repository "
+               "(selected after the fact, so read it as a consistency check, not as a test of the rules).  "
+               "Fisher exact p-values assume independent rows, which the data does not satisfy - they are optimistic.\n")
+    rows = []
+    for r in repos:
+        q = qual[r]
+        for scope, key in (("all jobs", "assoc_all"), (f"jobs that skip at least once ({len(q['gated_jobs'])})", "assoc_gated")):
+            t = q[key]
+            n1, n0 = t["i1_skipped"] + t["i1_executed"], t["i0_skipped"] + t["i0_executed"]
+            if not (n1 or n0):
+                continue
+            rows.append([r, scope, n1, _pct(t["i1_skipped"], n1), n0, _pct(t["i0_skipped"], n0),
+                         "n/a" if t["fisher_p"] is None else f"{t['fisher_p']:.2g}"])
+    out.append(_table(["repo", "scope", "impacted=1 rows", "of which skipped", "impacted=0 rows", "of which skipped",
+                       "Fisher p"], rows))
+
+    out.append("### 7.2 Do the structural features associate with the labels the models predict?\n")
+    out.append("Descriptive only (no model): the label rate of all labelled rows split by the feature value.  "
+               "Rows are not independent (jobs of a run share a commit; consecutive runs share a PR), so differences are "
+               "optimistic, and failure positives are few - read the counts, not just the percentages.\n")
+    rows = []
     for r in repos:
         df = frames[r][0]
         if df.empty:
             continue
-        have = df["any_changed_file_in_graph"].notna()
-        fb = int((df.loc[have, "any_changed_file_in_graph"] == 0).sum())
-        vals = {col: df[col].dropna().nunique() for col in STRUCTURAL}
-        real_impact = int(((df["job_structurally_impacted"] == 1) & (df["any_changed_file_in_graph"] == 1)).sum())
-        cache_touched = int((df["cache_key_touched"] == 1).sum())
-        rows.append([r, int(have.sum()), fb, _pct(fb, have.sum()), real_impact, cache_touched,
-                     vals["job_structurally_impacted"], vals["cache_key_touched"], vals["dep_graph_distance"]])
-        const = [c for c, n in vals.items() if n <= 1 and have.any()]
-        if const:
-            notes.append(f"* **{r}**: constant (zero-variance) structural feature(s) {const} — they carry no information for this repository.")
-        if have.any() and fb / have.sum() > 0.5:
-            notes.append(f"* **{r}**: for {_pct(fb, have.sum())} of rows no changed file was a graph node, so `job_structurally_impacted` fell back to "
-                         "\"all jobs impacted\" (uninformative).")
-    out.append(_table(["repo", "rows with graph features", "rows where fallback fired", "fallback share",
-                       "rows impacted via a REAL graph path", "rows with cache_key_touched=1",
-                       "distinct: impacted", "distinct: cache_key_touched", "distinct: distance"], rows))
-    out.extend(n + "\n" for n in notes)
+        for feat, label, what, invert in (
+            ("job_structurally_impacted", "label_failed", "failure rate", False),
+            ("cache_key_touched", "label_cache_hit", "cache-miss rate", True),
+        ):
+            cells = []
+            for val, name in ((1.0, "=1"), (0.0, "=0")):
+                lab = df.loc[df[feat] == val, label].dropna()
+                rate = (1 - lab.mean()) if invert else lab.mean()
+                cells.append(f"{100 * rate:.1f}% (n={len(lab)})" if len(lab) else "n/a")
+            unk = df.loc[df[feat].isna(), label].dropna()
+            urate = (1 - unk.mean()) if invert else unk.mean()
+            cells.append(f"{100 * urate:.1f}% (n={len(unk)})" if len(unk) else "n/a")
+            rows.append([r, what, f"`{feat}`"] + cells)
+        # the exact cache key is what `cache_key_touched` describes; a restore-keys prefix fallback ("partial hit")
+        # counts as a HIT in label_cache_hit, so also show the share of rows whose exact key was not restored
+        known = df[df["cache_outcome"].isin(["miss", "partial_hit", "exact_hit"])]
+        cells = []
+        for sel in (known["cache_key_touched"] == 1, known["cache_key_touched"] == 0, known["cache_key_touched"].isna()):
+            sub = known.loc[sel, "cache_outcome"]
+            cells.append(f"{100 * (sub != 'exact_hit').mean():.1f}% (n={len(sub)})" if len(sub) else "n/a")
+        rows.append([r, "exact key not restored (miss or partial hit)", "`cache_key_touched`"] + cells)
+    out.append(_table(["repo", "label", "feature", "feature = 1", "feature = 0", "feature unknown"], rows))
 
     # ---- 8. split
     out.append("## 8. Temporal train/test split\n")

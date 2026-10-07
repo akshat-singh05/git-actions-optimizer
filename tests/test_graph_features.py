@@ -6,6 +6,7 @@ exactly what a static graph could not do.
 """
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -24,7 +25,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - run: ruff check .
+      - run: ruff check src
   unit:
     runs-on: ubuntu-latest
     steps:
@@ -83,20 +84,41 @@ def test_structural_features_differ_between_commits(two_commit_mirror):
 
     g_a = comp.graph_at(sha_a, wf_text)
     f_a = comp.features(g_a, changed, JOBS)
-    # at commit A the test file does not exist: the graph cannot place it -> conservative fallback
+    # at commit A the test file does not exist: the graph cannot place it -> UNKNOWN (NaN), never a
+    # fabricated "all jobs impacted"
     assert {f["any_changed_file_in_graph"] for f in f_a.values()} == {0.0}
-    assert {j for j, f in f_a.items() if f["job_structurally_impacted"] == 1.0} == set(JOBS)
+    assert all(math.isnan(f["job_structurally_impacted"]) for f in f_a.values())
 
     g_b = comp.graph_at(sha_b, wf_text)
     f_b = comp.features(g_b, changed, JOBS)
-    # at commit B it exists and `pytest tests/unit` links it to job `unit` (and, via needs, `build`)
+    # at commit B it exists: `pytest tests/unit` reads it (and the python toolchain of `python -m build`
+    # does), `ruff check src` reads only src/, and `build` is also downstream of `unit` via needs
     assert {f["any_changed_file_in_graph"] for f in f_b.values()} == {1.0}
-    assert {j for j, f in f_b.items() if f["job_structurally_impacted"] == 1.0} == {"unit", "build"}
-    assert f_b["lint"]["job_structurally_impacted"] == 0.0
-    # distance is over the UNDIRECTED projection: file -> unit is 1 hop; every other job of the same
-    # workflow is reachable through the shared Workflow node (file -> unit -> Workflow -> lint = 3)
-    assert f_b["unit"]["dep_graph_distance"] == 1.0
-    assert f_b["lint"]["dep_graph_distance"] == 3.0
+    assert {j: f["job_structurally_impacted"] for j, f in f_b.items()} == {"unit": 1.0, "build": 1.0, "lint": 0.0}
+    # hops over impact edges: file -> Directory/BuildTarget -> job; an unreached job has no distance
+    assert f_b["unit"]["dep_graph_distance"] == 2.0 and f_b["build"]["dep_graph_distance"] == 2.0
+    assert math.isnan(f_b["lint"]["dep_graph_distance"])
+    assert {f["job_has_file_links"] for f in f_b.values()} == {1.0}
+
+
+def test_diff_that_touches_no_job_input_is_zero_not_unknown(two_commit_mirror):
+    mirror, _, sha_b = two_commit_mirror
+    comp = GraphFeatureComputer(mirror)
+    g = comp.graph_at(sha_b, mirror.read_file(sha_b, ".github/workflows/ci.yml")[1].decode())
+    f = comp.features(g, [".github/workflows/ci.yml"], JOBS)      # a real file that no job reads
+    assert {x["any_changed_file_in_graph"] for x in f.values()} == {1.0}
+    assert {x["job_structurally_impacted"] for x in f.values()} == {0.0}
+
+
+def test_job_without_any_file_evidence_is_unknown(tmp_path):
+    from gha_optimizer.graph.dependency_graph import build_dependency_graph
+    from gha_optimizer.ingestion.workflow_parser import parse_workflow_text
+    wf = parse_workflow_text(
+        "name: x\non: push\njobs:\n  notify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./announce.sh\n"
+    )
+    g = build_dependency_graph(wf, tmp_path, ["src/a.py"])         # announce.sh is not in the tree
+    f = GraphFeatureComputer.features(g, ["src/a.py"], ["notify"])["notify"]
+    assert f["job_has_file_links"] == 0.0 and math.isnan(f["job_structurally_impacted"])
 
 
 def test_cache_key_touched_is_per_job(two_commit_mirror):

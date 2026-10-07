@@ -133,7 +133,7 @@ def main() -> int:
     banner("REPOSITORY & WORKFLOW ANALYSIS", step=1)
     workflow = parse_workflow(wf_path)
     dag_edges = workflow.job_dag_edges()
-    kv("Source files analysed", len(snap.tracked_files))
+    kv("Source files analysed", f"{len(snap.source_files)} (of {len(snap.tracked_files)} tracked files)")
     kv("Workflow", f"{workflow.name}  ({len(workflow.jobs)} jobs, {len(dag_edges)} needs-edges)")
     kv("Triggers", list(workflow.triggers.keys()))
     for jid, js in workflow.jobs.items():
@@ -142,9 +142,9 @@ def main() -> int:
     # ── STEP 2-4 ───────────────────────────────────────────────────
     banner("DEPENDENCY GRAPH (source ⊕ CI, fused)", step=2)
     source_builder = GraphBuilder(repo_root)
-    n_parsed = source_builder.build_from_source([repo_root / f for f in snap.tracked_files])
+    n_parsed = source_builder.build_from_source([repo_root / f for f in snap.source_files])
     source_graph = source_builder.get_graph()
-    kv("Files parsed", f"{n_parsed}/{len(snap.tracked_files)}")
+    kv("Files parsed", f"{n_parsed}/{len(snap.source_files)}")
     kv("Source graph", f"{source_graph.number_of_nodes()} nodes, {source_graph.number_of_edges()} edges")
     kv("Node types", dict(Counter(d.get("node_type", "?") for _, d in source_graph.nodes(data=True))))
     ci_builder = GraphBuilder(repo_root)

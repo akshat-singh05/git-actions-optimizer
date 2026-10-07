@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import networkx as nx
 
@@ -20,9 +20,21 @@ from gha_optimizer.graph.models import (
     NodeType,
     ProvenanceRecord,
 )
+from gha_optimizer.graph.ci_semantics import hash_globs_from_key, implicit_cache
 from gha_optimizer.ingestion.workflow_parser import WorkflowSpec
 
 logger = logging.getLogger(__name__)
+
+
+def _jsonable(value: Any) -> Any:
+    """YAML scalars (dates, ...) and containers reduced to JSON-safe values for node attributes."""
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return str(value)
 
 
 class GraphBuilder:
@@ -151,6 +163,18 @@ class GraphBuilder:
         logger.info("Parsed %d/%d source files", parsed, len(file_paths))
         return parsed
 
+    def add_file_nodes(self, paths: List[str]) -> int:
+        """Add a path-only ``File`` node for every path not already parsed (docs, manifests, lock
+        files, ...): a change to such a file must be a node to be traced to the jobs that read it."""
+        added = 0
+        prov = ProvenanceRecord(origin_parser="GraphBuilder", creation_source="file_tree", confidence=1.0)
+        for path in paths:
+            node_id = self._node_id(NodeType.FILE, path)
+            if node_id not in self.graph:
+                self.add_node(NodeMetadata(unique_id=node_id, node_type=NodeType.FILE, provenance=prov))
+                added += 1
+        return added
+
     # ─── Workflow → Graph (RULE 3) ──────────────────────────────────
 
     def build_from_workflow(self, workflow: WorkflowSpec,
@@ -203,6 +227,13 @@ class GraphBuilder:
                 node_type=NodeType.WORKFLOW_JOB,
                 provenance=prov,
                 tags=[job_id],
+                attributes={
+                    "working_directory": job_spec.working_directory,
+                    "conditions": job_spec.all_conditions,
+                    "with": _jsonable(job_spec.with_inputs),
+                    "outputs": dict(job_spec.outputs),
+                    "reusable_call": job_spec.uses,
+                },
             ))
 
             # Workflow → Job (EXECUTES)
@@ -264,6 +295,15 @@ class GraphBuilder:
                     node_type=NodeType.WORKFLOW_STEP,
                     provenance=prov,
                     tags=[step_name[:80]],
+                    attributes={
+                        "run": str(step.get("run") or ""),
+                        "uses": str(step.get("uses") or ""),
+                        "with": _jsonable(step.get("with") or {}),
+                        "id": step.get("id"),
+                        "if": None if step.get("if") is None else str(step.get("if")),
+                        "working_directory": step.get("working-directory") or job_spec.working_directory,
+                        "origin": step.get("x-origin"),
+                    },
                 ))
 
                 # Job → Step (BELONGS_TO / contains)
@@ -294,24 +334,21 @@ class GraphBuilder:
 
                 # Cache detection
                 if "actions/cache" in uses:
-                    with_block = step.get("with", {})
-                    cache_key = with_block.get("key", "")
+                    with_block = step.get("with") or {}
+                    cache_key = str(with_block.get("key", ""))
                     cache_path = with_block.get("path", "")
-                    cache_label = cache_key or cache_path or f"cache_{job_id}"
-                    cache_node_id = self._node_id(NodeType.CACHE_KEY, cache_label)
-                    if cache_node_id not in self.graph:
-                        self.add_node(NodeMetadata(
-                            unique_id=cache_node_id,
-                            node_type=NodeType.CACHE_KEY,
-                            provenance=prov,
-                            tags=["cache"],
-                        ))
-                    self.add_edge(EdgeMetadata(
-                        source_id=job_node_id,
-                        target_id=cache_node_id,
-                        edge_type=EdgeType.RESTORES_CACHE,
-                        provenance=prov,
-                    ))
+                    cache_label = cache_key or str(cache_path) or f"cache_{job_id}"
+                    self._add_cache(job_node_id, cache_label, prov, {
+                        "action": uses.split("@", 1)[0], "implicit": False,
+                        "hash_globs": hash_globs_from_key(cache_key),
+                        # a key with no hashFiles() cannot be tied to any file
+                        "resolved": bool(hash_globs_from_key(cache_key)),
+                    })
+                elif uses and (implicit := implicit_cache(uses, step.get("with"))) is not None:
+                    self._add_cache(job_node_id, f"implicit::{implicit['label']}", prov, {
+                        "action": implicit["action"], "implicit": True,
+                        "hash_globs": implicit["hash_globs"], "resolved": implicit["resolved"],
+                    })
 
                 # Artifact upload detection
                 if "actions/upload-artifact" in uses:
@@ -353,6 +390,17 @@ class GraphBuilder:
             self.graph.number_of_nodes(),
             self.graph.number_of_edges(),
         )
+
+    def _add_cache(self, job_node_id: str, label: str, prov: ProvenanceRecord, attributes: Dict[str, Any]) -> None:
+        cache_node_id = self._node_id(NodeType.CACHE_KEY, label)
+        if cache_node_id not in self.graph:
+            self.add_node(NodeMetadata(
+                unique_id=cache_node_id, node_type=NodeType.CACHE_KEY, provenance=prov,
+                tags=["cache"], attributes=attributes,
+            ))
+        self.add_edge(EdgeMetadata(
+            source_id=job_node_id, target_id=cache_node_id, edge_type=EdgeType.RESTORES_CACHE, provenance=prov,
+        ))
 
     # ─── Convenience ────────────────────────────────────────────────
 
