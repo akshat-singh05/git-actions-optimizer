@@ -120,6 +120,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             workflow_repo_path=wf_repo_path,
             allow_runner_upsizing=args.larger_runners or None,
             speedup_exponent=args.speedup_exponent,
+            model_dir=None if args.no_model_store else args.model_dir,
         )
     except InsufficientHistoryError as exc:
         _decline(exc)
@@ -392,6 +393,8 @@ def _add_analysis_args(p: argparse.ArgumentParser) -> None:
 
 
 def main() -> None:
+    from gha_optimizer.config import config
+
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
@@ -406,6 +409,9 @@ def main() -> None:
 
     p_analyze = subparsers.add_parser("analyze", help="Analyze and optimize a workflow from ingested history")
     _add_analysis_args(p_analyze)
+    p_analyze.add_argument("--model-dir", default=str(config.model.model_dir),
+                           help="persisted models are loaded from / saved to here when their data fingerprint matches")
+    p_analyze.add_argument("--no-model-store", action="store_true", help="always refit; never read or write saved models")
     p_analyze.add_argument("--larger-runners", action="store_true",
                            help="let the plan relabel base-tier jobs to larger-runner labels (they must exist in your org)")
     p_analyze.add_argument("--speedup-exponent", type=float,

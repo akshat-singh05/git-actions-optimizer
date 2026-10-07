@@ -222,9 +222,10 @@ def main() -> int:
     cache_miss_prob = trained["cache_miss"].predict_proba(infer_df).to_dict()
     failure_prob = trained["failure"].predict_proba(infer_df).to_dict()
     duration_pred = trained["duration"].predict(infer_df).to_dict()
-    print(f"\n    {'Job':<28} {'P(cache miss)':<15} {'P(failure)':<14} {'Duration (s)':<14}")
+    print(f"\n    {'Job':<28} {'P(cache miss)*':<15} {'P(failure)':<14} {'Duration (s)':<14}")
     for job_id in workflow.jobs:
         print(f"    {job_id:<28} {cache_miss_prob[job_id]:<15.4f} {failure_prob[job_id]:<14.4f} {duration_pred[job_id]:<14.1f}")
+    print("    * informational: the scheduler does not use the cache-miss probability")
     section("Top feature importances (cache-miss model, permutation on the temporal holdout)")
     for feat, imp in list(trained["cache_miss"].feature_importance.items())[:7]:
         print(f"      {feat:<30} {imp:+.4f}")

@@ -156,7 +156,7 @@ class FailurePredictor:
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
             {"model": self.model, "backend": self._backend_name, "threshold": self._optimal_threshold,
-             "features": self._features},
+             "features": self._features, "feature_importance": self._feature_importance},
             path,
         )
 
@@ -165,5 +165,6 @@ class FailurePredictor:
         self.model = data["model"]
         self._backend_name = data.get("backend", "sklearn-hist")
         self._optimal_threshold = data.get("threshold", 0.5)
+        self._feature_importance = data.get("feature_importance", {})
         self._features = data.get("features", list(FEATURE_COLUMNS))
         self._fitted = True
