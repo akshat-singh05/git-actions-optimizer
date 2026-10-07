@@ -233,12 +233,12 @@ def run_demo_pipeline():
     )
 
     optimized_yaml = generate_optimized_workflow(workflow, plan)
-    write_workflow(optimized_yaml, out_path)
+    write_workflow(optimized_yaml, out_path, plan)
     try:
         yaml_valid = "jobs" in yaml.safe_load(out_path.read_text(encoding="utf-8"))
     except Exception:
         yaml_valid = False
-    diff = generate_diff(wf_path, optimized_yaml)
+    diff = generate_diff(wf_path, optimized_yaml, plan=plan)
     results["step10_output"] = {"yaml_valid": yaml_valid, "output_path": str(out_path),
                                 "diff_preview": diff[:2000] if diff else "(no diff)"}
 

@@ -94,3 +94,29 @@ def test_pipeline_declines_when_cache_labels_are_missing():
     with pytest.raises(InsufficientHistoryError) as ei:
         _run(history)
     assert "cache-miss model" in ei.value.reason and ei.value.details["labelled_rows"] == 0
+
+
+def test_explanation_separates_assumed_from_derived_and_output_is_valid_workflow():
+    import yaml
+
+    history = generate_synthetic_test_history(n_runs=50)
+    plan, explanation, out_path = _run(history)
+    assert "Where the estimated saving comes from" in explanation
+    assert "ASSUMED speed-up exponent" in explanation and "Assumed speed-up exponent | Wall-clock saved" in explanation
+    assert plan.runner_upsizing is False
+    doc = yaml.safe_load(Path(out_path).read_text(encoding="utf-8"))
+    assert {("on" if k is True else k) for k in doc} <= {"name", "run-name", "on", "permissions", "env", "defaults",
+                                                         "concurrency", "jobs"}
+    assert {j["runs-on"] for j in doc["jobs"].values()} == {"ubuntu-latest"}      # nothing relabelled by default
+
+
+def test_opt_in_upsizing_flag_reaches_the_plan():
+    with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
+        out = f.name
+    plan, explanation = run_pipeline(
+        workflow_path=FIXTURE_WORKFLOW, repo_root=FIXTURE_REPO, tracked_files=TRACKED_FILES,
+        history=generate_synthetic_test_history(n_runs=50), changed_files=CHANGED_FILES, out_path=out,
+        allow_runner_upsizing=True, speedup_exponent=0.9,
+    )
+    assert plan.runner_upsizing is True and plan.speedup_exponent == 0.9
+    assert "Runner upsizing in this plan: **ON**" in explanation

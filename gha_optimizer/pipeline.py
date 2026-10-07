@@ -37,7 +37,7 @@ from gha_optimizer.ingestion.workflow_parser import WorkflowSpec, parse_workflow
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
 from gha_optimizer.models.duration_estimator import DurationEstimator
 from gha_optimizer.models.failure_predictor import FailurePredictor
-from gha_optimizer.scheduler.optimizer import SchedulePlan, build_schedule
+from gha_optimizer.scheduler.optimizer import SchedulePlan, build_schedule, speedup_sensitivity
 from gha_optimizer.schemas import (
     DecisionTraceSchema,
     PredictionResult,
@@ -69,6 +69,8 @@ def run_pipeline(
     beta: float | None = None,
     gamma: float | None = None,
     workflow_repo_path: str | None = None,
+    allow_runner_upsizing: bool | None = None,
+    speedup_exponent: float | None = None,
 ) -> tuple[SchedulePlan, str]:
     """
     Run the full optimization pipeline end to end.
@@ -86,6 +88,9 @@ def run_pipeline(
     out_path : Where to write the optimized workflow YAML.
     model_backend : ``"tabular"`` (default) or ``"gnn"``.
     alpha, beta, gamma : Scheduler objective weights (time, cost, energy).
+    allow_runner_upsizing : Let the plan move base-tier jobs to larger-runner labels (default off; those labels must
+        exist in the organisation).  The larger-runner case is always reported as an ASSUMED what-if.
+    speedup_exponent : ASSUMED runner speed-up law exponent (default ``config.scheduler.speedup_exponent``).
     workflow_repo_path : repo-relative path of the workflow (e.g. ``.github/workflows/ci.yml``),
         used to select that workflow's records when ``history`` mixes several.
 
@@ -201,18 +206,25 @@ def run_pipeline(
         schedule_kwargs["beta"] = beta
     if gamma is not None:
         schedule_kwargs["gamma"] = gamma
+    if speedup_exponent is not None:
+        schedule_kwargs["speedup_exponent"] = speedup_exponent
+    sensitivity_kwargs = dict(schedule_kwargs)
+    sensitivity_kwargs.pop("speedup_exponent", None)
+    if allow_runner_upsizing is not None:
+        schedule_kwargs["allow_upsizing"] = allow_runner_upsizing
 
     plan = build_schedule(dag, failure_prob, cache_miss_prob, duration_pred, **schedule_kwargs)
+    sensitivity = speedup_sensitivity(dag, failure_prob, cache_miss_prob, duration_pred, **sensitivity_kwargs)
 
     # ──────────────────────────────────────────────────────────────
     # Layer 5 — Workflow Generation
     # ──────────────────────────────────────────────────────────────
     optimized_yaml = generate_optimized_workflow(workflow, plan)
-    write_workflow(optimized_yaml, out_path)
-    explanation = explain_changes(plan)
+    write_workflow(optimized_yaml, out_path, plan)
+    explanation = explain_changes(plan, sensitivity)
 
     # Generate diff if original file exists
-    diff = generate_diff(workflow_path, optimized_yaml)
+    diff = generate_diff(workflow_path, optimized_yaml, plan=plan)
 
     # Data provenance + model metrics summary (all figures computed from the ingested history)
     n_runs = len({r.run_id for r in history})

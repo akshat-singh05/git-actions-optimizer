@@ -150,6 +150,8 @@ class OptimizationRequest(BaseModel):
     alpha: Optional[float] = None
     beta: Optional[float] = None
     gamma: Optional[float] = None
+    allow_runner_upsizing: Optional[bool] = None   # default off; the larger-runner labels must exist in the org
+    speedup_exponent: Optional[float] = None       # ASSUMED runner speed-up law exponent
 
 
 class OptimizationResultSchema(BaseModel):

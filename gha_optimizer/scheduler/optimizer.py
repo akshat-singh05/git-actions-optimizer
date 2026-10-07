@@ -42,6 +42,13 @@ def _carbon_intensity(region: str = "default") -> float:
 JOB_OVERHEAD_SECONDS = config.scheduler.job_overhead_seconds
 
 
+def base_runner_label() -> str:
+    """The baseline tier (first entry of ``runner_cost_per_minute``): the only runner label the planner treats
+    as interchangeable with the tiers above it."""
+    tiers = list(_runner_cost_per_minute())
+    return tiers[0] if tiers else "ubuntu-latest"
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -79,6 +86,39 @@ class SchedulePlan:
     baseline_cost_usd: float
     baseline_energy_wh: float
     baseline_co2_grams: float
+    # How the estimate was obtained.  Everything here is ESTIMATED from predicted durations.
+    runner_upsizing: bool = False         # were jobs moved to larger-runner tiers in this plan?
+    speedup_exponent: float = 0.6         # ASSUMED runner speed-up law, used only by the upsizing figures below
+    # Counterfactual decomposition (wall-clock s / cost USD).  skip_only needs no speed-up assumption; the others do.
+    skip_only_wall_clock_seconds: float = 0.0
+    skip_only_cost_usd: float = 0.0
+    runner_only_wall_clock_seconds: float = 0.0   # larger runners, no skipping (depends on the ASSUMED law)
+    runner_only_cost_usd: float = 0.0
+    both_wall_clock_seconds: float = 0.0          # larger runners AND skipping (depends on the ASSUMED law)
+    both_cost_usd: float = 0.0
+
+    @staticmethod
+    def _pct(base: float, value: float) -> float:
+        return 0.0 if base == 0 else (base - value) / base * 100
+
+    @property
+    def time_saved_by_skipping_pct(self) -> float:
+        """Estimated wall-clock saved by skip recommendations alone (no speed-up assumption)."""
+        return self._pct(self.baseline_wall_clock_seconds, self.skip_only_wall_clock_seconds)
+
+    @property
+    def time_saved_by_runner_upsizing_pct(self) -> float:
+        """Estimated wall-clock saved by larger runners alone - ENTIRELY a function of the assumed speed-up law."""
+        return self._pct(self.baseline_wall_clock_seconds, self.runner_only_wall_clock_seconds)
+
+    @property
+    def time_saved_with_upsizing_whatif_pct(self) -> float:
+        """What-if: skipping plus larger runners under the assumed law (equals ``time_saved_pct`` when upsizing is on)."""
+        return self._pct(self.baseline_wall_clock_seconds, self.both_wall_clock_seconds)
+
+    @property
+    def cost_saved_with_upsizing_whatif_pct(self) -> float:
+        return self._pct(self.baseline_cost_usd, self.both_cost_usd)
 
     @property
     def time_saved_pct(self) -> float:
@@ -125,6 +165,15 @@ class SchedulePlan:
         return {
             "jobs_total": len(self.jobs),
             "jobs_skipped": sum(1 for j in self.jobs if j.skip_recommended),
+            "basis": "ESTIMATED from predicted durations; not a measured execution",
+            "runner_upsizing": self.runner_upsizing,
+            "estimated_time_saved_by_skipping_pct": round(self.time_saved_by_skipping_pct, 1),
+            "assumed_whatif_larger_runners": {
+                "speedup_exponent": self.speedup_exponent,
+                "note": "depends on an ASSUMED runner speed-up law that cannot be estimated from the ingested data",
+                "time_saved_pct": round(self.time_saved_with_upsizing_whatif_pct, 1),
+                "cost_saved_pct": round(self.cost_saved_with_upsizing_whatif_pct, 1),
+            },
             "wall_clock": {
                 "baseline_s": round(self.baseline_wall_clock_seconds, 1),
                 "optimized_s": round(self.estimated_wall_clock_seconds, 1),
@@ -232,15 +281,21 @@ def _evaluate_tier(
     cost_per_min: float,
     base_cost_per_min: float,
     power_watts: float,
+    speedup_exponent: float | None = None,
 ) -> tuple[float, float, float]:
     """
     Return (estimated_duration, estimated_cost, estimated_energy_wh)
     for one runner tier.
+
+    The speed-up of a tier that costs ``m`` times the base tier is ``m ** speedup_exponent`` (ASSUMED law, see
+    ``config.scheduler.speedup_exponent``); the base tier itself always has speed-up 1.
     """
+    if speedup_exponent is None:
+        speedup_exponent = config.scheduler.speedup_exponent
     overhead = min(JOB_OVERHEAD_SECONDS, duration_seconds)
     parallelizable = max(duration_seconds - overhead, 0.0)
     cost_multiplier = cost_per_min / base_cost_per_min if base_cost_per_min > 0 else 1.0
-    speedup = cost_multiplier ** 0.6  # diminishing returns
+    speedup = cost_multiplier ** speedup_exponent
     est_duration = overhead + parallelizable / speedup
     est_cost = (est_duration / 60) * cost_per_min
     est_energy_wh = (est_duration / 3600) * power_watts  # Watt-seconds → Wh
@@ -253,24 +308,29 @@ def _select_runner(
     beta: float,
     gamma: float,
     region: str = "default",
+    speedup_exponent: float | None = None,
+    allow_upsizing: bool = True,
 ) -> tuple[str, float, float, float, float]:
     """
     Cost-aware runner allocation: choose the tier minimizing
 
         α·(time_ratio) + β·(cost_ratio) + γ·(energy_ratio)
 
-    where all ratios are relative to the baseline tier.
+    where all ratios are relative to the baseline tier.  With ``allow_upsizing=False`` only the baseline tier
+    is considered.
 
     Returns (tier, est_duration, est_cost_usd, est_energy_wh, est_co2_g).
     """
     tiers = list(_runner_cost_per_minute().items())
+    if not allow_upsizing:
+        tiers = tiers[:1]
     power = _runner_power_watts()
     ci = _carbon_intensity(region)
 
     base_tier, base_cost_per_min = tiers[0]
     base_power = power.get(base_tier, 15.0)
     base_duration, base_cost, base_energy = _evaluate_tier(
-        predicted_duration_seconds, base_cost_per_min, base_cost_per_min, base_power
+        predicted_duration_seconds, base_cost_per_min, base_cost_per_min, base_power, speedup_exponent
     )
 
     best_tier = base_tier
@@ -282,7 +342,7 @@ def _select_runner(
     for tier, cpm in tiers:
         pw = power.get(tier, 15.0)
         est_duration, est_cost, est_energy = _evaluate_tier(
-            predicted_duration_seconds, cpm, base_cost_per_min, pw
+            predicted_duration_seconds, cpm, base_cost_per_min, pw, speedup_exponent
         )
         time_ratio = est_duration / base_duration if base_duration > 0 else 1.0
         cost_ratio = est_cost / base_cost if base_cost > 0 else 1.0
@@ -357,9 +417,16 @@ def build_schedule(
     beta: float | None = None,
     gamma: float | None = None,
     region: str = "default",
+    speedup_exponent: float | None = None,
+    allow_upsizing: bool | None = None,
 ) -> SchedulePlan:
     """
     Build an optimized execution schedule from ML predictions.
+
+    All savings are ESTIMATED from predicted durations.  ``allow_upsizing`` (default
+    ``config.scheduler.allow_runner_upsizing``, off) decides whether jobs may move to larger-runner tiers; the
+    wall-clock saving of those tiers depends on ``speedup_exponent`` (ASSUMED, not measured).  With upsizing off the
+    plan's headline figures contain only the skip effect; the larger-runner case is still reported as a what-if.
 
     Parameters
     ----------
@@ -371,6 +438,8 @@ def build_schedule(
         flagged ``skip_recommended``.
     alpha, beta, gamma : Objective weights for time, cost, energy.
     region : Runner region for carbon intensity calculation.
+    speedup_exponent : ASSUMED runner speed-up law exponent (default ``config.scheduler.speedup_exponent``).
+    allow_upsizing : Let jobs move to larger-runner tiers (default ``config.scheduler.allow_runner_upsizing``).
     """
     # Use config defaults if not explicitly provided
     if failure_skip_threshold is None:
@@ -381,6 +450,10 @@ def build_schedule(
         beta = config.scheduler.beta
     if gamma is None:
         gamma = config.scheduler.gamma
+    if speedup_exponent is None:
+        speedup_exponent = config.scheduler.speedup_exponent
+    if allow_upsizing is None:
+        allow_upsizing = config.scheduler.allow_runner_upsizing
 
     # Compute DAG levels for parallel execution modeling
     levels = _compute_dag_levels(dag)
@@ -418,6 +491,18 @@ def build_schedule(
     baseline_co2 = (baseline_energy_total / 1000) * ci
 
     # --- Optimized plan ---
+    # Runner selection is evaluated in both modes so the decomposition is always available:
+    #   base tier only (no assumption)  vs  larger tiers under the ASSUMED speed-up law
+    def _select_all(upsizing: bool) -> dict[str, tuple[str, float, float, float, float]]:
+        return {
+            j: _select_runner(duration_pred.get(j, 60.0), alpha, beta, gamma, region, speedup_exponent, upsizing)
+            for j in order
+        }
+
+    selected = _select_all(allow_upsizing)
+    selected_base = selected if not allow_upsizing else _select_all(False)
+    selected_up = selected if allow_upsizing else _select_all(True)
+
     job_plans: list[JobPlan] = []
     optimized_durations: dict[str, float] = {}
     optimized_cost_total = 0.0
@@ -428,9 +513,7 @@ def build_schedule(
         skip = job_id in skip_downstream
         raw_duration = duration_pred.get(job_id, 60.0)
 
-        runner, est_duration, est_cost, est_energy, est_co2 = _select_runner(
-            raw_duration, alpha, beta, gamma, region
-        )
+        runner, est_duration, est_cost, est_energy, est_co2 = selected[job_id]
 
         optimized_durations[job_id] = est_duration
 
@@ -473,6 +556,12 @@ def build_schedule(
         optimized_durations, dag, levels, skip_set
     )
 
+    def _wall(sel: dict[str, tuple[str, float, float, float, float]], skipped: set[str]) -> float:
+        return _parallel_wall_clock({j: v[1] for j, v in sel.items()}, dag, levels, skipped)
+
+    def _cost(sel: dict[str, tuple[str, float, float, float, float]], skipped: set[str]) -> float:
+        return sum(v[2] for j, v in sel.items() if j not in skipped)
+
     return SchedulePlan(
         jobs=job_plans,
         estimated_wall_clock_seconds=optimized_wall_clock,
@@ -483,4 +572,37 @@ def build_schedule(
         baseline_cost_usd=baseline_cost_total,
         baseline_energy_wh=baseline_energy_total,
         baseline_co2_grams=baseline_co2,
+        runner_upsizing=allow_upsizing,
+        speedup_exponent=speedup_exponent,
+        skip_only_wall_clock_seconds=_wall(selected_base, skip_set),
+        skip_only_cost_usd=_cost(selected_base, skip_set),
+        runner_only_wall_clock_seconds=_wall(selected_up, set()),
+        runner_only_cost_usd=_cost(selected_up, set()),
+        both_wall_clock_seconds=_wall(selected_up, skip_set),
+        both_cost_usd=_cost(selected_up, skip_set),
     )
+
+
+def speedup_sensitivity(
+    dag: nx.DiGraph,
+    failure_prob: dict[str, float],
+    cache_miss_prob: dict[str, float],
+    duration_pred: dict[str, float],
+    exponents: tuple[float, ...] = (0.0, 0.3, 0.6, 0.9),
+    **kwargs: object,
+) -> list[dict[str, float]]:
+    """ESTIMATED saving of the plan *with larger runners allowed* for each assumed speed-up exponent.
+
+    Exponent 0 means a larger runner is not faster at all (so the planner never picks one); 1 means speed-up is
+    proportional to price.  The spread across exponents is the uncertainty that the missing runner-size data leaves."""
+    rows = []
+    for e in exponents:
+        plan = build_schedule(dag, failure_prob, cache_miss_prob, duration_pred,
+                              speedup_exponent=e, allow_upsizing=True, **kwargs)  # type: ignore[arg-type]
+        rows.append({
+            "speedup_exponent": e,
+            "time_saved_pct": round(plan.time_saved_pct, 1),
+            "cost_saved_pct": round(plan.cost_saved_pct, 1),
+            "energy_saved_pct": round(plan.energy_saved_pct, 1),
+        })
+    return rows

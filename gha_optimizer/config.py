@@ -59,6 +59,14 @@ class SchedulerConfig(BaseModel):
     gamma: float = 0.05
     failure_skip_threshold: float = 0.85
 
+    # ASSUMED, not measured: how much faster a runner that costs `m` times more is, as `m ** speedup_exponent`
+    # applied to the parallelisable part of a job.  The ingested history contains one standard runner size per
+    # OS, so this cannot be estimated from it (docs/SCHEDULER_ASSUMPTIONS.md).  0 = bigger runners never help.
+    speedup_exponent: float = 0.6
+    # Rewriting `runs-on` to a larger-runner label only works if the organisation has configured runners with
+    # those labels, so it is opt-in.  Off: the plan keeps every job on its original runner.
+    allow_runner_upsizing: bool = False
+
     runner_cost_per_minute: Dict[str, float] = Field(
         default_factory=lambda: {
             "ubuntu-latest": 0.008,
