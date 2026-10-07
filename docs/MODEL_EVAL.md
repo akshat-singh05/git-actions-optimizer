@@ -99,3 +99,27 @@ Paired difference (MAE; negative is better (lower MAE)), mean and 95% interval:
 | prometheus/prometheus | -0.3673 [-1.0694, +0.3672] (includes 0) | +12.5200 [+9.7131, +15.4464] (excludes 0) | +12.8873 [+9.8860, +15.9822] (excludes 0) |
 | apache/dubbo | +0.6286 [+0.0188, +1.2459] (excludes 0) | +14.2374 [+11.8408, +16.5411] (excludes 0) | +13.6089 [+11.1358, +15.8836] (excludes 0) |
 | quarkusio/quarkus | -9.0888 [-25.2971, +11.3364] (includes 0) | +124.9381 [+13.2754, +187.4194] (excludes 0) | +134.0268 [+1.9390, +210.7962] (excludes 0) |
+
+## duration_ratio
+
+Baseline (no model): the job's prior decayed mean duration.
+
+Pooled out-of-sample MAE in seconds (lower is better):
+
+| repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
+|---|---|---|---|---|---|---|---|
+| python-poetry/poetry | 922 / 298 | - | 5/5 | 14.1457 | 14.0991 | 14.0411 | 15.6232 |
+| fastapi/fastapi | 1553 / 297 | - | 5/5 | 9.6736 | 10.05 | 10.3336 | 10.359 |
+| prometheus/prometheus | 5007 / 300 | - | 5/5 | 114.6435 | 114.9615 | 109.6453 | 109.3717 |
+| apache/dubbo | 1860 / 147 | - | 5/5 | 30.6744 | 29.2216 | 29.4443 | 29.8919 |
+| quarkusio/quarkus | 52 / 4 | - | 2/2 | 403.1795 | 420.7614 | 348.2946 | 337.2821 |
+
+Paired difference (MAE; negative is better (lower MAE)), mean and 95% interval:
+
+| repo | all - no_structural | all - baseline | no_structural - baseline |
+|---|---|---|---|
+| python-poetry/poetry | +0.0464 [-0.1043, +0.1862] (includes 0) | -1.4879 [-2.0537, -0.8925] (excludes 0) | -1.5343 [-2.0840, -0.9583] (excludes 0) |
+| fastapi/fastapi | -0.3769 [-0.5254, -0.2109] (excludes 0) | -0.6874 [-0.9939, -0.4032] (excludes 0) | -0.3105 [-0.6166, -0.0235] (excludes 0) |
+| prometheus/prometheus | -0.3284 [-0.9414, +0.2508] (includes 0) | +5.3173 [+2.6879, +8.1827] (excludes 0) | +5.6457 [+2.9096, +8.5441] (excludes 0) |
+| apache/dubbo | +1.4453 [+0.9390, +1.9614] (excludes 0) | +0.7798 [+0.1327, +1.4657] (excludes 0) | -0.6654 [-1.2400, -0.0678] (excludes 0) |
+| quarkusio/quarkus | -16.6501 [-37.7376, -2.1066] (excludes 0) | +60.9399 [-8.3980, +116.8812] (includes 0) | +77.5899 [-0.6447, +123.7689] (includes 0) |

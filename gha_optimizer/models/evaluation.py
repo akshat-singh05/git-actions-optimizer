@@ -32,6 +32,22 @@ from sklearn.metrics import (
 )
 
 
+LOG_RATIO_OFFSET_SECONDS = 1.0  # keeps the ratio finite for sub-second jobs
+
+
+def log_ratio(duration: Any, prior: Any) -> np.ndarray:
+    """``log((duration + 1) / (prior + 1))``: how much slower/faster a run was than the job's prior mean."""
+    d, p = np.asarray(duration, dtype=float), np.asarray(prior, dtype=float)
+    return np.log((d + LOG_RATIO_OFFSET_SECONDS) / (p + LOG_RATIO_OFFSET_SECONDS))
+
+
+def from_log_ratio(prior: Any, z: Any) -> np.ndarray:
+    """Inverse of :func:`log_ratio`, in seconds, clamped at 0.  The median commutes with this monotone map, so a
+    model trained with an absolute-error loss on the log-ratio returns the MAE-optimal estimate in seconds."""
+    p, z = np.asarray(prior, dtype=float), np.asarray(z, dtype=float)
+    return np.maximum((p + LOG_RATIO_OFFSET_SECONDS) * np.exp(z) - LOG_RATIO_OFFSET_SECONDS, 0.0)
+
+
 def usable_features(df: pd.DataFrame, columns: list[str]) -> list[str]:
     """Feature columns with at least one observed value.
 

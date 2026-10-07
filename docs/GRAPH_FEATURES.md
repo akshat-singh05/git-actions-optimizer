@@ -124,9 +124,12 @@ out-of-sample predictions, paired bootstrap over runs). Feature sets compared on
   (`all - no_structural` +0.117, 95% interval [+0.016, +0.272]) but not for the others, and in prometheus the
   baseline is significantly better than any model. For the `exact_miss` target dubbo's models beat the
   baseline significantly, but that target is 84% positive there and the graph features are not the cause.
-* **Duration**: the fitted models are **significantly worse than the prior-mean baseline in every
-  repository** (MAE poetry 33.7 s vs 15.6 s, prometheus 121.8 vs 109.4, dubbo 44.1 vs 29.9). The graph
-  features change MAE by less than 1 s (fastapi -0.48 s, dubbo +0.63 s).
+* **Duration**: the raw-seconds models are **significantly worse than the prior-mean baseline in every
+  repository** (MAE poetry 33.7 s vs 15.6 s, prometheus 121.8 vs 109.4, dubbo 44.1 vs 29.9). Predicting the
+  log-ratio to the job's prior mean instead (`duration_ratio` in `docs/MODEL_EVAL.md`) removes most of that gap
+  (poetry 14.1 s, fastapi 9.7 s, prometheus 114.6 s, dubbo 30.7 s) and beats the baseline significantly in poetry
+  (-1.49 s) and fastapi (-0.69 s), while staying significantly worse in prometheus (+5.3 s) and dubbo (+0.8 s).
+  Graph features under that target: fastapi -0.38 s (helps), dubbo +1.45 s (hurts), others inconclusive.
 
 Conclusion that the data supports: the graph features are a correct, informative description of the workflow
 for poetry and fastapi (section 4) but add **no demonstrable predictive value over history-based features**

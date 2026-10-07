@@ -32,7 +32,7 @@ from sklearn.metrics import average_precision_score, brier_score_loss, mean_abso
 from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, miss_target
 from gha_optimizer.models.duration_estimator import DurationEstimator
-from gha_optimizer.models.evaluation import chronological, usable_features
+from gha_optimizer.models.evaluation import chronological, from_log_ratio, log_ratio, usable_features
 from gha_optimizer.models.failure_predictor import FailurePredictor
 
 STRUCTURAL_FEATURES = ["job_structurally_impacted", "cache_key_touched", "dep_graph_distance"]
@@ -52,6 +52,7 @@ class TargetSpec:
     baseline: Callable[[pd.DataFrame], pd.Series]   # naive score per row (NaN allowed)
     estimator: Callable[[], Any]
     baseline_description: str
+    log_ratio: bool = False  # regression on log((y+1)/(prior+1)) with prior = the baseline score (see DurationEstimator)
 
 
 TARGETS: dict[str, TargetSpec] = {
@@ -71,6 +72,10 @@ TARGETS: dict[str, TargetSpec] = {
     "duration": TargetSpec(
         "duration", "regression", lambda d: d["label_duration"], lambda d: d["historical_mean_duration"],
         lambda: DurationEstimator().model, "the job's prior decayed mean duration"),
+    "duration_ratio": TargetSpec(
+        "duration_ratio", "regression", lambda d: d["label_duration"], lambda d: d["historical_mean_duration"],
+        lambda: DurationEstimator(target="log_ratio").model, "the job's prior decayed mean duration",
+        log_ratio=True),
 }
 
 
@@ -137,19 +142,29 @@ def evaluate_target(
             skipped.append(i)
             continue
         preds: dict[str, np.ndarray] = {}
+        fill = float(train["_y"].mean())  # the training fold's own rate / mean fills a missing prior
+        fit_rows = train
+        if spec.log_ratio:  # rows without a prior have no ratio to learn from
+            fit_rows = train[spec.baseline(train).notna()]
         for fname, cols in sets.items():
-            feats = usable_features(train, cols)
-            if not feats:
+            feats = usable_features(fit_rows, cols)
+            if not feats or len(fit_rows) < 10:
                 break
-            est = clone(spec.estimator()).fit(train[feats].astype(float), train["_y"].astype(int if spec.kind == "binary" else float))
+            if spec.log_ratio:
+                y_fit = log_ratio(fit_rows["_y"], spec.baseline(fit_rows).astype(float))
+            else:
+                y_fit = fit_rows["_y"].astype(int if spec.kind == "binary" else float)
+            est = clone(spec.estimator()).fit(fit_rows[feats].astype(float), y_fit)
             if spec.kind == "binary":
                 preds[fname] = est.predict_proba(test[feats].astype(float))[:, 1]
+            elif spec.log_ratio:
+                prior = spec.baseline(test).astype(float).fillna(fill).to_numpy()
+                preds[fname] = from_log_ratio(prior, est.predict(test[feats].astype(float)))
             else:
                 preds[fname] = np.maximum(est.predict(test[feats].astype(float)), 0.0)
         if len(preds) != len(sets):
             skipped.append(i)
             continue
-        fill = float(train["_y"].mean())  # the training fold's own rate / mean fills a missing prior
         preds["baseline"] = spec.baseline(test).astype(float).fillna(fill).to_numpy()
         for k, v in preds.items():
             pooled[k].append(v)
