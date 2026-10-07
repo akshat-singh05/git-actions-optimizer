@@ -77,7 +77,7 @@ def run_pipeline(
     ----------
     workflow_path : Path to the GitHub Actions workflow YAML.
     repo_root : Path to the repository root.
-    tracked_files : List of source files to include in the graph.
+    tracked_files : Every tracked file of the repo (File nodes of the graph; only source files are parsed).
     history : **Real ingested** workflow run records for this workflow (see
         :func:`gha_optimizer.ingestion.history.load_history`).  There is no synthetic
         fallback: with too little history this raises

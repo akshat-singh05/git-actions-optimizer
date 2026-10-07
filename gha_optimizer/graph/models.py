@@ -135,6 +135,7 @@ class NodeMetadata(BaseModel):
     version: Optional[str] = None
     owner: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
+    attributes: Dict[str, Any] = Field(default_factory=dict)  # type-specific facts (e.g. a step's full command)
 
     # ── Provenance ──────────────────────────────────────────────────
     provenance: ProvenanceRecord = Field(default_factory=ProvenanceRecord)

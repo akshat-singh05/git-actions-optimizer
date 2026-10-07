@@ -80,7 +80,7 @@ def _decline(exc: Exception) -> None:
 def _analysis_inputs(args: argparse.Namespace):
     from gha_optimizer.ingestion.workspace import (
         default_repo_root,
-        tracked_source_files,
+        tracked_files,
         workflow_repo_path,
         working_tree_changes,
     )
@@ -88,7 +88,7 @@ def _analysis_inputs(args: argparse.Namespace):
     workflow_path = Path(args.workflow)
     repo_root = Path(args.repo_root) if args.repo_root else default_repo_root(workflow_path)
     wf_repo_path = workflow_repo_path(workflow_path, repo_root, getattr(args, "workflow_path", None))
-    tracked = args.files.split(",") if args.files else tracked_source_files(repo_root)
+    tracked = args.files.split(",") if args.files else tracked_files(repo_root)
     changed = args.changed.split(",") if args.changed else working_tree_changes(repo_root)
     if not changed:
         print("No changed files: pass --changed a,b (or have uncommitted changes in --repo-root).")

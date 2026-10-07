@@ -37,7 +37,7 @@ These govern every session. They exist because this is assessed academic work an
 Treat these as open, not resolved. They are the areas most likely to be challenged at a viva. Detail: `docs/REAL_DATA_FOUNDATION.md` (design/status) and `docs/DATASET_REPORT.md` (generated from the DB).
 
 - **Training data is now real** (ingested GitHub Actions history in the DB; `gha-optimizer ingest`), but samples are small and capped (about 100 newest runs per repo; 17-38 failure positives per repo). The only synthetic generator is the test fixture `tests/fixtures/synthetic_history.py`, never importable from `gha_optimizer/`.
-- **Graph-derived features are close to degenerate on real repos**: in all five ingested repos no row is "impacted via a real graph path" (fusion rules rarely fire; parsers never resolve intra-repo imports). Fix before relying on any graph claim.
+- **Graph-derived features carry signal only where the workflow states a file→job relationship.** Version 2 (`GRAPH_FEATURE_VERSION`, `docs/GRAPH_FEATURES.md`) agrees with executed-vs-skipped for poetry (skipped 5% when impacted vs 92% when not) and fastapi (2% vs 36%), is wrong-way or uninformative for prometheus, dubbo and quarkus (event/label/script-driven gates, `make` targets, Maven toolchain over-approximation), `dep_graph_distance` has only 2 distinct values per repo, and no model comparison was possible (1-11 failure positives per test window). Toolchain rules are an explicit over-approximation; intra-repo imports are still unresolved.
 - **Models show little or no skill over naive baselines** on real data (duration MAE worse than the prior-mean baseline; cache label nearly single-class in test windows). Always report the base rate/baseline next to a metric.
 - **The scheduler's headline gain is dominated by an assumed runner speed-up law** (`speedup = price_multiplier ** 0.6` in `_evaluate_tier`), and the cache-miss probability is not consumed by the scheduler. All improvement figures are ESTIMATED, never measured.
 - **No persisted model artifacts in the pipeline path.** `gha-optimizer train` saves joblib files (verified to reload) but `run_pipeline()` still re-fits on every call.
@@ -52,7 +52,7 @@ A virtualenv lives at `.venv/` (Windows: `.venv\Scripts\python.exe`).
 pip install -r requirements.txt
 pip install -e ".[dev]"
 
-# Tests (full suite about 1-1.5 min, 181 tests; the pipeline tests train models)
+# Tests (full suite about 1 min, 207 tests; the pipeline tests train models)
 pytest tests/ -v
 pytest tests/test_scheduler.py -v                                   # one file
 pytest tests/test_scheduler.py::test_name -v                        # one test
@@ -100,9 +100,9 @@ CI (`.github/workflows/ci.yml`) runs lint → test + typecheck on Python 3.10.
 
 ### The graph engine (`gha_optimizer/graph/`)
 
-- `GraphBuilder` (`builder.py`) is used twice: once for source files (via the tree-sitter language parsers in `graph/parsers/`, registered by file extension) and once for the workflow (jobs, steps, cache keys, etc.). `GraphFusion.fuse` (`fusion.py`) composes the two and adds cross-domain edges (file→test job, file→cache key, package→job, directory→job) inferred from step commands with regexes.
+- `GraphBuilder` (`builder.py`) is used twice: once for source files (via the tree-sitter language parsers in `graph/parsers/`, registered by file extension) and once for the workflow (jobs, steps, cache keys, etc.). `GraphFusion.fuse` (`fusion.py`) composes the two and adds cross-domain edges by five static rules (paths-filter gates, path arguments, toolchain scope, `setup-*` action, cache-key globs), each with its own `creation_source` and confidence; a gate supersedes the weaker rules for that job. Rule semantics and limits: `docs/GRAPH_FEATURES.md`. `ci_semantics.py` holds the pure helpers (globs, command classification, implicit-cache defaults); `workflow_expand.py` inlines local reusable workflows / composite actions; step nodes keep their full command in `NodeMetadata.attributes`. Every tree path is a `File` node.
 - **Node IDs are `"<NodeType>::<name>"`** (e.g. `WorkflowJob::lint`, `File::src/app.py`); node/edge types and pydantic metadata live in `graph/models.py`. Every node/edge carries provenance + confidence.
-- `dependency_graph.py` is the **bridge**: it exposes plain-name helpers (`impacted_jobs_for_diff`, `cache_keys_touched_by`, `graph_distance_to_job`) that translate to/from prefixed IDs. Feature extraction and most tests go through this module rather than the engine classes. `impacted_jobs_for_diff` conservatively returns *all* jobs when none of the changed files exist as graph nodes.
+- `dependency_graph.py` is the **bridge**: it exposes plain-name helpers (`impacted_jobs_for_diff`, `cache_keys_touched_by`, `graph_distance_to_job`) that translate to/from prefixed IDs. Feature extraction and most tests go through this module rather than the engine classes. `job_graph_features` is the single implementation of the structural features (training, static fallback, inference): impacted is 1 / 0 / NaN (unknown = no file evidence), never a fabricated "all jobs". `impacted_jobs_for_diff` (demos, scheduling) stays conservative: reached jobs plus every unlinked job.
 - The pipeline collapses the `MultiDiGraph` to a `DiGraph` before feature extraction.
 - Language parsers load inside try/except; a missing tree-sitter grammar disables that language with a warning instead of failing (see `GraphBuilder.get_parser_capabilities`, surfaced at `/api/v1/parsers`).
 - The remaining modules (`analytics`, `quality`, `benchmark`, `explain`, `events`, `update`, `versioning`, `storage`) back the graph REST API in `server/api/v1/graph.py` and the Celery tasks; the core pipeline does not use them.
@@ -111,7 +111,7 @@ CI (`.github/workflows/ci.yml`) runs lint → test + typecheck on Python 3.10.
 
 - `server/app.py` — FastAPI app: `/health`, `/ready`, `/webhook/github` (HMAC-validated, hands off to Celery `process_webhook`), `/api/v1/optimize`, metrics, plus the graph router under `/api/v1/graph`.
 - `worker/tasks.py` — Celery tasks (Redis broker) for repo sync, webhook handling, graph builds, training and drift/feedback (`feedback/`). Tasks are meant to be thin wrappers that import service modules lazily.
-- Persistence is SQLAlchemy: `server/db/{session,models,crud}.py`, migrated with Alembic (`001_initial`, `002_real_ingestion`; `init_db()` is a dev convenience). The `ingestion/` package (`github_client`, `ingest`, `log_parser`, `job_mapping`, `mirror`, `history`, `workspace`) owns real-data collection; Celery `sync_repository` / `ingest_run` wrap it.
+- Persistence is SQLAlchemy: `server/db/{session,models,crud}.py`, migrated with Alembic (`001_initial`, `002_real_ingestion`, `003_graph_feature_version`; `init_db()` is a dev convenience and does not add columns to existing tables - a DB made by `create_all` needs `alembic stamp <rev>` then `upgrade head`). The `ingestion/` package (`github_client`, `ingest`, `log_parser`, `job_mapping`, `mirror`, `history`, `workspace`) owns real-data collection; Celery `sync_repository` / `ingest_run` wrap it.
 - `dashboard/` is a static vanilla-JS + Chart.js SPA (no build step). `demo_ui.html` is a separate page served only by `demo_server.py`.
 
 ### Configuration

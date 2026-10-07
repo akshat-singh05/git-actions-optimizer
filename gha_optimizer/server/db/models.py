@@ -205,7 +205,9 @@ class RunGraphFeatures(Base):
     job_structurally_impacted = Column(Integer)
     cache_key_touched = Column(Integer)
     dep_graph_distance = Column(Float)
-    any_changed_file_in_graph = Column(Integer)  # 0 => the 'all jobs impacted' fallback fired
+    any_changed_file_in_graph = Column(Integer)  # 0 => no changed file was a graph node: no structural information
+    job_has_file_links = Column(Integer)          # 0 => the job had no file-level evidence in the graph (impacted is NULL)
+    feature_version = Column(Integer, nullable=False, default=1, server_default="1")  # GRAPH_FEATURE_VERSION at compute time
     graph_nodes = Column(Integer)
     graph_edges = Column(Integer)
     computed_at = Column(DateTime, default=datetime.datetime.utcnow)

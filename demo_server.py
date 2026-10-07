@@ -98,8 +98,8 @@ def run_demo_pipeline():
         "diff_from_run": snap.changed_from_run,
     }
     results["step1_repository"] = {
-        "files_discovered": snap.tracked_files[:50],
-        "file_count": len(snap.tracked_files),
+        "files_discovered": snap.source_files[:50],
+        "file_count": len(snap.source_files),
         "workflow_name": workflow.name,
         "job_count": len(workflow.jobs),
         "dag_edge_count": len(dag_edges),
@@ -110,7 +110,7 @@ def run_demo_pipeline():
     }
 
     source_builder = GraphBuilder(repo_root)
-    n_parsed = source_builder.build_from_source([repo_root / f for f in snap.tracked_files])
+    n_parsed = source_builder.build_from_source([repo_root / f for f in snap.source_files])
     source_graph = source_builder.get_graph()
     results["step2_source_graph"] = {
         "files_parsed": n_parsed,
@@ -243,7 +243,7 @@ def run_demo_pipeline():
                                 "diff_preview": diff[:2000] if diff else "(no diff)"}
 
     results["summary"] = {
-        "files_analyzed": len(snap.tracked_files),
+        "files_analyzed": len(snap.source_files),
         "source_deps": source_graph.number_of_edges(),
         "ci_deps": ci_graph.number_of_edges(),
         "fused_nodes": fused_graph.number_of_nodes(),

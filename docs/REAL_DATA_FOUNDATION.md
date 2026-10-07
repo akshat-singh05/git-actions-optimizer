@@ -69,7 +69,10 @@ failed, duration = slowest cell, cache label from the cells that have one). Cell
 
 ## 5. Open issues found while building this (not fixed — they change what can be claimed)
 
-1. **Graph-derived features are close to degenerate on real repositories.** The fusion rules only link
+1. **Graph-derived features were close to degenerate on real repositories - PARTIALLY FIXED 2026-10-07, see
+   `docs/GRAPH_FEATURES.md`** (version 2 features; they now agree with executed-vs-skipped for poetry and
+   fastapi but not for prometheus, dubbo or quarkus). The text below describes version 1.
+   The fusion rules only link
    files to jobs when a step runs a recognised test command on a directory (`pytest <dir>`, `go test`, …),
    link files to cache keys only for `actions/cache` steps, and no parser resolves intra-repo imports
    (every import becomes a `Package` node). On `python-poetry/poetry` fusion inferred **zero** cross-domain

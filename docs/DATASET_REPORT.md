@@ -1,6 +1,6 @@
 # Dataset report — real GitHub Actions history
 
-*Generated 2026-10-06 22:55 UTC by `gha-optimizer dataset-report` from database `sqlite:///gha_optimizer.db`. Every figure below was computed from the ingested rows at generation time; nothing is hand-entered.*
+*Generated 2026-10-07 05:12 UTC by `gha-optimizer dataset-report` from database `sqlite:///gha_optimizer.db`. Every figure below was computed from the ingested rows at generation time; nothing is hand-entered.*
 
 ## 1. What this dataset is
 
@@ -186,9 +186,9 @@ Status meanings: `labelled` = a cache restore line was parsed; `parsed_no_events
 | files_changed_count | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
 | loc_added | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
 | loc_deleted | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
-| job_structurally_impacted | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
-| cache_key_touched | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
-| dep_graph_distance | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
+| job_structurally_impacted | 130 (16.7%) | 120 (16.7%) | 894 (42.7%) | 14 (1.8%) | 72 (14.3%) |
+| cache_key_touched | 0 (0.0%) | 0 (0.0%) | 92 (4.4%) | 181 (22.7%) | 336 (66.7%) |
+| dep_graph_distance | 554 (71.0%) | 455 (63.2%) | 1097 (52.4%) | 14 (1.8%) | 90 (17.9%) |
 | historical_failure_rate | 18 (2.3%) | 11 (1.5%) | 283 (13.5%) | 14 (1.8%) | 55 (10.9%) |
 | historical_mean_duration | 18 (2.3%) | 11 (1.5%) | 283 (13.5%) | 14 (1.8%) | 55 (10.9%) |
 | recent_failure_streak | 18 (2.3%) | 11 (1.5%) | 283 (13.5%) | 14 (1.8%) | 55 (10.9%) |
@@ -203,25 +203,54 @@ Historical features are NaN by construction for a job's first runs (no earlier e
 
 ## 7. Graph-feature quality
 
-| repo | rows with graph features | rows where fallback fired | fallback share | rows impacted via a REAL graph path | rows with cache_key_touched=1 | distinct: impacted | distinct: cache_key_touched | distinct: distance |
-|---|---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 780 | 276 | 35.4% | 0 | 0 | 2 | 1 | 1 |
-| fastapi/fastapi | 720 | 438 | 60.8% | 0 | 0 | 2 | 1 | 1 |
-| prometheus/prometheus | 2094 | 204 | 9.7% | 0 | 7 | 2 | 2 | 1 |
-| apache/dubbo | 798 | 336 | 42.1% | 0 | 130 | 2 | 2 | 1 |
-| quarkusio/quarkus | 504 | 168 | 33.3% | 0 | 0 | 2 | 1 | 1 |
+Feature definition version 2. `impacted` = a changed file reaches the job through File -> (Directory | BuildTarget) -> Job edges and `needs`; **unknown** = the job has no file-level evidence in its graph (e.g. it only runs `make` targets or remote actions), which is NOT the same as unaffected.
 
-* **python-poetry/poetry**: constant (zero-variance) structural feature(s) ['cache_key_touched', 'dep_graph_distance'] — they carry no information for this repository.
+| repo | (run, job) rows | no changed file in graph | job has file evidence | impacted = 1 | impacted = 0 | impacted unknown | cache touched = 1 | cache touched = 0 | cache unknown | distinct distances |
+|---|---|---|---|---|---|---|---|---|---|---|
+| python-poetry/poetry | 780 | 0 (0.0%) | 650 (83.3%) | 226 (29.0%) | 424 (54.4%) | 130 (16.7%) | 26 | 754 | 0 | 2 |
+| fastapi/fastapi | 720 | 0 (0.0%) | 600 (83.3%) | 265 (36.8%) | 335 (46.5%) | 120 (16.7%) | 76 | 644 | 0 | 2 |
+| prometheus/prometheus | 2094 | 0 (0.0%) | 1200 (57.3%) | 997 (47.6%) | 203 (9.7%) | 894 (42.7%) | 31 | 1971 | 92 | 2 |
+| apache/dubbo | 798 | 14 (1.8%) | 798 (100.0%) | 784 (98.2%) | 0 (0.0%) | 14 (1.8%) | 130 | 487 | 181 | 2 |
+| quarkusio/quarkus | 504 | 0 (0.0%) | 432 (85.7%) | 414 (82.1%) | 18 (3.6%) | 72 (14.3%) | 0 | 168 | 336 | 2 |
 
-* **fastapi/fastapi**: constant (zero-variance) structural feature(s) ['cache_key_touched', 'dep_graph_distance'] — they carry no information for this repository.
+### 7.1 Does `impacted` agree with what the workflow actually did?
 
-* **fastapi/fastapi**: for 60.8% of rows no changed file was a graph node, so `job_structurally_impacted` fell back to "all jobs impacted" (uninformative).
+Ground truth available without any model: whether a job was **skipped** (every matrix cell skipped) or **executed**.  A job that runs on every change is never skipped, so the all-jobs row is diluted by jobs the workflow does not gate; the second row restricts to jobs that were both skipped and executed in this repository (selected after the fact, so read it as a consistency check, not as a test of the rules).  Fisher exact p-values assume independent rows, which the data does not satisfy - they are optimistic.
 
-* **prometheus/prometheus**: constant (zero-variance) structural feature(s) ['dep_graph_distance'] — they carry no information for this repository.
+| repo | scope | impacted=1 rows | of which skipped | impacted=0 rows | of which skipped | Fisher p |
+|---|---|---|---|---|---|---|
+| python-poetry/poetry | all jobs | 226 | 5.3% | 424 | 92.2% | 4.8e-118 |
+| python-poetry/poetry | jobs that skip at least once (4) | 129 | 9.3% | 391 | 100.0% | 2.5e-103 |
+| fastapi/fastapi | all jobs | 265 | 2.3% | 335 | 36.4% | 1.5e-28 |
+| fastapi/fastapi | jobs that skip at least once (3) | 174 | 3.4% | 186 | 65.6% | 1.1e-39 |
+| prometheus/prometheus | all jobs | 997 | 18.8% | 203 | 11.3% | 0.011 |
+| prometheus/prometheus | jobs that skip at least once (4) | 277 | 35.0% | 123 | 10.6% | 1.3e-07 |
+| apache/dubbo | all jobs | 784 | 9.1% | 0 | n/a | 1 |
+| apache/dubbo | jobs that skip at least once (11) | 616 | 11.5% | 0 | n/a | 1 |
+| quarkusio/quarkus | all jobs | 414 | 33.8% | 18 | 5.6% | 0.0097 |
+| quarkusio/quarkus | jobs that skip at least once (17) | 391 | 29.9% | 17 | 0.0% | 0.0045 |
 
-* **apache/dubbo**: constant (zero-variance) structural feature(s) ['dep_graph_distance'] — they carry no information for this repository.
+### 7.2 Do the structural features associate with the labels the models predict?
 
-* **quarkusio/quarkus**: constant (zero-variance) structural feature(s) ['cache_key_touched', 'dep_graph_distance'] — they carry no information for this repository.
+Descriptive only (no model): the label rate of all labelled rows split by the feature value.  Rows are not independent (jobs of a run share a commit; consecutive runs share a PR), so differences are optimistic, and failure positives are few - read the counts, not just the percentages.
+
+| repo | label | feature | feature = 1 | feature = 0 | feature unknown |
+|---|---|---|---|---|---|
+| python-poetry/poetry | failure rate | `job_structurally_impacted` | 12.1% (n=214) | 0.0% (n=33) | 0.0% (n=130) |
+| python-poetry/poetry | cache-miss rate | `cache_key_touched` | 0.0% (n=9) | 67.9% (n=84) | n/a |
+| python-poetry/poetry | exact key not restored (miss or partial hit) | `cache_key_touched` | 100.0% (n=9) | 70.2% (n=84) | n/a |
+| fastapi/fastapi | failure rate | `job_structurally_impacted` | 7.8% (n=257) | 1.9% (n=209) | 0.0% (n=119) |
+| fastapi/fastapi | cache-miss rate | `cache_key_touched` | 85.7% (n=35) | 22.1% (n=77) | n/a |
+| fastapi/fastapi | exact key not restored (miss or partial hit) | `cache_key_touched` | 85.7% (n=35) | 22.1% (n=77) | n/a |
+| prometheus/prometheus | failure rate | `job_structurally_impacted` | 3.6% (n=810) | 2.1% (n=141) | 0.9% (n=664) |
+| prometheus/prometheus | cache-miss rate | `cache_key_touched` | 79.2% (n=24) | 88.8% (n=268) | 86.2% (n=87) |
+| prometheus/prometheus | exact key not restored (miss or partial hit) | `cache_key_touched` | 79.2% (n=24) | 89.1% (n=267) | 86.2% (n=87) |
+| apache/dubbo | failure rate | `job_structurally_impacted` | 5.6% (n=683) | n/a | 0.0% (n=14) |
+| apache/dubbo | cache-miss rate | `cache_key_touched` | 20.0% (n=115) | 66.2% (n=74) | 13.2% (n=151) |
+| apache/dubbo | exact key not restored (miss or partial hit) | `cache_key_touched` | 97.4% (n=115) | 100.0% (n=74) | 59.6% (n=151) |
+| quarkusio/quarkus | failure rate | `job_structurally_impacted` | 12.2% (n=263) | 11.8% (n=17) | 0.0% (n=69) |
+| quarkusio/quarkus | cache-miss rate | `cache_key_touched` | n/a | n/a | 50.0% (n=220) |
+| quarkusio/quarkus | exact key not restored (miss or partial hit) | `cache_key_touched` | n/a | n/a | 54.1% (n=218) |
 
 ## 8. Temporal train/test split
 

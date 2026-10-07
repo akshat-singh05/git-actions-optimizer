@@ -79,6 +79,17 @@ class JobSpec:
     environment: str | None = None
     env: dict[str, str] = field(default_factory=dict)
     permissions: dict[str, str] = field(default_factory=dict)
+    uses: str | None = None  # job-level ``uses:`` - a reusable-workflow call (no steps of its own)
+    with_inputs: dict[str, Any] = field(default_factory=dict)  # ``with:`` of a reusable-workflow call
+    outputs: dict[str, str] = field(default_factory=dict)
+    working_directory: str | None = None  # ``defaults.run.working-directory`` (job, else workflow level)
+    extra_conditions: list[str] = field(default_factory=list)  # ``if:`` of jobs inlined from a reusable workflow
+
+    @property
+    def all_conditions(self) -> list[str]:
+        """Every ``if:`` expression that gates this job (its own plus those of inlined reusable jobs)."""
+        own = [] if self.condition is None else [str(self.condition)]
+        return own + list(self.extra_conditions)
 
     @property
     def uses_cache_action(self) -> bool:
@@ -243,6 +254,12 @@ def _parse_concurrency(body: Any) -> dict[str, Any] | None:
     return None
 
 
+def _run_working_directory(defaults: Any) -> str | None:
+    run = defaults.get("run") if isinstance(defaults, dict) else None
+    wd = run.get("working-directory") if isinstance(run, dict) else None
+    return wd if isinstance(wd, str) else None
+
+
 def parse_workflow(path: str | Path) -> WorkflowSpec:
     """Parse a workflow YAML file into a normalized ``WorkflowSpec``."""
     path = Path(path)
@@ -288,7 +305,10 @@ def parse_workflow_text(text: str, default_name: str = "workflow") -> WorkflowSp
     jobs_raw = raw.get("jobs", {})
     jobs: dict[str, JobSpec] = {}
 
+    wf_wd = _run_working_directory(raw.get("defaults"))
+
     for job_id, job_body in jobs_raw.items():
+        job_body = job_body or {}
         needs = job_body.get("needs", [])
         if isinstance(needs, str):
             needs = [needs]
@@ -315,7 +335,7 @@ def parse_workflow_text(text: str, default_name: str = "workflow") -> WorkflowSp
             job_id=job_id,
             runs_on=job_body.get("runs-on", "ubuntu-latest"),
             needs=list(needs),
-            steps=job_body.get("steps", []),
+            steps=job_body.get("steps") or [],
             matrix=_parse_matrix(job_body.get("strategy")),
             condition=job_body.get("if"),
             concurrency_group=concurrency_group,
@@ -325,6 +345,11 @@ def parse_workflow_text(text: str, default_name: str = "workflow") -> WorkflowSp
             else (job_body.get("environment", {}) or {}).get("name"),
             env=job_env,
             permissions=job_perms,
+            uses=job_body.get("uses") if isinstance(job_body.get("uses"), str) else None,
+            with_inputs=job_body.get("with") if isinstance(job_body.get("with"), dict) else {},
+            outputs={str(k): str(v) for k, v in (job_body.get("outputs") or {}).items()}
+            if isinstance(job_body.get("outputs"), dict) else {},
+            working_directory=_run_working_directory(job_body.get("defaults")) or wf_wd,
         )
 
     return WorkflowSpec(

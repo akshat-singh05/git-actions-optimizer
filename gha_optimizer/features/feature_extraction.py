@@ -37,12 +37,7 @@ from typing import Any, Iterable
 import networkx as nx
 import pandas as pd
 
-from gha_optimizer.graph.dependency_graph import (
-    any_changed_file_in_graph,
-    cache_key_touched_for_job,
-    graph_distances_from_files,
-    impacted_jobs_for_diff,
-)
+from gha_optimizer.graph.dependency_graph import job_graph_features
 from gha_optimizer.graph.models import NodeType
 from gha_optimizer.ingestion.github_client import WorkflowRunRecord
 
@@ -312,18 +307,7 @@ def _structural(
             n.split("::", 1)[1] for n, d in g.nodes(data=True)
             if d.get("node_type") == NodeType.WORKFLOW_JOB.value
         ]
-        impacted = impacted_jobs_for_diff(g, list(files))
-        dists = graph_distances_from_files(g, list(files), job_nodes)
-        in_graph = float(any_changed_file_in_graph(g, list(files)))
-        cache[files] = {
-            j: {
-                "job_structurally_impacted": float(j in impacted),
-                "cache_key_touched": float(cache_key_touched_for_job(g, list(files), j)),
-                "dep_graph_distance": dists.get(j, -1.0),
-                "any_changed_file_in_graph": in_graph,
-            }
-            for j in job_nodes
-        }
+        cache[files] = job_graph_features(g, list(files), job_nodes)
     per_job = cache[files].get(rec.job_id)
     if per_job is None:  # job id is not a node of the static graph: structure is unknown
         return {k: NAN for k in ("job_structurally_impacted", "cache_key_touched", "dep_graph_distance", "any_changed_file_in_graph")}
@@ -392,24 +376,23 @@ def build_inference_frame(
     hour = float(now.hour) if hour_of_day is None else float(hour_of_day)
     dow = float(now.weekday()) if day_of_week is None else float(day_of_week)
 
-    impacted = impacted_jobs_for_diff(g, changed_files)
-    dists = graph_distances_from_files(g, changed_files, job_ids)
-    in_graph = float(any_changed_file_in_graph(g, changed_files))
+    structural = job_graph_features(g, changed_files, job_ids)
     author_stats = author_stats or {}
     a_rate = author_stats.get(author, {}).get("failure_rate", NAN) if author else NAN
 
     rows = []
     for job_id in job_ids:
         stats = history_stats.get(job_id, {})
+        sf = structural[job_id]
         rows.append(
             {
                 "job_id": job_id,
                 "files_changed_count": float(len(changed_files)),
                 "loc_added": _none_to_nan(loc_added),
                 "loc_deleted": _none_to_nan(loc_deleted),
-                "job_structurally_impacted": float(job_id in impacted),
-                "cache_key_touched": float(cache_key_touched_for_job(g, changed_files, job_id)),
-                "dep_graph_distance": dists.get(job_id, -1.0),
+                "job_structurally_impacted": sf["job_structurally_impacted"],
+                "cache_key_touched": sf["cache_key_touched"],
+                "dep_graph_distance": sf["dep_graph_distance"],
                 "historical_failure_rate": stats.get("failure_rate", NAN),
                 "historical_mean_duration": stats.get("mean_duration", NAN),
                 "recent_failure_streak": stats.get("recent_failure_streak", NAN),
@@ -419,7 +402,7 @@ def build_inference_frame(
                 "hour_of_day": hour,
                 "day_of_week": dow,
                 "is_weekend": float(dow >= 5),
-                "any_changed_file_in_graph": in_graph,
+                "any_changed_file_in_graph": sf["any_changed_file_in_graph"],
             }
         )
     return pd.DataFrame(rows)
