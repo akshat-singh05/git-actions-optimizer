@@ -233,7 +233,7 @@ def explain_changes(plan: SchedulePlan, sensitivity: list[dict[str, float]] | No
             lines.append(
                 f"- `{jp.job_id}` → runner=`{jp.runner}`, "
                 f"P(fail)={jp.predicted_failure_prob:.2f}, "
-                f"P(cache miss)={jp.predicted_cache_miss_prob:.2f}, "
+                f"P(cache miss)={jp.predicted_cache_miss_prob:.2f} (informational, not used by the scheduler), "
                 f"est. {jp.estimated_duration_seconds:.0f}s "
                 f"(${jp.estimated_cost_usd:.5f}), "
                 f"CO₂={jp.estimated_co2_grams:.3f}g, "

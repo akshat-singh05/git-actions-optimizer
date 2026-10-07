@@ -162,7 +162,7 @@ class CacheMissPredictor:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({"model": self.model, "backend": self._backend_name, "features": self._features,
-                     "target": self.target}, path)
+                     "target": self.target, "feature_importance": self._feature_importance}, path)
 
     def load(self, path: str | Path) -> None:
         data = joblib.load(path)
@@ -170,4 +170,5 @@ class CacheMissPredictor:
         self._backend_name = data.get("backend", "sklearn-hist")
         self._features = data.get("features", list(FEATURE_COLUMNS))
         self.target = data.get("target", "any_miss")  # artifacts saved before the target option are any_miss
+        self._feature_importance = data.get("feature_importance", {})
         self._fitted = True

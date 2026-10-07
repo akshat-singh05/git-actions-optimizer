@@ -197,7 +197,8 @@ class DurationEstimator:
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
             {"model": self.model, "quantile_models": self._quantile_models, "backend": self._backend_name,
-             "features": self._features, "target": self.target, "fallback_prior": self._fallback_prior},
+             "features": self._features, "target": self.target, "fallback_prior": self._fallback_prior,
+             "feature_importance": self._feature_importance},
             path,
         )
 
@@ -210,4 +211,5 @@ class DurationEstimator:
         self.target = data.get("target", "seconds")  # artifacts saved before the target option are 'seconds'
         # (the constructor default is now "log_ratio"; a loaded artifact always keeps the target it was trained with)
         self._fallback_prior = data.get("fallback_prior", float("nan"))
+        self._feature_importance = data.get("feature_importance", {})
         self._fitted = True

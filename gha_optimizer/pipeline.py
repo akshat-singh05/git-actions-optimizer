@@ -36,6 +36,7 @@ from gha_optimizer.ingestion.history import require_history
 from gha_optimizer.ingestion.workflow_parser import WorkflowSpec, parse_workflow
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
 from gha_optimizer.models.duration_estimator import DurationEstimator
+from gha_optimizer.models.store import ModelStore, fingerprint
 from gha_optimizer.models.failure_predictor import FailurePredictor
 from gha_optimizer.scheduler.optimizer import SchedulePlan, build_schedule, speedup_sensitivity
 from gha_optimizer.schemas import (
@@ -71,6 +72,7 @@ def run_pipeline(
     workflow_repo_path: str | None = None,
     allow_runner_upsizing: bool | None = None,
     speedup_exponent: float | None = None,
+    model_dir: str | Path | None = None,
 ) -> tuple[SchedulePlan, str]:
     """
     Run the full optimization pipeline end to end.
@@ -91,6 +93,9 @@ def run_pipeline(
     allow_runner_upsizing : Let the plan move base-tier jobs to larger-runner labels (default off; those labels must
         exist in the organisation).  The larger-runner case is always reported as an ASSUMED what-if.
     speedup_exponent : ASSUMED runner speed-up law exponent (default ``config.scheduler.speedup_exponent``).
+    model_dir : Directory of persisted models (``models/store.py``).  If it holds models trained on exactly this
+        history/feature/hyper-parameter fingerprint they are loaded instead of refit; otherwise the models are fit
+        and saved there.  ``None`` (default): always fit, never touch disk.
     workflow_repo_path : repo-relative path of the workflow (e.g. ``.github/workflows/ci.yml``),
         used to select that workflow's records when ``history`` mixes several.
 
@@ -143,13 +148,28 @@ def run_pipeline(
     # ──────────────────────────────────────────────────────────────
     # Layer 3 — Train models & score current diff
     # ──────────────────────────────────────────────────────────────
-    cache_model = CacheMissPredictor()
-    failure_model = FailurePredictor()
-    duration_model = DurationEstimator()
+    store = ModelStore(model_dir) if model_dir is not None else None
+    fp = fingerprint(history) if store is not None else None
+    loaded = store.try_load(fp, workflow_repo_path) if store is not None else None
+    if loaded is not None:
+        models, metrics = loaded
+        cache_model, failure_model, duration_model = models["cache_miss"], models["failure"], models["duration"]
+        cache_metrics, failure_metrics, duration_metrics = metrics["cache_miss"], metrics["failure"], metrics["duration"]
+        model_source = f"loaded from {model_dir} (same history, features and hyper-parameters as when they were fit)"
+    else:
+        cache_model = CacheMissPredictor()
+        failure_model = FailurePredictor()
+        duration_model = DurationEstimator()
 
-    cache_metrics = cache_model.fit(train_df)
-    failure_metrics = failure_model.fit(train_df)
-    duration_metrics = duration_model.fit(train_df)
+        cache_metrics = cache_model.fit(train_df)
+        failure_metrics = failure_model.fit(train_df)
+        duration_metrics = duration_model.fit(train_df)
+        model_source = "fit on the ingested history just now"
+        if store is not None:
+            store.save(fp, workflow_repo_path,
+                       {"cache_miss": cache_model, "failure": failure_model, "duration": duration_model},
+                       {"cache_miss": cache_metrics, "failure": failure_metrics, "duration": duration_metrics})
+            model_source += f" and saved to {model_dir}"
 
     logger.info("[%s] Cache-miss predictor: %s", trace_id, cache_metrics)
     logger.info("[%s] Failure predictor: %s", trace_id, failure_metrics)
@@ -239,6 +259,7 @@ def run_pipeline(
         + ("" if with_graph else "  (structural features are NaN: run `gha-optimizer build-dataset` first)"),
         "- improvement figures in this report are ESTIMATED from predicted durations; they are not measured executions",
         "",
+        f"### Models: {model_source}",
         "### Model validation metrics (temporal holdout)",
         f"- Cache-miss predictor: {cache_metrics}",
         f"- Failure predictor: {failure_metrics}",

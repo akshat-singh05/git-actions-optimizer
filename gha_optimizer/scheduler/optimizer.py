@@ -432,7 +432,9 @@ def build_schedule(
     ----------
     dag : Job-only DAG (nodes = job_ids, edges = needs-dependencies).
     failure_prob : {job_id: P(failure)} from FailurePredictor.
-    cache_miss_prob : {job_id: P(cache_miss)} from CacheMissPredictor.
+    cache_miss_prob : {job_id: P(cache_miss)} from CacheMissPredictor.  Carried into the plan for reporting only:
+        it does not influence skipping, runner choice or any estimate (the cache model has not been shown to
+        beat its naive baseline - docs/MODEL_EVAL.md - and durations already condition on cache features).
     duration_pred : {job_id: predicted_seconds} from DurationEstimator.
     failure_skip_threshold : Jobs with skip_probability above this are
         flagged ``skip_recommended``.
