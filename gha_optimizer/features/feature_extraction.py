@@ -84,7 +84,8 @@ class JobFeatureRow:
     is_weekend: float = NAN
 
     # Labels (training only; NaN = no label)
-    label_cache_hit: float = NAN
+    label_cache_hit: float = NAN          # 1 = restored (exact OR restore-keys partial hit), 0 = miss
+    label_cache_exact_miss: float = NAN   # 1 = exact key NOT restored (miss or partial hit), 0 = exact hit
     label_failed: float = NAN
     label_duration: float = NAN
 
@@ -141,6 +142,16 @@ def _duration_label(rec: WorkflowRunRecord) -> float | None:
 
 def _cache_label(rec: WorkflowRunRecord) -> int | None:
     return None if rec.cache_hit is None else int(bool(rec.cache_hit))
+
+
+def _cache_exact_miss_label(rec: WorkflowRunRecord) -> int | None:
+    """1 when the job's exact cache key was not restored (a miss, or only a ``restore-keys`` prefix hit);
+    0 for an exact hit; None when the outcome is unknown or unresolved (``hit_unresolved``)."""
+    if rec.cache_outcome in ("miss", "partial_hit"):
+        return 1
+    if rec.cache_outcome == "exact_hit":
+        return 0
+    return None
 
 
 def _run_sort_key(rec: WorkflowRunRecord) -> tuple[str, int, str, str]:
@@ -251,6 +262,7 @@ def build_training_frame(
             jf = state.job_features(rec.workflow_path, rec.job_id)
             hour, dow, weekend = _temporal(rec.timestamp)
             failed, dur, cache = _failed_label(rec), _duration_label(rec), _cache_label(rec)
+            exact = _cache_exact_miss_label(rec)
             row = JobFeatureRow(
                 job_id=rec.job_id,
                 run_id=str(rec.run_id),
@@ -270,6 +282,7 @@ def build_training_frame(
                 day_of_week=dow,
                 is_weekend=weekend,
                 label_cache_hit=NAN if cache is None else float(cache),
+                label_cache_exact_miss=NAN if exact is None else float(exact),
                 label_failed=NAN if failed is None else float(failed),
                 label_duration=NAN if dur is None else dur,
                 workflow_path=rec.workflow_path,

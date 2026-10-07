@@ -2,7 +2,13 @@
 Model A — Cache-Miss Predictor (tabular baseline).
 
 Predicts P(cache_miss) for a job on the current diff, trained on **log-derived**
-labels only.  Rows whose cache label is NULL (no log / no cache line) are excluded
+labels only.  Two targets (the ``target`` argument):
+
+* ``"any_miss"`` (default): miss = the cache was not restored at all.  A ``restore-keys`` prefix
+  fallback ("partial hit") counts as a hit.
+* ``"exact_miss"``: miss = the job's *exact* key was not restored (a miss or a partial hit).  This is
+  what a changed ``hashFiles`` input causes, so it is the target ``cache_key_touched`` describes.
+  Rows whose cache label is NULL (no log / no cache line) are excluded
 — never defaulted — and counted in the returned metrics.
 
 Estimator: gradient-boosted trees that accept NaN natively
@@ -39,6 +45,16 @@ except ImportError:
     _HAS_XGBOOST = False
 
 
+TARGETS = {"any_miss": "label_cache_hit", "exact_miss": "label_cache_exact_miss"}
+
+
+def miss_target(df: pd.DataFrame, target: str) -> pd.Series:
+    """The 0/1 miss label of ``target`` for the rows of ``df`` that have one (NaN rows dropped by callers)."""
+    if target == "any_miss":
+        return 1 - df["label_cache_hit"]
+    return df["label_cache_exact_miss"]
+
+
 class CacheMissPredictor:
     """Predict P(cache_miss) per job using tabular features."""
 
@@ -50,9 +66,15 @@ class CacheMissPredictor:
         learning_rate: float = 0.08,
         random_state: int = 13,
         test_fraction: float | None = None,
+        target: str = "any_miss",
     ):
-        """``backend``: ``"auto"`` (XGBoost if installed, else sklearn hist-GBT) | ``"sklearn"`` | ``"xgboost"``."""
+        """``backend``: ``"auto"`` (XGBoost if installed, else sklearn hist-GBT) | ``"sklearn"`` | ``"xgboost"``;
+        ``target``: ``"any_miss"`` | ``"exact_miss"`` (see the module docstring)."""
         from gha_optimizer.config import config
+
+        if target not in TARGETS:
+            raise ValueError(f"unknown cache target {target!r}; expected one of {sorted(TARGETS)}")
+        self.target = target
 
         self.random_state = random_state
         self.test_fraction = test_fraction if test_fraction is not None else config.model.temporal_test_fraction
@@ -78,15 +100,17 @@ class CacheMissPredictor:
         self._feature_importance: dict[str, float] = {}
 
     def fit(self, df: pd.DataFrame) -> dict:
-        """Train on ``label_cache_hit`` (predicting MISS = 1 - hit); return temporal-holdout metrics."""
-        d = chronological(df).dropna(subset=["label_cache_hit"])
+        """Train on the target's label (see the module docstring); return temporal-holdout metrics."""
+        label_col = TARGETS[self.target]
+        d = chronological(df).dropna(subset=[label_col])
         metrics: dict[str, Any] = {
             "backend": self._backend_name,
+            "target": self.target,
             "n_rows_total": int(len(df)),
             "n_rows_labelled": int(len(d)),
             "n_rows_excluded_null_label": int(len(df) - len(d)),
         }
-        y_all = 1 - d["label_cache_hit"].astype(int)
+        y_all = miss_target(d, self.target).astype(int)
         if len(d) == 0 or y_all.nunique() < 2:
             raise ValueError(
                 f"cache-miss model needs labelled rows of both classes "
@@ -97,13 +121,13 @@ class CacheMissPredictor:
         metrics["features_dropped_all_nan"] = [c for c in FEATURE_COLUMNS if c not in features]
 
         train, test, info = temporal_split(d, self.test_fraction)
-        y_train = 1 - train["label_cache_hit"].astype(int)
+        y_train = miss_target(train, self.target).astype(int)
         importance: dict[str, float] = {}
         if len(test) and y_train.nunique() == 2:
             train_feats = usable_features(train, FEATURE_COLUMNS)
             holdout_model = clone(self.model).fit(train[train_feats].astype(float), y_train)
             X_test = test[train_feats].astype(float)
-            y_test = 1 - test["label_cache_hit"].astype(int)
+            y_test = miss_target(test, self.target).astype(int)
             prob = holdout_model.predict_proba(X_test)[:, 1]
             metrics["validation"] = f"temporal holdout (last {int(self.test_fraction * 100)}% of runs)"
             metrics.update(info)
@@ -137,11 +161,13 @@ class CacheMissPredictor:
     def save(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump({"model": self.model, "backend": self._backend_name, "features": self._features}, path)
+        joblib.dump({"model": self.model, "backend": self._backend_name, "features": self._features,
+                     "target": self.target}, path)
 
     def load(self, path: str | Path) -> None:
         data = joblib.load(path)
         self.model = data["model"]
         self._backend_name = data.get("backend", "sklearn-hist")
         self._features = data.get("features", list(FEATURE_COLUMNS))
+        self.target = data.get("target", "any_miss")  # artifacts saved before the target option are any_miss
         self._fitted = True

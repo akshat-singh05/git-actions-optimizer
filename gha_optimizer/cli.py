@@ -7,6 +7,7 @@ Real-data workflow::
     gha-optimizer ingest-status --repo owner/repo
     gha-optimizer build-dataset --repo owner/repo        # per-commit graph features + dataset
     gha-optimizer dataset-report --repo owner/repo       # writes docs/DATASET_REPORT.md
+    gha-optimizer eval-models --repo owner/repo          # rolling-origin eval + ablation -> docs/MODEL_EVAL.md
     gha-optimizer train --repo owner/repo [--workflow ci.yml]
     gha-optimizer analyze <workflow.yml> --repo owner/repo [--changed a,b]
     gha-optimizer evaluate <workflow.yml> --repo owner/repo
@@ -279,6 +280,37 @@ def cmd_dataset_report(args: argparse.Namespace) -> None:
     print(f"wrote {out} ({len(text.splitlines())} lines)")
 
 
+def cmd_eval_models(args: argparse.Namespace) -> None:
+    """Rolling-origin evaluation with feature-set ablation + bootstrap intervals -> docs/MODEL_EVAL.md."""
+    _use_db(args)
+    from gha_optimizer.features.dataset import build_dataset
+    from gha_optimizer.models.rolling_eval import TARGETS, evaluate_frame, render_markdown
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    results: dict[str, dict] = {}
+    try:
+        for repo in args.repo:
+            df, info = build_dataset(db, repo, args.workflow_path)
+            logger.info("%s: %d rows, %d runs", repo, len(df), df["run_id"].nunique() if not df.empty else 0)
+            if df.empty:
+                continue
+            results[repo] = evaluate_frame(
+                df, args.target or list(TARGETS), n_folds=args.folds, n_boot=args.bootstrap,
+                initial_fraction=args.initial_fraction, min_train_runs=args.min_train_runs,
+            )
+    finally:
+        db.close()
+    if not results:
+        _decline(RuntimeError("no ingested data for the requested repositories"))
+    text = render_markdown(results, args.folds, args.bootstrap)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"wrote {out} ({len(text.splitlines())} lines)")
+
+
 def cmd_train(args: argparse.Namespace) -> None:
     """Train the three models on the ingested dataset (temporal-holdout metrics) and save them."""
     _use_db(args)
@@ -303,7 +335,8 @@ def cmd_train(args: argparse.Namespace) -> None:
     model_dir.mkdir(parents=True, exist_ok=True)
 
     for name, model, fname in (
-        ("Cache-miss predictor", CacheMissPredictor(), "cache_miss.joblib"),
+        ("Cache-miss predictor (any_miss)", CacheMissPredictor(), "cache_miss.joblib"),
+        ("Cache-miss predictor (exact_miss)", CacheMissPredictor(target="exact_miss"), "cache_exact_miss.joblib"),
         ("Failure predictor", FailurePredictor(), "failure.joblib"),
         ("Duration estimator", DurationEstimator(), "duration.joblib"),
     ):
@@ -418,6 +451,19 @@ def main() -> None:
     p_dr.add_argument("--out", default="docs/DATASET_REPORT.md")
     _add_db(p_dr)
 
+    p_ev = subparsers.add_parser(
+        "eval-models", help="Rolling-origin evaluation, feature-set ablation and bootstrap intervals -> docs/MODEL_EVAL.md")
+    p_ev.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
+    p_ev.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
+    p_ev.add_argument("--target", action="append", choices=["failure", "cache_any_miss", "cache_exact_miss", "duration"],
+                      help="target to evaluate (repeatable; default: all four)")
+    p_ev.add_argument("--folds", type=int, default=5)
+    p_ev.add_argument("--initial-fraction", type=float, default=0.5, help="share of runs used only as the first training prefix")
+    p_ev.add_argument("--min-train-runs", type=int, default=20)
+    p_ev.add_argument("--bootstrap", type=int, default=1000)
+    p_ev.add_argument("--out", default="docs/MODEL_EVAL.md")
+    _add_db(p_ev)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -433,6 +479,7 @@ def main() -> None:
         "ingest-status": cmd_ingest_status,
         "build-dataset": cmd_build_dataset,
         "dataset-report": cmd_dataset_report,
+        "eval-models": cmd_eval_models,
     }
     commands[args.command](args)
 
