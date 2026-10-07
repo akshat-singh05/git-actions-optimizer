@@ -85,20 +85,28 @@ def get_db():
 
 # ─── Health & Readiness ────────────────────────────────────────────
 
+def _db_ok() -> bool:
+    """True if a ``SELECT 1`` succeeds on the database the API sessions use (``server/db/session.py``)."""
+    try:
+        from sqlalchemy import text
+
+        from gha_optimizer.server.db.session import SessionLocal
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            return True
+        finally:
+            db.close()
+    except Exception:
+        return False
+
+
 @app.get("/health", response_model=HealthStatus, tags=["system"])
 async def health_check():
     """Basic health check — always returns 200 if the server is up."""
     status = HealthStatus(status="healthy")
 
-    # Check DB
-    try:
-        from gha_optimizer.server.db.session import SessionLocal
-        db = SessionLocal()
-        db.execute("SELECT 1" if hasattr(db, 'execute') else None)
-        db.close()
-        status.db_connected = True
-    except Exception:
-        status.db_connected = False
+    status.db_connected = _db_ok()
 
     # Check Redis
     try:
@@ -113,14 +121,10 @@ async def health_check():
 
 @app.get("/ready", tags=["system"])
 async def readiness_check():
-    """Readiness check — verifies DB connectivity."""
-    try:
-        from gha_optimizer.server.db.session import SessionLocal
-        db = SessionLocal()
-        db.close()
-        return {"status": "ready"}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Not ready: {e}")
+    """Readiness check — runs a real ``SELECT 1`` against the session database."""
+    if not _db_ok():
+        raise HTTPException(status_code=503, detail="Not ready: database unreachable")
+    return {"status": "ready"}
 
 
 # ─── Webhook ───────────────────────────────────────────────────────
@@ -235,6 +239,8 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
                 alpha=request.alpha,
                 beta=request.beta,
                 gamma=request.gamma,
+                allow_runner_upsizing=request.allow_runner_upsizing,
+                speedup_exponent=request.speedup_exponent,
                 workflow_repo_path=wf_repo_path,
             )
         except InsufficientHistoryError as exc:

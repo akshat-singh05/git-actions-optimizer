@@ -118,6 +118,8 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             out_path=out_path,
             model_backend=args.model,
             workflow_repo_path=wf_repo_path,
+            allow_runner_upsizing=args.larger_runners or None,
+            speedup_exponent=args.speedup_exponent,
         )
     except InsufficientHistoryError as exc:
         _decline(exc)
@@ -128,6 +130,10 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     print(f"ESTIMATED time saved:   {plan.time_saved_pct:.1f}%   (from predicted durations, not measured)")
     print(f"ESTIMATED cost saved:   {plan.cost_saved_pct:.1f}%")
     print(f"ESTIMATED energy saved: {plan.energy_saved_pct:.1f}%")
+    print(f"  of which skip recommendations alone: {plan.time_saved_by_skipping_pct:.1f}% time "
+          f"(runner upsizing {'ON' if plan.runner_upsizing else 'off'}; larger-runner what-if under an ASSUMED "
+          f"speed-up exponent {plan.speedup_exponent}: {plan.time_saved_with_upsizing_whatif_pct:.1f}% time, "
+          f"{plan.cost_saved_with_upsizing_whatif_pct:+.1f}% cost)")
 
 
 def cmd_evaluate(args: argparse.Namespace) -> None:
@@ -400,6 +406,10 @@ def main() -> None:
 
     p_analyze = subparsers.add_parser("analyze", help="Analyze and optimize a workflow from ingested history")
     _add_analysis_args(p_analyze)
+    p_analyze.add_argument("--larger-runners", action="store_true",
+                           help="let the plan relabel base-tier jobs to larger-runner labels (they must exist in your org)")
+    p_analyze.add_argument("--speedup-exponent", type=float,
+                           help="ASSUMED runner speed-up law exponent (default config.scheduler.speedup_exponent)")
     p_analyze.add_argument("--model", default="tabular", choices=["tabular", "gnn"])
 
     p_eval = subparsers.add_parser("evaluate", help="Scheduler-weight ablation from ingested history")

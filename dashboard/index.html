@@ -70,6 +70,8 @@
                 </div>
             </header>
 
+            <div class="data-banner" id="dataBanner" hidden></div>
+
             <!-- Views -->
             <div class="view active" id="view-overview">
                 <!-- Summary Cards -->
@@ -108,18 +110,6 @@
                     </div>
                 </div>
 
-                <!-- Charts Row -->
-                <div class="charts-row">
-                    <div class="card chart-card">
-                        <h3 class="card-title">Optimization History</h3>
-                        <canvas id="chartHistory" height="260"></canvas>
-                    </div>
-                    <div class="card chart-card">
-                        <h3 class="card-title">Cost Breakdown</h3>
-                        <canvas id="chartCost" height="260"></canvas>
-                    </div>
-                </div>
-
                 <!-- Recent Results -->
                 <div class="card">
                     <h3 class="card-title">Recent Optimizations</h3>
@@ -135,7 +125,7 @@
                                 </tr>
                             </thead>
                             <tbody id="recentTableBody">
-                                <tr><td colspan="5" class="loading-row">Loading...</td></tr>
+                                <tr><td colspan="5" class="loading-row">No optimization result yet.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -250,7 +240,6 @@
         </main>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

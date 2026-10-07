@@ -1,29 +1,32 @@
 /* ================================================================
    GHA Optimizer Dashboard — Application Logic
+
+   The page shows ONLY what the API returns.  It never invents numbers:
+   with no server, no query parameters or a refused request it shows an
+   explicit empty state.  Everything in a plan is ESTIMATED from predicted
+   durations — none of it is a measured execution.
+
+   Usage: open index.html?repo=owner/repo&workflow=<path of the workflow file
+   on the machine running the server>[&changed=a.py,b.py][&larger_runners=1]
    ================================================================ */
 
 const API_BASE = 'http://localhost:8000';
 let currentView = 'overview';
-let lastOptimizationResult = null;
-let charts = {};
 
 // ─────────────────────────────────────────────────────────────────
 // Navigation
 // ─────────────────────────────────────────────────────────────────
 
 const VIEW_META = {
-    overview:    { title: 'Overview',     subtitle: 'Dashboard summary and key metrics' },
+    overview:    { title: 'Overview',     subtitle: 'ESTIMATED plan summary (from predicted durations, not measured)' },
     pipeline:    { title: 'Pipeline',     subtitle: 'Job dependency graph and per-job predictions' },
     predictions: { title: 'Predictions',  subtitle: 'Predicted vs actual outcomes over time' },
-    schedule:    { title: 'Schedule',     subtitle: 'Baseline vs optimized timeline comparison' },
+    schedule:    { title: 'Schedule',     subtitle: 'Explanation of the proposed workflow changes' },
     models:      { title: 'Models',       subtitle: 'ML model performance and feature importance' },
 };
 
 document.querySelectorAll('.nav-item').forEach(item => {
-    item.addEventListener('click', () => {
-        const view = item.dataset.view;
-        switchView(view);
-    });
+    item.addEventListener('click', () => switchView(item.dataset.view));
 });
 
 function switchView(viewName) {
@@ -65,599 +68,170 @@ async function checkServerHealth() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Run Optimization
+// Run Optimization (real API only)
 // ─────────────────────────────────────────────────────────────────
+
+const BUTTON_IDLE_HTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+    </svg>
+    Run Optimization`;
 
 async function runOptimization() {
     const btn = document.getElementById('btnOptimize');
     btn.classList.add('loading');
-    btn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-            <path d="M21 12a9 9 0 11-6.219-8.56"/>
-        </svg>
-        Running...`;
+    btn.textContent = 'Running...';
 
     try {
-        const serverOnline = await checkServerHealth();
-
-        if (serverOnline) {
-            const resp = await fetch(`${API_BASE}/optimize`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    repo: 'demo/sample-repo',
-                    changed_files: ['src/api/routes.py', 'requirements.txt'],
-                    model_backend: 'tabular',
-                }),
-            });
-            if (resp.ok) {
-                lastOptimizationResult = await resp.json();
-            }
+        const q = new URLSearchParams(window.location.search);
+        const repo = q.get('repo');
+        const workflow = q.get('workflow');
+        if (!repo || !workflow) {
+            showEmpty('Nothing to optimize yet. Open this page as ' +
+                'index.html?repo=owner/repo&workflow=<path of the workflow file on the server>' +
+                '[&changed=a.py,b.py][&larger_runners=1] — the repository must have been ingested ' +
+                '(gha-optimizer ingest / build-dataset).');
+            return;
         }
-
-        // If no server, use demo data
-        if (!lastOptimizationResult) {
-            lastOptimizationResult = generateDemoData();
+        if (!(await checkServerHealth())) {
+            showEmpty('The API server is offline (start it with: gha-optimizer serve). No data is shown.');
+            return;
         }
+        const body = {
+            repo,
+            workflow_path: workflow,
+            changed_files: (q.get('changed') || '').split(',').filter(Boolean),
+            model_backend: 'tabular',
+        };
+        if (q.get('larger_runners') === '1') body.allow_runner_upsizing = true;
 
-        updateAllViews(lastOptimizationResult);
-
+        const resp = await fetch(`${API_BASE}/api/v1/optimize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            const d = payload.detail;
+            const reason = typeof d === 'string' ? d : (d && (d.reason || d.error)) || `HTTP ${resp.status}`;
+            showEmpty(`The API declined this request: ${reason}` + (d && d.hint ? ` — ${d.hint}` : ''));
+            return;
+        }
+        hideBanner();
+        updateAllViews(fromApiResult(payload));
     } catch (e) {
         console.error('Optimization failed:', e);
-        lastOptimizationResult = generateDemoData();
-        updateAllViews(lastOptimizationResult);
+        showEmpty(`Request failed: ${e.message}`);
+    } finally {
+        btn.classList.remove('loading');
+        btn.innerHTML = BUTTON_IDLE_HTML;
     }
-
-    btn.classList.remove('loading');
-    btn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-        </svg>
-        Run Optimization`;
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Demo Data (when server is offline)
-// ─────────────────────────────────────────────────────────────────
-
-function generateDemoData() {
+// The API's OptimizationResultSchema -> what this page renders (nothing is added or defaulted)
+function fromApiResult(r) {
+    const s = r.plan_summary || {};
     return {
-        status: 'success',
-        summary: {
-            jobs_total: 5,
-            jobs_skipped: 1,
-            wall_clock: { baseline_s: 540, optimized_s: 312, saved_pct: 42.2 },
-            cost: { baseline_usd: 0.07200, optimized_usd: 0.04160, saved_pct: 42.2 },
-            energy: { baseline_wh: 2.25, optimized_wh: 1.42, saved_pct: 36.9 },
-            co2: { baseline_g: 0.675, optimized_g: 0.426, saved_pct: 36.9 },
-        },
-        explanation: '## 🚀 gha-optimizer: proposed workflow changes\n\n' +
-            '| Metric | Baseline | Optimized | Savings |\n' +
-            '|--------|----------|-----------|--------|\n' +
-            '| ⏱ Wall-clock | 540s | 312s | 42.2% faster |\n' +
-            '| 💰 Cost | $0.0720 | $0.0416 | 42.2% cheaper |\n' +
-            '| ⚡ Energy | 2.25 Wh | 1.42 Wh | 36.9% less |\n' +
-            '| 🌿 CO₂ | 0.675g | 0.426g | 36.9% |\n',
-        jobs: [
-            { job_id: 'lint', order: 0, runner: 'ubuntu-latest', dag_level: 0, failure_prob: 0.05, cache_miss_prob: 0.18, duration_pred: 30, duration_est: 30, cost_est: 0.004, energy_est: 0.125, co2_est: 0.0375, skip: false, skip_reason: null },
-            { job_id: 'integration_tests', order: 1, runner: 'ubuntu-latest', dag_level: 1, failure_prob: 0.22, cache_miss_prob: 0.65, duration_pred: 240, duration_est: 240, cost_est: 0.032, energy_est: 1.0, co2_est: 0.3, skip: false, skip_reason: null },
-            { job_id: 'unit_tests', order: 2, runner: 'ubuntu-latest', dag_level: 1, failure_prob: 0.08, cache_miss_prob: 0.18, duration_pred: 90, duration_est: 90, cost_est: 0.012, energy_est: 0.375, co2_est: 0.1125, skip: false, skip_reason: null },
-            { job_id: 'build', order: 3, runner: 'ubuntu-latest', dag_level: 2, failure_prob: 0.06, cache_miss_prob: 0.45, duration_pred: 120, duration_est: 120, cost_est: 0.016, energy_est: 0.5, co2_est: 0.15, skip: false, skip_reason: null },
-            { job_id: 'deploy', order: 4, runner: 'ubuntu-latest', dag_level: 3, failure_prob: 0.88, cache_miss_prob: 0.12, duration_pred: 60, duration_est: 60, cost_est: 0.008, energy_est: 0.25, co2_est: 0.075, skip: true, skip_reason: 'downstream of high failure prob job' },
-        ],
-        model_metrics: {
-            cache_miss: { backend: 'sklearn', precision: 0.82, recall: 0.78, f1: 0.80, roc_auc: 0.89 },
-            failure: { backend: 'sklearn', precision: 0.71, recall: 0.65, f1: 0.68, optimal_threshold: 0.38 },
-            duration: { backend: 'sklearn', mae_seconds: 18.5, mape: 0.14, r2: 0.87 },
-        },
-        feature_importance: {
-            cache_key_touched: 0.28,
-            historical_failure_rate: 0.22,
-            files_changed_count: 0.15,
-            dep_graph_distance: 0.12,
-            cache_key_stability: 0.08,
-            loc_added: 0.06,
-            author_failure_rate: 0.04,
-            hour_of_day: 0.03,
-            recent_failure_streak: 0.02,
-        },
+        workflow: r.workflow_name,
+        jobs_total: r.jobs_total,
+        jobs_skipped: r.jobs_skipped,
+        wall_clock: s.wall_clock,
+        cost: s.cost,
+        energy: s.energy,
+        co2: s.co2,
+        runner_upsizing: s.runner_upsizing,
+        skip_only_pct: s.estimated_time_saved_by_skipping_pct,
+        whatif: s.assumed_whatif_larger_runners,
+        explanation: r.explanation,
     };
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Update Views
+// Views
 // ─────────────────────────────────────────────────────────────────
+
+const UNAVAILABLE_HTML = `
+    <div class="card">
+        <h3 class="card-title">Not available</h3>
+        <p class="card-desc">The API does not return per-job predictions, model metrics, feature importances or
+        predicted-vs-actual history yet, so this view shows nothing rather than invented numbers. The same
+        information is available from the CLI: <code>gha-optimizer analyze</code> (per-job plan and model
+        metrics) and <code>gha-optimizer eval-models</code> (rolling-origin model evaluation).</p>
+    </div>`;
+
+function markUnavailable() {
+    ['pipeline', 'predictions', 'models'].forEach(v => {
+        const el = document.getElementById(`view-${v}`);
+        if (el) el.innerHTML = UNAVAILABLE_HTML;
+    });
+}
+
+function setCard(id, value) {
+    document.getElementById(id).textContent = value;
+}
+
+function pct(x) { return `${x}%`; }
 
 function updateAllViews(data) {
-    updateOverview(data);
-    updatePipeline(data);
-    updateSchedule(data);
-    updateModels(data);
-    updatePredictions(data);
-}
+    markUnavailable();
+    const t = data.wall_clock, c = data.cost, e = data.energy;
 
-function updateOverview(data) {
-    const s = data.summary;
+    setCard('metricTimeSaved', pct(t.saved_pct));
+    document.getElementById('metricTimeDetail').textContent = `${t.baseline_s}s → ${t.optimized_s}s (estimated)`;
+    setCard('metricCostSaved', pct(c.saved_pct));
+    document.getElementById('metricCostDetail').textContent =
+        `$${c.baseline_usd.toFixed(4)} → $${c.optimized_usd.toFixed(4)} (estimated; negative = more expensive)`;
+    setCard('metricEnergySaved', pct(e.saved_pct));
+    document.getElementById('metricEnergyDetail').textContent =
+        `${e.baseline_wh.toFixed(2)}Wh → ${e.optimized_wh.toFixed(2)}Wh (estimated)`;
+    setCard('metricAccuracy', '—');
+    document.getElementById('metricAccuracyDetail').textContent = 'model metrics are not part of the API response';
 
-    document.getElementById('metricTimeSaved').textContent = `${s.wall_clock.saved_pct}%`;
-    document.getElementById('metricTimeDetail').textContent = `${s.wall_clock.baseline_s}s → ${s.wall_clock.optimized_s}s`;
+    const w = data.whatif;
+    const extra = [
+        `skip recommendations alone: ${data.skip_only_pct}% time`,
+        `runner upsizing in this plan: ${data.runner_upsizing ? 'ON' : 'off'}`,
+        w ? `what-if larger runners (ASSUMED speed-up exponent ${w.speedup_exponent}): ${w.time_saved_pct}% time, ${w.cost_saved_pct}% cost` : null,
+    ].filter(Boolean).join(' · ');
 
-    document.getElementById('metricCostSaved').textContent = `${s.cost.saved_pct}%`;
-    document.getElementById('metricCostDetail').textContent = `$${s.cost.baseline_usd.toFixed(4)} → $${s.cost.optimized_usd.toFixed(4)}`;
-
-    document.getElementById('metricEnergySaved').textContent = `${s.energy.saved_pct}%`;
-    document.getElementById('metricEnergyDetail').textContent = `${s.energy.baseline_wh.toFixed(2)}Wh → ${s.energy.optimized_wh.toFixed(2)}Wh`;
-
-    const acc = data.model_metrics?.cache_miss?.roc_auc || 0.89;
-    document.getElementById('metricAccuracy').textContent = `${(acc * 100).toFixed(1)}%`;
-    document.getElementById('metricAccuracyDetail').textContent = 'Cache-miss ROC AUC';
-
-    // History chart
-    renderHistoryChart(data);
-    renderCostChart(data);
-
-    // Recent table
-    const tbody = document.getElementById('recentTableBody');
-    tbody.innerHTML = `
+    document.getElementById('recentTableBody').innerHTML = `
         <tr>
-            <td>CI</td>
-            <td><span class="badge badge-success">${s.wall_clock.saved_pct}%</span></td>
-            <td><span class="badge badge-success">${s.cost.saved_pct}%</span></td>
-            <td>${s.jobs_skipped}/${s.jobs_total}</td>
+            <td>${data.workflow}</td>
+            <td>${t.saved_pct}%</td>
+            <td>${c.saved_pct}%</td>
+            <td>${data.jobs_skipped}/${data.jobs_total}</td>
             <td>${new Date().toLocaleDateString()}</td>
-        </tr>`;
+        </tr>
+        <tr><td colspan="5"><small>${extra}</small></td></tr>`;
+
+    document.getElementById('explanationText').textContent = data.explanation || 'No explanation returned.';
 }
 
-function updatePipeline(data) {
-    renderDAG(data.jobs);
-
-    const tbody = document.getElementById('jobTableBody');
-    tbody.innerHTML = data.jobs.map(j => `
-        <tr>
-            <td><strong>${j.job_id}</strong></td>
-            <td>${j.dag_level}</td>
-            <td><code>${j.runner}</code></td>
-            <td><span class="badge ${j.failure_prob > 0.5 ? 'badge-danger' : j.failure_prob > 0.2 ? 'badge-warning' : 'badge-success'}">${j.failure_prob.toFixed(2)}</span></td>
-            <td><span class="badge ${j.cache_miss_prob > 0.5 ? 'badge-warning' : 'badge-info'}">${j.cache_miss_prob.toFixed(2)}</span></td>
-            <td>${j.duration_est.toFixed(0)}s</td>
-            <td>$${j.cost_est.toFixed(5)}</td>
-            <td>${j.co2_est.toFixed(3)}g</td>
-            <td>${j.skip ? '<span class="badge badge-danger">SKIP</span>' : '<span class="badge badge-success">RUN</span>'}</td>
-        </tr>`).join('');
+function showEmpty(message) {
+    markUnavailable();
+    ['metricTimeSaved', 'metricCostSaved', 'metricEnergySaved', 'metricAccuracy'].forEach(id => setCard(id, '—'));
+    ['metricTimeDetail', 'metricCostDetail', 'metricEnergyDetail', 'metricAccuracyDetail'].forEach(id => {
+        document.getElementById(id).textContent = 'no data';
+    });
+    document.getElementById('recentTableBody').innerHTML =
+        '<tr><td colspan="5">No optimization result yet.</td></tr>';
+    document.getElementById('explanationText').textContent = message;
+    const banner = document.getElementById('dataBanner');
+    banner.textContent = message;
+    banner.hidden = false;
 }
 
-function updateSchedule(data) {
-    renderGanttChart(data);
-    document.getElementById('explanationText').textContent = data.explanation || 'No explanation available.';
-}
-
-function updateModels(data) {
-    const cm = data.model_metrics?.cache_miss || {};
-    const fm = data.model_metrics?.failure || {};
-    const dm = data.model_metrics?.duration || {};
-
-    setModelMetrics('cacheModelMetrics', [
-        ['Backend', cm.backend || '—'],
-        ['Precision', cm.precision?.toFixed(4) || '—'],
-        ['Recall', cm.recall?.toFixed(4) || '—'],
-        ['F1', cm.f1?.toFixed(4) || '—'],
-        ['ROC AUC', cm.roc_auc?.toFixed(4) || '—'],
-    ]);
-
-    setModelMetrics('failureModelMetrics', [
-        ['Backend', fm.backend || '—'],
-        ['Precision', fm.precision?.toFixed(4) || '—'],
-        ['Recall', fm.recall?.toFixed(4) || '—'],
-        ['F1', fm.f1?.toFixed(4) || '—'],
-        ['Threshold', fm.optimal_threshold?.toFixed(4) || '—'],
-    ]);
-
-    setModelMetrics('durationModelMetrics', [
-        ['Backend', dm.backend || '—'],
-        ['MAE', dm.mae_seconds ? `${dm.mae_seconds.toFixed(1)}s` : '—'],
-        ['MAPE', dm.mape?.toFixed(4) || '—'],
-        ['R²', dm.r2?.toFixed(4) || '—'],
-    ]);
-
-    renderFeatureImportanceChart(data);
-}
-
-function updatePredictions(data) {
-    renderCachePredictionsChart(data);
-    renderDurationPredictionsChart(data);
-    renderAccuracyTrendChart(data);
-}
-
-function setModelMetrics(containerId, rows) {
-    const container = document.getElementById(containerId);
-    container.innerHTML = rows.map(([label, value]) =>
-        `<div class="metric-row"><span>${label}</span><span>${value}</span></div>`
-    ).join('');
+function hideBanner() {
+    document.getElementById('dataBanner').hidden = true;
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Chart Rendering
-// ─────────────────────────────────────────────────────────────────
-
-const CHART_COLORS = {
-    primary: '#6366f1',
-    secondary: '#8b5cf6',
-    success: '#10b981',
-    warning: '#f59e0b',
-    danger: '#ef4444',
-    info: '#3b82f6',
-    muted: '#6868a0',
-    grid: 'rgba(255,255,255,0.05)',
-    text: '#9898b8',
-};
-
-const CHART_DEFAULTS = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-        legend: { labels: { color: CHART_COLORS.text, font: { family: 'Inter', size: 12 } } },
-    },
-    scales: {
-        x: { ticks: { color: CHART_COLORS.text }, grid: { color: CHART_COLORS.grid } },
-        y: { ticks: { color: CHART_COLORS.text }, grid: { color: CHART_COLORS.grid } },
-    },
-};
-
-function getOrCreate(canvasId, type, config) {
-    if (charts[canvasId]) {
-        charts[canvasId].destroy();
-    }
-    const ctx = document.getElementById(canvasId)?.getContext('2d');
-    if (!ctx) return null;
-    charts[canvasId] = new Chart(ctx, { type, ...config });
-    return charts[canvasId];
-}
-
-function renderHistoryChart(data) {
-    const jobs = data.jobs || [];
-    getOrCreate('chartHistory', 'bar', {
-        data: {
-            labels: jobs.map(j => j.job_id),
-            datasets: [
-                {
-                    label: 'Baseline (s)',
-                    data: jobs.map(j => j.duration_pred),
-                    backgroundColor: 'rgba(99, 102, 241, 0.3)',
-                    borderColor: CHART_COLORS.primary,
-                    borderWidth: 1,
-                    borderRadius: 4,
-                },
-                {
-                    label: 'Optimized (s)',
-                    data: jobs.map(j => j.skip ? 0 : j.duration_est),
-                    backgroundColor: 'rgba(16, 185, 129, 0.3)',
-                    borderColor: CHART_COLORS.success,
-                    borderWidth: 1,
-                    borderRadius: 4,
-                },
-            ],
-        },
-        options: {
-            ...CHART_DEFAULTS,
-            plugins: { ...CHART_DEFAULTS.plugins, title: { display: false } },
-        },
-    });
-}
-
-function renderCostChart(data) {
-    const s = data.summary;
-    getOrCreate('chartCost', 'doughnut', {
-        data: {
-            labels: ['Time Savings', 'Cost Savings', 'Energy Savings', 'CO₂ Savings'],
-            datasets: [{
-                data: [s.wall_clock.saved_pct, s.cost.saved_pct, s.energy.saved_pct, s.co2.saved_pct],
-                backgroundColor: [
-                    'rgba(99, 102, 241, 0.7)',
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)',
-                    'rgba(139, 92, 246, 0.7)',
-                ],
-                borderColor: 'transparent',
-                borderWidth: 0,
-            }],
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: '65%',
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: { color: CHART_COLORS.text, font: { family: 'Inter', size: 12 }, padding: 16 },
-                },
-            },
-        },
-    });
-}
-
-function renderGanttChart(data) {
-    const jobs = data.jobs || [];
-    const levels = {};
-    jobs.forEach(j => {
-        if (!levels[j.dag_level]) levels[j.dag_level] = [];
-        levels[j.dag_level].push(j);
-    });
-
-    // Build baseline and optimized timelines
-    const labels = [];
-    const baselineData = [];
-    const optimizedData = [];
-    let baseOffset = 0;
-    let optOffset = 0;
-
-    Object.keys(levels).sort().forEach(lvl => {
-        const lvlJobs = levels[lvl];
-        const maxBaseDur = Math.max(...lvlJobs.map(j => j.duration_pred));
-        const maxOptDur = Math.max(...lvlJobs.filter(j => !j.skip).map(j => j.duration_est).concat([0]));
-
-        lvlJobs.forEach(j => {
-            labels.push(j.job_id);
-            baselineData.push([baseOffset, baseOffset + j.duration_pred]);
-            optimizedData.push(j.skip ? [0, 0] : [optOffset, optOffset + j.duration_est]);
-        });
-
-        baseOffset += maxBaseDur;
-        optOffset += maxOptDur;
-    });
-
-    getOrCreate('chartGantt', 'bar', {
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: 'Baseline',
-                    data: baselineData.map(([s, e]) => e - s),
-                    backgroundColor: 'rgba(99, 102, 241, 0.5)',
-                    borderColor: CHART_COLORS.primary,
-                    borderWidth: 1,
-                    borderRadius: 3,
-                },
-                {
-                    label: 'Optimized',
-                    data: optimizedData.map(([s, e]) => e - s),
-                    backgroundColor: 'rgba(16, 185, 129, 0.5)',
-                    borderColor: CHART_COLORS.success,
-                    borderWidth: 1,
-                    borderRadius: 3,
-                },
-            ],
-        },
-        options: {
-            ...CHART_DEFAULTS,
-            indexAxis: 'y',
-            plugins: { ...CHART_DEFAULTS.plugins },
-            scales: {
-                x: { ...CHART_DEFAULTS.scales.x, title: { display: true, text: 'Duration (s)', color: CHART_COLORS.text } },
-                y: { ...CHART_DEFAULTS.scales.y },
-            },
-        },
-    });
-}
-
-function renderFeatureImportanceChart(data) {
-    const fi = data.feature_importance || {};
-    const sorted = Object.entries(fi).sort((a, b) => b[1] - a[1]);
-
-    getOrCreate('chartFeatureImportance', 'bar', {
-        data: {
-            labels: sorted.map(([k]) => k.replace(/_/g, ' ')),
-            datasets: [{
-                label: 'Importance',
-                data: sorted.map(([, v]) => v),
-                backgroundColor: sorted.map((_, i) =>
-                    `hsla(${240 + i * 15}, 70%, 60%, 0.6)`
-                ),
-                borderColor: sorted.map((_, i) =>
-                    `hsla(${240 + i * 15}, 70%, 60%, 1)`
-                ),
-                borderWidth: 1,
-                borderRadius: 4,
-            }],
-        },
-        options: {
-            ...CHART_DEFAULTS,
-            indexAxis: 'y',
-            plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } },
-        },
-    });
-}
-
-function renderCachePredictionsChart(data) {
-    const jobs = data.jobs || [];
-    getOrCreate('chartCachePredictions', 'bar', {
-        data: {
-            labels: jobs.map(j => j.job_id),
-            datasets: [{
-                label: 'P(Cache Miss)',
-                data: jobs.map(j => j.cache_miss_prob),
-                backgroundColor: jobs.map(j => j.cache_miss_prob > 0.5 ? 'rgba(245, 158, 11, 0.5)' : 'rgba(59, 130, 246, 0.5)'),
-                borderColor: jobs.map(j => j.cache_miss_prob > 0.5 ? CHART_COLORS.warning : CHART_COLORS.info),
-                borderWidth: 1,
-                borderRadius: 4,
-            }],
-        },
-        options: { ...CHART_DEFAULTS, plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } } },
-    });
-}
-
-function renderDurationPredictionsChart(data) {
-    const jobs = data.jobs || [];
-    getOrCreate('chartDurationPredictions', 'bar', {
-        data: {
-            labels: jobs.map(j => j.job_id),
-            datasets: [
-                {
-                    label: 'Predicted (s)',
-                    data: jobs.map(j => j.duration_pred),
-                    backgroundColor: 'rgba(139, 92, 246, 0.4)',
-                    borderColor: CHART_COLORS.secondary,
-                    borderWidth: 1,
-                    borderRadius: 4,
-                },
-                {
-                    label: 'Estimated on Runner (s)',
-                    data: jobs.map(j => j.duration_est),
-                    backgroundColor: 'rgba(16, 185, 129, 0.4)',
-                    borderColor: CHART_COLORS.success,
-                    borderWidth: 1,
-                    borderRadius: 4,
-                },
-            ],
-        },
-        options: CHART_DEFAULTS,
-    });
-}
-
-function renderAccuracyTrendChart(data) {
-    // Simulated trend data
-    const labels = Array.from({ length: 10 }, (_, i) => `Week ${i + 1}`);
-    const cacheAcc = labels.map(() => 0.75 + Math.random() * 0.15);
-    const failAcc = labels.map(() => 0.65 + Math.random() * 0.15);
-
-    getOrCreate('chartAccuracyTrend', 'line', {
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: 'Cache Accuracy',
-                    data: cacheAcc,
-                    borderColor: CHART_COLORS.primary,
-                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 3,
-                },
-                {
-                    label: 'Failure Accuracy',
-                    data: failAcc,
-                    borderColor: CHART_COLORS.warning,
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 3,
-                },
-            ],
-        },
-        options: {
-            ...CHART_DEFAULTS,
-            scales: {
-                ...CHART_DEFAULTS.scales,
-                y: { ...CHART_DEFAULTS.scales.y, min: 0.5, max: 1.0 },
-            },
-        },
-    });
-}
-
-// ─────────────────────────────────────────────────────────────────
-// DAG Visualization (SVG)
-// ─────────────────────────────────────────────────────────────────
-
-function renderDAG(jobs) {
-    const svg = document.getElementById('dagSvg');
-    if (!svg) return;
-
-    const w = svg.clientWidth || 800;
-    const h = 400;
-    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-
-    // Group by level
-    const levels = {};
-    jobs.forEach(j => {
-        if (!levels[j.dag_level]) levels[j.dag_level] = [];
-        levels[j.dag_level].push(j);
-    });
-
-    const levelKeys = Object.keys(levels).sort((a, b) => a - b);
-    const nodeW = 130;
-    const nodeH = 56;
-    const positions = {};
-
-    // Layout nodes
-    levelKeys.forEach((lvl, li) => {
-        const lvlJobs = levels[lvl];
-        const x = 60 + li * (w - 120) / Math.max(levelKeys.length - 1, 1);
-        lvlJobs.forEach((j, ji) => {
-            const y = (h / 2) + (ji - (lvlJobs.length - 1) / 2) * (nodeH + 24);
-            positions[j.job_id] = { x, y, job: j };
-        });
-    });
-
-    // Define edges (based on typical CI DAG)
-    const dagEdges = [
-        ['lint', 'unit_tests'],
-        ['lint', 'integration_tests'],
-        ['unit_tests', 'build'],
-        ['integration_tests', 'build'],
-        ['build', 'deploy'],
-    ];
-
-    let svgContent = `
-        <defs>
-            <linearGradient id="nodeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#6366f1" stop-opacity="0.3"/>
-                <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.15"/>
-            </linearGradient>
-            <linearGradient id="skipGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ef4444" stop-opacity="0.3"/>
-                <stop offset="100%" stop-color="#ef4444" stop-opacity="0.1"/>
-            </linearGradient>
-            <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                <polygon points="0 0, 8 3, 0 6" fill="#6868a0"/>
-            </marker>
-        </defs>`;
-
-    // Draw edges
-    dagEdges.forEach(([from, to]) => {
-        const pFrom = positions[from];
-        const pTo = positions[to];
-        if (pFrom && pTo) {
-            svgContent += `
-                <line x1="${pFrom.x + nodeW / 2}" y1="${pFrom.y}"
-                      x2="${pTo.x - nodeW / 2}" y2="${pTo.y}"
-                      stroke="#6868a0" stroke-width="1.5" stroke-opacity="0.4"
-                      marker-end="url(#arrowhead)"/>`;
-        }
-    });
-
-    // Draw nodes
-    Object.values(positions).forEach(({ x, y, job }) => {
-        const nx = x - nodeW / 2;
-        const ny = y - nodeH / 2;
-        const fill = job.skip ? 'url(#skipGrad)' : 'url(#nodeGrad)';
-        const stroke = job.skip ? '#ef4444' : (job.failure_prob > 0.2 ? '#f59e0b' : '#6366f1');
-        const failColor = job.failure_prob > 0.5 ? '#ef4444' : (job.failure_prob > 0.2 ? '#f59e0b' : '#10b981');
-
-        svgContent += `
-            <g class="dag-node">
-                <rect class="node-rect" x="${nx}" y="${ny}" width="${nodeW}" height="${nodeH}"
-                      rx="10" fill="${fill}" stroke="${stroke}" stroke-width="1.5" stroke-opacity="0.6"/>
-                <text x="${x}" y="${y - 6}" text-anchor="middle" fill="#eaeaff"
-                      font-size="13" font-weight="600" font-family="Inter">${job.job_id}</text>
-                <text x="${x}" y="${y + 14}" text-anchor="middle" fill="${failColor}"
-                      font-size="11" font-family="Inter">
-                    P(fail)=${job.failure_prob.toFixed(2)} ${job.skip ? '⛔' : ''}
-                </text>
-            </g>`;
-    });
-
-    svg.innerHTML = svgContent;
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Initialization
+// Initialization: real data if the URL says what to optimize, otherwise an explicit empty state
 // ─────────────────────────────────────────────────────────────────
 
 async function init() {
     await checkServerHealth();
-
-    // Auto-run optimization with demo data on load
-    lastOptimizationResult = generateDemoData();
-    updateAllViews(lastOptimizationResult);
+    await runOptimization();
 }
 
 // Spin animation for loading button
@@ -665,7 +239,9 @@ const style = document.createElement('style');
 style.textContent = `
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .spin { animation: spin 1s linear infinite; }
+    .data-banner { margin: 0 0 16px; padding: 12px 16px; border-radius: 8px; background: rgba(245,158,11,0.12);
+                   border: 1px solid rgba(245,158,11,0.4); color: #f59e0b; font-size: 14px; }
 `;
 document.head.appendChild(style);
 
-init();
+document.addEventListener('DOMContentLoaded', init);

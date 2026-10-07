@@ -248,11 +248,11 @@ def main() -> int:
     # ── STEP 10 ────────────────────────────────────────────────────
     banner("OPTIMIZED WORKFLOW (proposal + reviewable diff; original untouched)", step=10)
     optimized_yaml = generate_optimized_workflow(workflow, plan)
-    write_workflow(optimized_yaml, out_path)
+    write_workflow(optimized_yaml, out_path, plan)
     kv("Proposed workflow written to", out_path)
     parsed_back = yaml.safe_load(out_path.read_text(encoding="utf-8"))
     kv("YAML valid / job count preserved", f"{'jobs' in parsed_back} / {len(parsed_back.get('jobs', {})) == len(workflow.jobs)}")
-    diff = generate_diff(wf_path, optimized_yaml)
+    diff = generate_diff(wf_path, optimized_yaml, plan=plan)
     for line in (diff or "(no differences)").split("\n")[:40]:
         print(f"    {line}")
     print(explain_changes(plan))
