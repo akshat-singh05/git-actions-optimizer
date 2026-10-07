@@ -12,9 +12,9 @@ Pooled out-of-sample PR-AUC (higher is better; a no-skill model scores the base 
 
 | repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
 |---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 922 / 298 | 76 (8.2%) | 5/5 | 0.1962 | 0.2105 | 0.1335 | 0.1403 |
-| fastapi/fastapi | 1553 / 297 | 142 (9.1%) | 5/5 | 0.3475 | 0.3247 | 0.2278 | 0.3495 |
-| prometheus/prometheus | 5007 / 300 | 146 (2.9%) | 5/5 | 0.1682 | 0.167 | 0.0441 | 0.1002 |
+| python-poetry/poetry | 922 / 298 | 76 (8.2%) | 5/5 | 0.2015 | 0.2075 | 0.1335 | 0.1403 |
+| fastapi/fastapi | 1786 / 340 | 160 (9.0%) | 5/5 | 0.3753 | 0.3586 | 0.2211 | 0.3325 |
+| prometheus/prometheus | 18069 / 1081 | 808 (4.5%) | 5/5 | 0.2525 | 0.246 | 0.0617 | 0.1561 |
 | apache/dubbo | 1860 / 147 | 93 (5.0%) | 5/5 | 0.1132 | 0.1146 | 0.0657 | 0.2168 |
 | quarkusio/quarkus | 52 / 4 | 9 (17.3%) | 2/2 | 0.5772 | 0.5539 | 0.2368 | 0.6952 |
 
@@ -22,11 +22,59 @@ Paired difference (PR-AUC; higher is better), mean and 95% interval:
 
 | repo | all - no_structural | all - baseline | no_structural - baseline |
 |---|---|---|---|
-| python-poetry/poetry | -0.0194 [-0.0726, +0.0183] (includes 0) | +0.0621 [-0.0251, +0.1651] (includes 0) | +0.0816 [-0.0246, +0.1940] (includes 0) |
-| fastapi/fastapi | +0.0235 [-0.0055, +0.0544] (includes 0) | +0.0010 [-0.1068, +0.1122] (includes 0) | -0.0225 [-0.1273, +0.0909] (includes 0) |
-| prometheus/prometheus | +0.0001 [-0.0254, +0.0229] (includes 0) | +0.0640 [-0.0080, +0.1455] (includes 0) | +0.0640 [-0.0080, +0.1492] (includes 0) |
+| python-poetry/poetry | -0.0109 [-0.0649, +0.0260] (includes 0) | +0.0674 [-0.0215, +0.1753] (includes 0) | +0.0783 [-0.0270, +0.1923] (includes 0) |
+| fastapi/fastapi | +0.0154 [-0.0110, +0.0427] (includes 0) | +0.0409 [-0.0420, +0.1305] (includes 0) | +0.0255 [-0.0555, +0.1099] (includes 0) |
+| prometheus/prometheus | +0.0065 [-0.0112, +0.0260] (includes 0) | +0.0975 [+0.0558, +0.1437] (excludes 0) | +0.0910 [+0.0524, +0.1328] (excludes 0) |
 | apache/dubbo | -0.0022 [-0.0167, +0.0100] (includes 0) | -0.1100 [-0.1971, -0.0326] (excludes 0) | -0.1078 [-0.1941, -0.0282] (excludes 0) |
 | quarkusio/quarkus | +0.0304 [-0.0284, +0.0881] (includes 0) | -0.0997 [-0.1850, -0.0093] (excludes 0) | -0.1301 [-0.2004, -0.0417] (excludes 0) |
+
+## failure_logistic
+
+Baseline (no model): the job's prior decayed failure rate.
+
+Pooled out-of-sample PR-AUC (higher is better; a no-skill model scores the base rate):
+
+| repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
+|---|---|---|---|---|---|---|---|
+| python-poetry/poetry | 922 / 298 | 76 (8.2%) | 5/5 | 0.2047 | 0.1713 | 0.1329 | 0.1403 |
+| fastapi/fastapi | 1786 / 340 | 160 (9.0%) | 5/5 | 0.4187 | 0.3771 | 0.2232 | 0.3325 |
+| prometheus/prometheus | 18069 / 1081 | 808 (4.5%) | 5/5 | 0.1732 | 0.1814 | 0.0607 | 0.1561 |
+| apache/dubbo | 1860 / 147 | 93 (5.0%) | 5/5 | 0.2141 | 0.2292 | 0.053 | 0.2168 |
+| quarkusio/quarkus | 52 / 4 | 9 (17.3%) | 2/2 | 0.6807 | 0.6779 | 0.2368 | 0.6952 |
+
+Paired difference (PR-AUC; higher is better), mean and 95% interval:
+
+| repo | all - no_structural | all - baseline | no_structural - baseline |
+|---|---|---|---|
+| python-poetry/poetry | +0.0369 [+0.0072, +0.0865] (excludes 0) | +0.0703 [-0.0116, +0.1796] (includes 0) | +0.0335 [-0.0315, +0.1068] (includes 0) |
+| fastapi/fastapi | +0.0376 [+0.0181, +0.0564] (excludes 0) | +0.0851 [+0.0161, +0.1579] (excludes 0) | +0.0475 [-0.0207, +0.1201] (includes 0) |
+| prometheus/prometheus | -0.0085 [-0.0176, -0.0005] (excludes 0) | +0.0178 [-0.0078, +0.0500] (includes 0) | +0.0263 [-0.0006, +0.0611] (includes 0) |
+| apache/dubbo | -0.0173 [-0.0465, +0.0066] (includes 0) | -0.0066 [-0.0619, +0.0562] (includes 0) | +0.0107 [-0.0358, +0.0647] (includes 0) |
+| quarkusio/quarkus | -0.0048 [-0.1667, +0.0417] (includes 0) | -0.0101 [-0.1224, +0.0804] (includes 0) | -0.0053 [-0.1091, +0.2500] (includes 0) |
+
+## failure_regularized
+
+Baseline (no model): the job's prior decayed failure rate.
+
+Pooled out-of-sample PR-AUC (higher is better; a no-skill model scores the base rate):
+
+| repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
+|---|---|---|---|---|---|---|---|
+| python-poetry/poetry | 922 / 298 | 76 (8.2%) | 5/5 | 0.2272 | 0.2482 | 0.1336 | 0.1403 |
+| fastapi/fastapi | 1786 / 340 | 160 (9.0%) | 5/5 | 0.4322 | 0.4133 | 0.2231 | 0.3325 |
+| prometheus/prometheus | 18069 / 1081 | 808 (4.5%) | 5/5 | 0.265 | 0.245 | 0.0613 | 0.1561 |
+| apache/dubbo | 1860 / 147 | 93 (5.0%) | 5/5 | 0.1211 | 0.1179 | 0.0624 | 0.2168 |
+| quarkusio/quarkus | 52 / 4 | 9 (17.3%) | 2/2 | 0.6109 | 0.6109 | 0.2368 | 0.6952 |
+
+Paired difference (PR-AUC; higher is better), mean and 95% interval:
+
+| repo | all - no_structural | all - baseline | no_structural - baseline |
+|---|---|---|---|
+| python-poetry/poetry | -0.0217 [-0.0641, +0.0083] (includes 0) | +0.0939 [+0.0012, +0.2059] (excludes 0) | +0.1156 [+0.0082, +0.2403] (excludes 0) |
+| fastapi/fastapi | +0.0196 [-0.0012, +0.0454] (includes 0) | +0.0988 [+0.0146, +0.1874] (excludes 0) | +0.0792 [-0.0039, +0.1647] (includes 0) |
+| prometheus/prometheus | +0.0194 [+0.0039, +0.0355] (excludes 0) | +0.1095 [+0.0707, +0.1559] (excludes 0) | +0.0901 [+0.0549, +0.1314] (excludes 0) |
+| apache/dubbo | +0.0033 [-0.0011, +0.0082] (includes 0) | -0.1020 [-0.1867, -0.0279] (excludes 0) | -0.1053 [-0.1895, -0.0317] (excludes 0) |
+| quarkusio/quarkus | +0.0000 [+0.0000, +0.0000] (includes 0) | -0.0922 [-0.1768, -0.0453] (excludes 0) | -0.0922 [-0.1768, -0.0453] (excludes 0) |
 
 ## cache_any_miss
 
@@ -36,9 +84,9 @@ Pooled out-of-sample PR-AUC (higher is better; a no-skill model scores the base 
 
 | repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
 |---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 47 / 47 | 33 (70.2%) | 5/5 | 0.843 | 0.843 | 0.8556 | 0.8718 |
-| fastapi/fastapi | 59 / 43 | 22 (37.3%) | 5/5 | 0.9655 | 0.8481 | 0.6765 | 0.9235 |
-| prometheus/prometheus | 197 / 52 | 174 (88.3%) | 5/5 | 0.925 | 0.9219 | 0.9279 | 0.9587 |
+| python-poetry/poetry | 59 / 59 | 43 (72.9%) | 5/5 | 0.9132 | 0.9132 | 0.774 | 0.8674 |
+| fastapi/fastapi | 123 / 86 | 53 (43.1%) | 5/5 | 0.9811 | 0.9526 | 0.6953 | 0.9088 |
+| prometheus/prometheus | 543 / 141 | 464 (85.5%) | 5/5 | 0.913 | 0.9096 | 0.9482 | 0.952 |
 | apache/dubbo | 177 / 26 | 51 (28.8%) | 5/5 | 0.9909 | 0.9954 | 0.553 | 0.9873 |
 | quarkusio/quarkus | 25 / 2 | 14 (56.0%) | 1/1 | 1.0 | 1.0 | 0.56 | 1.0 |
 
@@ -46,9 +94,9 @@ Paired difference (PR-AUC; higher is better), mean and 95% interval:
 
 | repo | all - no_structural | all - baseline | no_structural - baseline |
 |---|---|---|---|
-| python-poetry/poetry | +0.0000 [+0.0000, +0.0000] (includes 0) | -0.0267 [-0.1251, +0.0642] (includes 0) | -0.0267 [-0.1251, +0.0642] (includes 0) |
-| fastapi/fastapi | +0.1170 [+0.0158, +0.2716] (excludes 0) | +0.0404 [-0.0139, +0.0934] (includes 0) | -0.0765 [-0.2651, +0.0496] (includes 0) |
-| prometheus/prometheus | +0.0030 [-0.0006, +0.0080] (includes 0) | -0.0323 [-0.0673, -0.0045] (excludes 0) | -0.0352 [-0.0718, -0.0055] (excludes 0) |
+| python-poetry/poetry | +0.0000 [+0.0000, +0.0000] (includes 0) | +0.0426 [-0.0558, +0.1431] (includes 0) | +0.0426 [-0.0558, +0.1431] (includes 0) |
+| fastapi/fastapi | +0.0282 [+0.0008, +0.0563] (excludes 0) | +0.0710 [+0.0322, +0.1120] (excludes 0) | +0.0428 [+0.0184, +0.0725] (excludes 0) |
+| prometheus/prometheus | +0.0033 [-0.0013, +0.0078] (includes 0) | -0.0386 [-0.0568, -0.0216] (excludes 0) | -0.0419 [-0.0605, -0.0244] (excludes 0) |
 | apache/dubbo | -0.0043 [-0.0144, +0.0000] (includes 0) | +0.0033 [-0.0016, +0.0150] (includes 0) | +0.0076 [-0.0000, +0.0249] (includes 0) |
 | quarkusio/quarkus | +0.0000 [+0.0000, +0.0000] (includes 0) | -0.0000 [-0.0000, +0.0000] (includes 0) | -0.0000 [-0.0000, +0.0000] (includes 0) |
 
@@ -60,9 +108,9 @@ Pooled out-of-sample PR-AUC (higher is better; a no-skill model scores the base 
 
 | repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
 |---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 47 / 47 | 33 (70.2%) | 5/5 | 0.867 | 0.867 | 0.6217 | 0.8718 |
-| fastapi/fastapi | 59 / 43 | 22 (37.3%) | 5/5 | 0.9655 | 0.8481 | 0.6765 | 0.9235 |
-| prometheus/prometheus | 197 / 52 | 174 (88.3%) | 5/5 | 0.9213 | 0.9221 | 0.9256 | 0.9587 |
+| python-poetry/poetry | 59 / 59 | 43 (72.9%) | 5/5 | 0.8959 | 0.8959 | 0.6428 | 0.8674 |
+| fastapi/fastapi | 123 / 86 | 53 (43.1%) | 5/5 | 0.9811 | 0.9526 | 0.6953 | 0.9088 |
+| prometheus/prometheus | 541 / 141 | 464 (85.8%) | 5/5 | 0.9164 | 0.9047 | 0.9447 | 0.953 |
 | apache/dubbo | 177 / 26 | 148 (83.6%) | 5/5 | 0.981 | 0.9921 | 0.9801 | 0.8882 |
 | quarkusio/quarkus | 25 / 2 | 14 (56.0%) | 1/1 | 1.0 | 1.0 | 0.56 | 1.0 |
 
@@ -70,9 +118,9 @@ Paired difference (PR-AUC; higher is better), mean and 95% interval:
 
 | repo | all - no_structural | all - baseline | no_structural - baseline |
 |---|---|---|---|
-| python-poetry/poetry | +0.0000 [+0.0000, +0.0000] (includes 0) | -0.0029 [-0.1094, +0.1059] (includes 0) | -0.0029 [-0.1094, +0.1059] (includes 0) |
-| fastapi/fastapi | +0.1170 [+0.0158, +0.2716] (excludes 0) | +0.0404 [-0.0139, +0.0934] (includes 0) | -0.0765 [-0.2651, +0.0496] (includes 0) |
-| prometheus/prometheus | -0.0008 [-0.0048, +0.0033] (includes 0) | -0.0358 [-0.0719, -0.0057] (excludes 0) | -0.0351 [-0.0692, -0.0061] (excludes 0) |
+| python-poetry/poetry | +0.0000 [+0.0000, +0.0000] (includes 0) | +0.0267 [-0.0513, +0.1113] (includes 0) | +0.0267 [-0.0513, +0.1113] (includes 0) |
+| fastapi/fastapi | +0.0282 [+0.0008, +0.0563] (excludes 0) | +0.0710 [+0.0322, +0.1120] (excludes 0) | +0.0428 [+0.0184, +0.0725] (excludes 0) |
+| prometheus/prometheus | +0.0116 [+0.0041, +0.0211] (excludes 0) | -0.0361 [-0.0563, -0.0174] (excludes 0) | -0.0477 [-0.0707, -0.0277] (excludes 0) |
 | apache/dubbo | -0.0106 [-0.0272, +0.0000] (includes 0) | +0.0928 [+0.0771, +0.1066] (excludes 0) | +0.1033 [+0.0915, +0.1239] (excludes 0) |
 | quarkusio/quarkus | -0.0000 [-0.0000, +0.0000] (includes 0) | -0.0000 [-0.0000, -0.0000] (includes 0) | -0.0000 [-0.0000, -0.0000] (includes 0) |
 
@@ -84,9 +132,9 @@ Pooled out-of-sample MAE in seconds (lower is better):
 
 | repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
 |---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 922 / 298 | - | 5/5 | 33.6551 | 33.5648 | 48.4434 | 15.6232 |
-| fastapi/fastapi | 1553 / 297 | - | 5/5 | 11.5651 | 12.0431 | 47.0815 | 10.359 |
-| prometheus/prometheus | 5007 / 300 | - | 5/5 | 121.8233 | 122.1886 | 287.7843 | 109.3717 |
+| python-poetry/poetry | 922 / 298 | - | 5/5 | 33.7564 | 33.8098 | 48.4434 | 15.6232 |
+| fastapi/fastapi | 1786 / 340 | - | 5/5 | 11.781 | 12.1843 | 46.5918 | 10.2754 |
+| prometheus/prometheus | 18069 / 1081 | - | 5/5 | 114.8632 | 114.7299 | 279.4977 | 109.1886 |
 | apache/dubbo | 1860 / 147 | - | 5/5 | 44.1176 | 43.4807 | 192.2948 | 29.8919 |
 | quarkusio/quarkus | 52 / 4 | - | 2/2 | 471.838 | 482.2485 | 1369.4847 | 337.2821 |
 
@@ -94,9 +142,9 @@ Paired difference (MAE; negative is better (lower MAE)), mean and 95% interval:
 
 | repo | all - no_structural | all - baseline | no_structural - baseline |
 |---|---|---|---|
-| python-poetry/poetry | +0.0892 [-0.0886, +0.2974] (includes 0) | +17.9398 [+14.5546, +21.6584] (excludes 0) | +17.8505 [+14.4882, +21.6434] (excludes 0) |
-| fastapi/fastapi | -0.4791 [-0.6131, -0.3477] (excludes 0) | +1.2059 [+0.7276, +1.7013] (excludes 0) | +1.6851 [+1.2179, +2.1793] (excludes 0) |
-| prometheus/prometheus | -0.3673 [-1.0694, +0.3672] (includes 0) | +12.5200 [+9.7131, +15.4464] (excludes 0) | +12.8873 [+9.8860, +15.9822] (excludes 0) |
+| python-poetry/poetry | -0.0535 [-0.1151, +0.0162] (includes 0) | +18.0376 [+14.7591, +21.7477] (excludes 0) | +18.0911 [+14.7960, +21.8329] (excludes 0) |
+| fastapi/fastapi | -0.4043 [-0.5375, -0.2730] (excludes 0) | +1.5117 [+0.9945, +1.9933] (excludes 0) | +1.9160 [+1.3936, +2.4148] (excludes 0) |
+| prometheus/prometheus | +0.1267 [-0.2191, +0.4831] (includes 0) | +5.6643 [+4.5878, +6.7624] (excludes 0) | +5.5376 [+4.5328, +6.6232] (excludes 0) |
 | apache/dubbo | +0.6286 [+0.0188, +1.2459] (excludes 0) | +14.2374 [+11.8408, +16.5411] (excludes 0) | +13.6089 [+11.1358, +15.8836] (excludes 0) |
 | quarkusio/quarkus | -9.0888 [-25.2971, +11.3364] (includes 0) | +124.9381 [+13.2754, +187.4194] (excludes 0) | +134.0268 [+1.9390, +210.7962] (excludes 0) |
 
@@ -108,9 +156,9 @@ Pooled out-of-sample MAE in seconds (lower is better):
 
 | repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
 |---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 922 / 298 | - | 5/5 | 14.1457 | 14.0991 | 14.0411 | 15.6232 |
-| fastapi/fastapi | 1553 / 297 | - | 5/5 | 9.6736 | 10.05 | 10.3336 | 10.359 |
-| prometheus/prometheus | 5007 / 300 | - | 5/5 | 114.6435 | 114.9615 | 109.6453 | 109.3717 |
+| python-poetry/poetry | 922 / 298 | - | 5/5 | 14.2005 | 14.2404 | 14.0411 | 15.6232 |
+| fastapi/fastapi | 1786 / 340 | - | 5/5 | 10.0396 | 10.348 | 10.2648 | 10.2754 |
+| prometheus/prometheus | 18069 / 1081 | - | 5/5 | 108.2434 | 108.4149 | 109.2815 | 109.1886 |
 | apache/dubbo | 1860 / 147 | - | 5/5 | 30.6744 | 29.2216 | 29.4443 | 29.8919 |
 | quarkusio/quarkus | 52 / 4 | - | 2/2 | 403.1795 | 420.7614 | 348.2946 | 337.2821 |
 
@@ -118,8 +166,8 @@ Paired difference (MAE; negative is better (lower MAE)), mean and 95% interval:
 
 | repo | all - no_structural | all - baseline | no_structural - baseline |
 |---|---|---|---|
-| python-poetry/poetry | +0.0464 [-0.1043, +0.1862] (includes 0) | -1.4879 [-2.0537, -0.8925] (excludes 0) | -1.5343 [-2.0840, -0.9583] (excludes 0) |
-| fastapi/fastapi | -0.3769 [-0.5254, -0.2109] (excludes 0) | -0.6874 [-0.9939, -0.4032] (excludes 0) | -0.3105 [-0.6166, -0.0235] (excludes 0) |
-| prometheus/prometheus | -0.3284 [-0.9414, +0.2508] (includes 0) | +5.3173 [+2.6879, +8.1827] (excludes 0) | +5.6457 [+2.9096, +8.5441] (excludes 0) |
+| python-poetry/poetry | -0.0371 [-0.1896, +0.1109] (includes 0) | -1.4308 [-1.9480, -0.8694] (excludes 0) | -1.3937 [-1.8976, -0.8403] (excludes 0) |
+| fastapi/fastapi | -0.3085 [-0.4581, -0.1592] (excludes 0) | -0.2338 [-0.6189, +0.1503] (includes 0) | +0.0747 [-0.2869, +0.4488] (includes 0) |
+| prometheus/prometheus | -0.1724 [-0.4660, +0.1349] (includes 0) | -0.9204 [-1.6937, -0.0432] (excludes 0) | -0.7479 [-1.4909, +0.0378] (includes 0) |
 | apache/dubbo | +1.4453 [+0.9390, +1.9614] (excludes 0) | +0.7798 [+0.1327, +1.4657] (excludes 0) | -0.6654 [-1.2400, -0.0678] (excludes 0) |
 | quarkusio/quarkus | -16.6501 [-37.7376, -2.1066] (excludes 0) | +60.9399 [-8.3980, +116.8812] (includes 0) | +77.5899 [-0.6447, +123.7689] (includes 0) |

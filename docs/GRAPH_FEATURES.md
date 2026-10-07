@@ -71,71 +71,86 @@ Rows computed under an older definition are marked by `feature_version` (migrati
 The toolchain rules are an explicit **over-approximation** (confidence 0.5): they say "this job reads
 that language's sources", not "this job is affected by this particular file".
 
-## 4. Measured result (version 2, final data: 2026-10-07)
+## 4. Measured result (version 2, final data: 2026-10-08)
 
 Source: `docs/DATASET_REPORT.md` sections 7, 7.1, 7.2 and `docs/MODEL_EVAL.md` (regenerate with
 `gha-optimizer dataset-report` / `eval-models`). The history was extended after the first measurement
-(poetry / fastapi / prometheus 600 runs each, dubbo 300, quarkus still 30), so these figures replace the
-~120-run figures an earlier revision of this file quoted. The 220-test suite passes.
+(poetry 596 runs, fastapi 682, prometheus 2,163, dubbo 293, quarkus 24; only runs whose jobs and diff are
+known are admitted), so these figures replace the smaller-sample figures earlier revisions quoted.
+The 268-test suite passes.
 
 **Coverage - before (version 1, ~100 runs) → after (version 2, final data)**
 
 | repo | (run, job) rows | impacted = 1 | impacted = 0 | unknown | `cache_key_touched = 1` |
 |---|---|---|---|---|---|
-| python-poetry/poetry | 3576 | 0 → 1085 (30.3%) | 1880 (52.6%) | 611 (17.1%) | 0 → 102 |
-| fastapi/fastapi | 3546 | 0 → 1754 (49.5%) | 1161 (32.7%) | 631 (17.8%) | 0 → 305 |
-| prometheus/prometheus | 12587 | 0 → 5634 (44.8%) | 1556 (12.4%) | 5397 (42.9%: `make` / remote actions) | 7 → 291 |
-| apache/dubbo | 4102 | 0 → 3920 (95.6%) | 168 (4.1%) | 14 | 130 → 530 |
+| python-poetry/poetry | 3,576 | 0 → 1,085 (30.3%) | 1,880 (52.6%) | 611 (17.1%) | 0 → 102 |
+| fastapi/fastapi | 3,975 | 0 → 2,041 (51.3%) | 1,217 (30.6%) | 717 (18.0%) | 0 → 326 |
+| prometheus/prometheus | 44,507 | 0 → 18,718 (42.1%) | 7,140 (16.0%) | 18,649 (41.9%: `make` / remote actions) | 7 → 1,345 |
+| apache/dubbo | 4,102 | 0 → 3,920 (95.6%) | 168 (4.1%) | 14 | 130 → 530 |
 | quarkusio/quarkus | 504 | 0 → 414 (82.1%) | 18 (3.6%) | 72 | 0 → 0 (cache keys carry no `hashFiles`: 336 unknown) |
 
 **Does `impacted` agree with what the workflow did?** (skipped vs executed, no model involved)
 
 | repo | skipped when impacted = 1 | skipped when impacted = 0 | reading |
 |---|---|---|---|
-| poetry | 1.2% (n=1085) | 93.2% (n=1880) | strong - the workflow gates on paths-filter and the graph reproduces the gate |
-| fastapi | 2.8% (n=1754) | 36.5% (n=1161) | strong where gated (jobs that skip at least once: 4.2% vs 69.6%) |
-| prometheus | 18.8% (n=5634) | 13.0% (n=1556) | **wrong direction** (jobs that skip at least once: 50.3% vs 22.9%): its jobs skip on event / tag conditions, not on files |
-| dubbo | 5.3% (n=3920) | 2.4% (n=168) | **uninformative** (p = 0.11): 95.6% of rows are impacted; the Maven toolchain rule links every Java file to every Maven job |
+| poetry | 1.2% (n=1,085) | 93.2% (n=1,880) | strong - the workflow gates on paths-filter and the graph reproduces the gate |
+| fastapi | 2.5% (n=2,041) | 37.3% (n=1,217) | strong where gated (jobs that skip at least once: 3.7% vs 69.7%) |
+| prometheus | 19.0% (n=18,718) | 14.5% (n=7,140) | **wrong direction** (jobs that skip at least once: 50.2% vs 28.0%): its jobs skip on event / tag conditions, not on files |
+| dubbo | 5.3% (n=3,920) | 2.4% (n=168) | **uninformative** (p = 0.11): 95.6% of rows are impacted; the Maven toolchain rule links every Java file to every Maven job |
 | quarkus | 33.8% (n=414) | 5.6% (n=18) | **wrong direction**: jobs are skipped by a script-computed matrix the static graph cannot see |
 
-So the structural features carry real signal **where the workflow itself states a file→job relationship**
-(poetry, fastapi) and none, or the opposite, where it does not (prometheus, dubbo, quarkus). That is a
-property of those workflows; more rules of the same kind will not fix it.
+So the structural features describe the workflow correctly **where the workflow itself states a file→job
+relationship** (poetry, fastapi) and not elsewhere. That is a property of those workflows; more rules of the
+same kind will not fix it.
 
 **Label association** (descriptive, rows not independent). Failure rate when `impacted = 1` vs `0`:
-poetry 13.1% (n=1071) vs 1.6% (n=128); fastapi 13.1% (n=1699) vs 2.8% (n=724); prometheus 4.7% vs 2.6%;
-dubbo 4.4% vs 5.4% (reversed); quarkus 12.2% vs 11.8%. Cache: `cache_key_touched = 1` → exact key not
-restored in 86.5% of fastapi rows (n=37) vs 23.5% when 0 (n=85); in poetry and dubbo almost every touched
-row is a *partial* hit (a `restore-keys` fallback) that `label_cache_hit` counts as a hit, and against
-"exact key not restored" the feature is saturated (dubbo 97% vs 100%). The cache-labelled sample is small:
-cache labels exist only for runs inside GitHub's log-retention window (about 100 runs per repository).
+poetry 13.1% (n=1,071) vs 1.6% (n=128); fastapi 12.1% (n=1,983) vs 2.7% (n=750); prometheus 7.4% (n=15,144) vs
+3.5% (n=6,068); dubbo 4.4% vs 5.4% (reversed); quarkus 12.2% vs 11.8%. Cache: `cache_key_touched = 1` → exact
+key not restored in 89.4% of fastapi rows (n=66) vs 18.0% when 0 (n=167); prometheus 91.3% (n=69) vs 76.9%
+(n=745); in poetry and dubbo almost every touched row is a *partial* hit (a `restore-keys` fallback) that
+`label_cache_hit` counts as a hit, and against "exact key not restored" the feature is saturated. Cache labels
+exist only inside GitHub's log-retention window, so the cache-labelled samples are small.
 
 ## 5. Do the graph features help the models? (`docs/MODEL_EVAL.md`)
 
 Rolling-origin evaluation (expanding window, 5 folds over the runs that carry the target's label, pooled
 out-of-sample predictions, paired bootstrap over runs). Feature sets compared on identical folds: `all`,
-`no_structural`, `structural_only`, and a naive baseline that needs no model.
+`no_structural`, `structural_only`, and a naive baseline that needs no model. Pooled failure positives:
+poetry 76, fastapi 160, prometheus 808, dubbo 93, quarkus 9.
 
-* **Failure** (76-146 pooled test positives per repository): `all - no_structural` PR-AUC is not
-  distinguishable from 0 in any repository. No fitted model beats the prior-failure-rate baseline
-  (poetry / fastapi / prometheus: interval includes 0); in dubbo and quarkus the baseline is significantly
-  better.
-* **Cache** (25-197 labelled test rows - small): the graph features raise PR-AUC for fastapi
-  (`all - no_structural` +0.117, 95% interval [+0.016, +0.272]) but not for the others, and in prometheus the
-  baseline is significantly better than any model. For the `exact_miss` target dubbo's models beat the
-  baseline significantly, but that target is 84% positive there and the graph features are not the cause.
-* **Duration**: the raw-seconds models are **significantly worse than the prior-mean baseline in every
-  repository** (MAE poetry 33.7 s vs 15.6 s, prometheus 121.8 vs 109.4, dubbo 44.1 vs 29.9). Predicting the
-  log-ratio to the job's prior mean instead (`duration_ratio` in `docs/MODEL_EVAL.md`) removes most of that gap
-  (poetry 14.1 s, fastapi 9.7 s, prometheus 114.6 s, dubbo 30.7 s) and beats the baseline significantly in poetry
-  (-1.49 s) and fastapi (-0.69 s), while staying significantly worse in prometheus (+5.3 s) and dubbo (+0.8 s).
-  Graph features under that target: fastapi -0.38 s (helps), dubbo +1.45 s (hurts), others inconclusive.
+**Failure.** Three model variants were evaluated; the two candidates (a regularised logistic regression and a
+heavily regularised boosted tree) had their settings fixed *before* any fold result was seen.
 
-Conclusion that the data supports: the graph features are a correct, informative description of the workflow
-for poetry and fastapi (section 4) but add **no demonstrable predictive value over history-based features**
-on failure and duration, and a possible one on fastapi's cache target. These are findings, not defects of
-the evaluation; the cache evidence rests on few rows.
+| model | poetry | fastapi | prometheus | dubbo | quarkus |
+|---|---|---|---|---|---|
+| production tree vs baseline (PR-AUC) | +0.067 (n.s.) | +0.041 (n.s.) | **+0.098** | **-0.110** | **-0.100** |
+| regularised tree vs baseline | **+0.094** | **+0.099** | **+0.110** | **-0.102** | **-0.092** |
+| logistic vs baseline | +0.070 (n.s.) | **+0.085** | +0.018 (n.s.) | -0.007 (n.s.) | -0.010 (n.s.) |
+| graph features, logistic (`all - no_structural`) | **+0.037** | **+0.038** | **-0.009** | -0.017 (n.s.) | -0.005 (n.s.) |
+| graph features, regularised tree | -0.022 (n.s.) | +0.020 (n.s.) | **+0.019** | +0.003 (n.s.) | 0.000 |
 
-Procedure note: the first run of `eval-models` cut the folds over all runs, which left most cache folds
-without test labels (1-2 of 5 used). The folds are now cut over the runs that carry the target's label.
-That change was made after seeing the sparse folds; it is a correction of the procedure, not a tuning of results.
+(Bold = the 95% interval excludes 0; n.s. = it includes 0.) Reading: graph features help the simple logistic
+model modestly in exactly the two repos where the graph describes the workflow (poetry, fastapi), and slightly
+hurt it in prometheus; for the production tree they never have a significant effect. The regularised tree
+is the strongest model where it wins but loses clearly in dubbo and quarkus; the logistic model is the only
+one never significantly worse than the baseline.
+
+**Cache** (25-543 labelled test rows): graph features raise PR-AUC for fastapi (`all - no_structural` +0.028,
+interval [+0.001, +0.056]; vs baseline +0.071) and are indistinguishable elsewhere; in prometheus the baseline is
+significantly better than any model (-0.039). For the `exact_miss` target dubbo's models beat the baseline, but
+that target is 84% positive there.
+
+**Duration**: raw seconds is significantly worse than the prior-mean baseline in every repository (poetry MAE
+33.8 s vs 15.6 s). The log-ratio target removes most of the gap and beats the baseline significantly in poetry
+(-1.43 s) and prometheus (-0.92 s), is indistinguishable in fastapi, and is worse in dubbo (+0.78 s). Graph
+features under that target: fastapi -0.31 s (helps), dubbo +1.45 s (hurts), others inconclusive.
+
+**Caveats.** Many comparisons were made (three failure models x five repos x three contrasts), so some
+"significant" cells are expected by chance; the intervals are optimistic because runs of one PR share a lineage;
+quarkus has 4 test runs. Treat the pattern - benefit only where the graph describes the workflow - as a lead
+supported by the skip-agreement table above, not as an established effect. No candidate has been made the
+production failure model; that is a decision for the project owner.
+
+Procedure note: the first run of `eval-models` cut the folds over all runs, which left most cache folds without
+test labels. The folds are now cut over the runs that carry the target's label. That change was made after
+seeing the sparse folds; it corrects the procedure and was not tuned on results.
