@@ -471,7 +471,8 @@ def main() -> None:
         "eval-models", help="Rolling-origin evaluation, feature-set ablation and bootstrap intervals -> docs/MODEL_EVAL.md")
     p_ev.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
     p_ev.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
-    p_ev.add_argument("--target", action="append", choices=["failure", "cache_any_miss", "cache_exact_miss", "duration", "duration_ratio"],
+    p_ev.add_argument("--target", action="append", choices=["failure", "failure_logistic", "failure_regularized", "cache_any_miss", "cache_exact_miss",
+                               "duration", "duration_ratio"],
                       help="target to evaluate (repeatable; default: all)")
     p_ev.add_argument("--folds", type=int, default=5)
     p_ev.add_argument("--initial-fraction", type=float, default=0.5, help="share of runs used only as the first training prefix")

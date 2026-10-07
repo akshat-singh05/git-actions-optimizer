@@ -7,8 +7,10 @@ For example, if (ubuntu-22.04, Python 3.10) and (ubuntu-22.04, Python 3.11)
 have historically identical pass/fail outcomes, the reducer will suggest
 dropping one and keeping only the representative.
 
-This is a dependent-claim-strength feature supporting the primary patent
-around graph-based cache prediction + dynamic rescheduling.
+Status: NOT WIRED INTO THE PIPELINE.  Only its unit tests call it: ``run_pipeline`` never builds a
+``reduced_matrix`` for ``generator.workflow_writer`` (which accepts one), and the pipeline's history is aggregated
+per job key, not per matrix cell.  Dropping matrix cells also changes which configurations CI tests, so wiring it
+in is a decision about coverage, not just plumbing.  It has not been evaluated on real data.
 """
 from __future__ import annotations
 

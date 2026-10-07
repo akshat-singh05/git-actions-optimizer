@@ -124,3 +124,15 @@ def test_folds_are_cut_over_runs_that_carry_the_target_label():
     assert r["n_runs"] == 60 and r["n_runs_total"] == 120   # folds planned over the 60 labelled runs only
     assert r["folds_used"] >= 3
     assert r["n_test_runs"] <= 30                           # the later half of the labelled runs
+
+
+def test_candidate_failure_models_run_on_the_same_folds_and_handle_missing_values():
+    """The candidates are evaluated exactly like the production model: same folds, same baseline, NaN-tolerant."""
+    df = frame(100)
+    base = evaluate_target(df, TARGETS["failure"], n_folds=4, min_train_runs=10, n_boot=50)
+    for name in ("failure_logistic", "failure_regularized"):
+        r = evaluate_target(df, TARGETS[name], n_folds=4, min_train_runs=10, n_boot=50)
+        assert r["folds_used"] == base["folds_used"] > 0, name
+        assert r["n_test_rows"] == base["n_test_rows"] and r["positives"] == base["positives"]
+        assert r["scores"]["baseline"] == base["scores"]["baseline"]          # the baseline is identical
+        assert all(v is not None for v in r["scores"]["all"].values())

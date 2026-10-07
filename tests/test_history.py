@@ -105,6 +105,18 @@ def test_load_history_returns_one_record_per_run_and_job_key_oldest_first(db):
     assert len(load_history(db, "o/r", since=datetime(2026, 10, 3))) == 2 * 3
 
 
+def test_a_run_whose_diff_is_not_known_is_not_admitted_as_a_zero_file_run(db):
+    from gha_optimizer.server.db import models as m
+
+    victim = db.query(m.WorkflowRun).filter_by(run_id="1002").one()
+    victim.diff_source = None                                               # listed and jobs fetched, diff not (yet) ingested
+    db.query(m.RunChangedFile).filter_by(run_id="1002").delete()
+    db.commit()
+    hist = load_history(db, "o/r", ".github/workflows/ci.yml")
+    assert "1002" not in {r.run_id for r in hist} and len(hist) == 5 * 3
+    assert all(len(r.files_changed) > 0 for r in hist)                      # no record claims "0 changed files"
+
+
 def test_failure_label_comes_from_the_real_conclusion(db):
     hist = load_history(db, "o/r")
     failed = {(r.run_id, r.job_id) for r in hist if r.conclusion == "failure"}
