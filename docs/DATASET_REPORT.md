@@ -1,6 +1,6 @@
 # Dataset report — real GitHub Actions history
 
-*Generated 2026-10-07 05:12 UTC by `gha-optimizer dataset-report` from database `sqlite:///gha_optimizer.db`. Every figure below was computed from the ingested rows at generation time; nothing is hand-entered.*
+*Generated 2026-10-07 07:02 UTC by `gha-optimizer dataset-report` from database `sqlite:///gha_optimizer.db`. Every figure below was computed from the ingested rows at generation time; nothing is hand-entered.*
 
 ## 1. What this dataset is
 
@@ -16,48 +16,48 @@ Historical features use only runs strictly before the target run (`tests/test_fe
 
 | repo | licence | language | runs listed | runs fully processed | job cells | run date range | API requests* | rate-limit waits* | failures* |
 |---|---|---|---|---|---|---|---|---|---|
-| python-poetry/poetry | MIT | Python | 138 | 130 | 7634 | 2026-09-19 07:07:03 UTC → 2026-10-06 14:11:53 UTC | 1388 | 0 | 0 |
-| fastapi/fastapi | MIT | Python | 120 | 120 | 1840 | 2026-09-28 00:01:37 UTC → 2026-10-06 13:50:06 UTC | 1409 | 0 | 0 |
-| prometheus/prometheus | Apache-2.0 | Go | 113 | 100 | 2814 | 2026-10-03 09:29:59 UTC → 2026-10-06 15:17:05 UTC | 916 | 6 | 0 |
-| apache/dubbo | Apache-2.0 | Java | 62 | 60 | 1672 | 2026-09-06 00:31:56 UTC → 2026-10-06 08:56:03 UTC | 1070 | 6 | 0 |
+| python-poetry/poetry | MIT | Python | 607 | 600 | 30961 | 2026-05-16 07:11:05 UTC → 2026-10-06 15:57:53 UTC | 2619 | 0 | 0 |
+| fastapi/fastapi | MIT | Python | 640 | 600 | 9862 | 2026-07-27 00:09:12 UTC → 2026-10-06 21:07:24 UTC | 2684 | 0 | 0 |
+| prometheus/prometheus | Apache-2.0 | Go | 611 | 600 | 17191 | 2026-09-16 19:30:17 UTC → 2026-10-06 23:31:13 UTC | 2053 | 6 | 0 |
+| apache/dubbo | Apache-2.0 | Java | 301 | 300 | 8911 | 2026-06-15 06:58:21 UTC → 2026-10-06 08:56:03 UTC | 1702 | 6 | 0 |
 | quarkusio/quarkus | Apache-2.0 | Java | 80 | 30 | 1180 | 2026-10-04 18:43:31 UTC → 2026-10-06 14:22:51 UTC | 759 | 0 | 0 |
 
 \* summed over this database's `ingestion_runs` records (an interrupted/resumed ingest counts each invocation).
 
 ### python-poetry/poetry
 
-* workflows ingested: {'.github/workflows/tests.yaml': 138}
-* triggering events: {'pull_request': 111, 'push': 27}
-* diff source per run: {None: 8, 'commit': 23, 'compare_pr': 23, 'git_merge_base': 84} (`compare_pr` = API compare of the whole PR; `git_merge_base` = whole-PR diff from the git mirror, merge-base(default branch at run time, head)..head; `commit` = head commit of a non-PR event — multi-commit pushes are approximated by it; `commit_only` = PR run whose PR diff could not be determined, head commit only; `None` = not yet fetched)
-* job cells: 7634 total, 7634 mapped to a YAML job key (100.0%)
-* cell conclusions: {'failure': 111, 'skipped': 2724, 'success': 4799}
-* log ledger: {'parsed_events': 3324, 'parsed_no_events': 1302, 'skipped_conclusion': 2724, 'skipped_not_cache_capable': 284} — 8651 cache events parsed from 1830.5 MB of logs
+* workflows ingested: {'.github/workflows/tests.yaml': 607}
+* triggering events: {'pull_request': 480, 'push': 127}
+* diff source per run: {None: 7, 'commit': 127, 'compare_pr': 145, 'git_merge_base': 328} (`compare_pr` = API compare of the whole PR; `git_merge_base` = whole-PR diff from the git mirror, merge-base(default branch at run time, head)..head; `commit` = head commit of a non-PR event — multi-commit pushes are approximated by it; `commit_only` = PR run whose PR diff could not be determined, head commit only; `None` = not yet fetched)
+* job cells: 30961 total, 30961 mapped to a YAML job key (100.0%)
+* cell conclusions: {'cancelled': 1, 'failure': 775, 'skipped': 8734, 'success': 21451}
+* log ledger: {'parsed_events': 3360, 'parsed_no_events': 1302, 'skipped_conclusion': 2745, 'skipped_not_cache_capable': 286} — 8741 cache events parsed from 1849.0 MB of logs
 
 ### fastapi/fastapi
 
-* workflows ingested: {'.github/workflows/test.yml': 120}
-* triggering events: {'pull_request': 83, 'push': 35, 'schedule': 2}
-* diff source per run: {'commit': 37, 'compare_pr': 59, 'git_merge_base': 24} (`compare_pr` = API compare of the whole PR; `git_merge_base` = whole-PR diff from the git mirror, merge-base(default branch at run time, head)..head; `commit` = head commit of a non-PR event — multi-commit pushes are approximated by it; `commit_only` = PR run whose PR diff could not be determined, head commit only; `None` = not yet fetched)
-* job cells: 1840 total, 1840 mapped to a YAML job key (100.0%)
-* cell conclusions: {'cancelled': 15, 'failure': 62, 'skipped': 128, 'success': 1635}
-* log ledger: {'parsed_events': 271, 'parsed_no_events': 1189, 'skipped_conclusion': 143, 'skipped_not_cache_capable': 237} — 519 cache events parsed from 344.6 MB of logs
+* workflows ingested: {'.github/workflows/test.yml': 640}
+* triggering events: {'pull_request': 497, 'push': 132, 'schedule': 11}
+* diff source per run: {None: 40, 'commit': 127, 'compare_pr': 196, 'git_merge_base': 277} (`compare_pr` = API compare of the whole PR; `git_merge_base` = whole-PR diff from the git mirror, merge-base(default branch at run time, head)..head; `commit` = head commit of a non-PR event — multi-commit pushes are approximated by it; `commit_only` = PR run whose PR diff could not be determined, head commit only; `None` = not yet fetched)
+* job cells: 9862 total, 9860 mapped to a YAML job key (100.0%)
+* cell conclusions: {None: 3, 'cancelled': 27, 'failure': 716, 'skipped': 488, 'success': 8628}
+* log ledger: {'parsed_events': 292, 'parsed_no_events': 1277, 'skipped_conclusion': 146, 'skipped_not_cache_capable': 251} — 556 cache events parsed from 371.4 MB of logs
 
 ### prometheus/prometheus
 
-* workflows ingested: {'.github/workflows/ci.yml': 113}
-* triggering events: {'pull_request': 107, 'push': 6}
-* diff source per run: {None: 13, 'commit': 5, 'compare_pr': 36, 'git_merge_base': 59} (`compare_pr` = API compare of the whole PR; `git_merge_base` = whole-PR diff from the git mirror, merge-base(default branch at run time, head)..head; `commit` = head commit of a non-PR event — multi-commit pushes are approximated by it; `commit_only` = PR run whose PR diff could not be determined, head commit only; `None` = not yet fetched)
-* job cells: 2814 total, 2708 mapped to a YAML job key (96.2%)
-* cell conclusions: {'cancelled': 84, 'failure': 39, 'skipped': 423, 'success': 2268}
-* log ledger: {'parsed_events': 651, 'parsed_no_events': 183, 'skipped_conclusion': 507, 'skipped_not_cache_capable': 1473} — 1194 cache events parsed from 807.3 MB of logs
+* workflows ingested: {'.github/workflows/ci.yml': 611}
+* triggering events: {'pull_request': 518, 'push': 93}
+* diff source per run: {None: 11, 'commit': 92, 'compare_pr': 213, 'git_merge_base': 295} (`compare_pr` = API compare of the whole PR; `git_merge_base` = whole-PR diff from the git mirror, merge-base(default branch at run time, head)..head; `commit` = head commit of a non-PR event — multi-commit pushes are approximated by it; `commit_only` = PR run whose PR diff could not be determined, head commit only; `None` = not yet fetched)
+* job cells: 17191 total, 16587 mapped to a YAML job key (96.5%)
+* cell conclusions: {'cancelled': 126, 'failure': 383, 'skipped': 2500, 'success': 14182}
+* log ledger: {'parsed_events': 678, 'parsed_no_events': 191, 'skipped_conclusion': 525, 'skipped_not_cache_capable': 1530} — 1247 cache events parsed from 840.7 MB of logs
 
 ### apache/dubbo
 
-* workflows ingested: {'.github/workflows/build-and-test-pr.yml': 62}
-* triggering events: {'pull_request': 53, 'push': 9}
-* diff source per run: {None: 2, 'commit': 9, 'compare_pr': 19, 'git_merge_base': 32} (`compare_pr` = API compare of the whole PR; `git_merge_base` = whole-PR diff from the git mirror, merge-base(default branch at run time, head)..head; `commit` = head commit of a non-PR event — multi-commit pushes are approximated by it; `commit_only` = PR run whose PR diff could not be determined, head commit only; `None` = not yet fetched)
-* job cells: 1672 total, 1672 mapped to a YAML job key (100.0%)
-* cell conclusions: {'cancelled': 66, 'failure': 46, 'skipped': 71, 'success': 1489}
+* workflows ingested: {'.github/workflows/build-and-test-pr.yml': 301}
+* triggering events: {'pull_request': 243, 'push': 58}
+* diff source per run: {None: 1, 'commit': 57, 'compare_pr': 57, 'git_merge_base': 186} (`compare_pr` = API compare of the whole PR; `git_merge_base` = whole-PR diff from the git mirror, merge-base(default branch at run time, head)..head; `commit` = head commit of a non-PR event — multi-commit pushes are approximated by it; `commit_only` = PR run whose PR diff could not be determined, head commit only; `None` = not yet fetched)
+* job cells: 8911 total, 8911 mapped to a YAML job key (100.0%)
+* cell conclusions: {'cancelled': 328, 'failure': 300, 'skipped': 213, 'success': 8070}
 * log ledger: {'parsed_events': 998, 'parsed_no_events': 56, 'skipped_conclusion': 137, 'skipped_not_cache_capable': 481} — 2306 cache events parsed from 8886.4 MB of logs
 
 ### quarkusio/quarkus
@@ -73,12 +73,12 @@ Historical features use only runs strictly before the target run (`tests/test_fe
 
 | repo | rows | runs in dataset | processed runs not in dataset* | job keys | date range (run created_at) |
 |---|---|---|---|---|---|
-| python-poetry/poetry | 780 | 130 | 0 | 6 | 2026-09-19T13:48:26Z → 2026-10-06T14:11:53Z |
-| fastapi/fastapi | 720 | 120 | 0 | 6 | 2026-09-28T00:01:37Z → 2026-10-06T13:50:06Z |
-| prometheus/prometheus | 2094 | 100 | 0 | 21 | 2026-10-03T15:10:33Z → 2026-10-06T15:17:05Z |
-| apache/dubbo | 798 | 57 | 3 | 14 | 2026-09-06T01:47:08Z → 2026-10-06T08:56:03Z |
+| python-poetry/poetry | 3576 | 596 | 4 | 6 | 2026-05-16T15:31:50Z → 2026-10-06T15:57:53Z |
+| fastapi/fastapi | 3546 | 596 | 4 | 6 | 2026-07-27T17:25:04Z → 2026-10-06T21:07:24Z |
+| prometheus/prometheus | 12587 | 600 | 0 | 22 | 2026-09-17T11:24:36Z → 2026-10-06T23:31:13Z |
+| apache/dubbo | 4102 | 293 | 7 | 14 | 2026-06-15T06:58:26Z → 2026-10-06T08:56:03Z |
 | quarkusio/quarkus | 504 | 24 | 6 | 21 | 2026-10-05T16:36:31Z → 2026-10-06T14:22:51Z |
-| **total** | 4896 |  |  |  |  |
+| **total** | 24315 |  |  |  |  |
 
 \* processed runs that contribute no row: GitHub started no job for them (e.g. every job filtered out) or none of their jobs could be mapped to a YAML job key.
 
@@ -88,49 +88,49 @@ Historical features use only runs strictly before the target run (`tests/test_fe
 
 | target | labelled rows | positives | positive rate | note |
 |---|---|---|---|---|
-| failure (1 = failure/timed_out) | 377 | 26 | 6.9% | 403 rows without label (cancelled/skipped/other) |
-| cache miss (1 = miss; log-derived) | 93 | 57 | 61.3% | 687 rows NULL (excluded from cache-model training) |
-| duration seconds (success/failure rows) | 377 |  |  | mean 79.8s, median 6.0s, p90 278.4s, max 1438s |
+| failure (1 = failure/timed_out) | 1798 | 143 | 8.0% | 1778 rows without label (cancelled/skipped/other) |
+| cache miss (1 = miss; log-derived) | 94 | 58 | 61.7% | 3482 rows NULL (excluded from cache-model training) |
+| duration seconds (success/failure rows) | 1798 |  |  | mean 97.7s, median 6.0s, p90 286.0s, max 12353s |
 
-**Failure rate: 6.90%** (26 of 377 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
+**Failure rate: 7.95%** (143 of 1798 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
 
-Cache outcome breakdown at row level: {'exact_hit': 25, 'miss': 57, 'partial_hit': 11, nan: 687}
+Cache outcome breakdown at row level: {'exact_hit': 25, 'miss': 58, 'partial_hit': 11, nan: 3482}
 
 ### fastapi/fastapi
 
 | target | labelled rows | positives | positive rate | note |
 |---|---|---|---|---|
-| failure (1 = failure/timed_out) | 585 | 24 | 4.1% | 135 rows without label (cancelled/skipped/other) |
-| cache miss (1 = miss; log-derived) | 112 | 47 | 42.0% | 608 rows NULL (excluded from cache-model training) |
-| duration seconds (success/failure rows) | 585 |  |  | mean 73.5s, median 10.0s, p90 236.6s, max 616s |
+| failure (1 = failure/timed_out) | 3037 | 242 | 8.0% | 509 rows without label (cancelled/skipped/other) |
+| cache miss (1 = miss; log-derived) | 122 | 52 | 42.6% | 3424 rows NULL (excluded from cache-model training) |
+| duration seconds (success/failure rows) | 3037 |  |  | mean 69.3s, median 13.0s, p90 201.0s, max 616s |
 
-**Failure rate: 4.10%** (24 of 585 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
+**Failure rate: 7.97%** (242 of 3037 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
 
-Cache outcome breakdown at row level: {'exact_hit': 65, 'miss': 47, nan: 608}
+Cache outcome breakdown at row level: {'exact_hit': 70, 'miss': 52, nan: 3424}
 
 ### prometheus/prometheus
 
 | target | labelled rows | positives | positive rate | note |
 |---|---|---|---|---|
-| failure (1 = failure/timed_out) | 1615 | 38 | 2.4% | 479 rows without label (cancelled/skipped/other) |
-| cache miss (1 = miss; log-derived) | 379 | 332 | 87.6% | 1715 rows NULL (excluded from cache-model training) |
-| duration seconds (success/failure rows) | 1615 |  |  | mean 508.0s, median 474.0s, p90 1132.8s, max 10987s |
+| failure (1 = failure/timed_out) | 10031 | 338 | 3.4% | 2556 rows without label (cancelled/skipped/other) |
+| cache miss (1 = miss; log-derived) | 394 | 344 | 87.3% | 12193 rows NULL (excluded from cache-model training) |
+| duration seconds (success/failure rows) | 10031 |  |  | mean 465.3s, median 349.0s, p90 1051.0s, max 10987s |
 
-**Failure rate: 2.35%** (38 of 1615 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
+**Failure rate: 3.37%** (338 of 10031 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
 
-Cache outcome breakdown at row level: {'exact_hit': 46, 'hit_unresolved': 1, 'miss': 332, nan: 1715}
+Cache outcome breakdown at row level: {'exact_hit': 49, 'hit_unresolved': 1, 'miss': 344, nan: 12193}
 
 ### apache/dubbo
 
 | target | labelled rows | positives | positive rate | note |
 |---|---|---|---|---|
-| failure (1 = failure/timed_out) | 697 | 38 | 5.5% | 101 rows without label (cancelled/skipped/other) |
-| cache miss (1 = miss; log-derived) | 340 | 92 | 27.1% | 458 rows NULL (excluded from cache-model training) |
-| duration seconds (success/failure rows) | 697 |  |  | mean 362.3s, median 58.0s, p90 1084.0s, max 3154s |
+| failure (1 = failure/timed_out) | 3755 | 166 | 4.4% | 347 rows without label (cancelled/skipped/other) |
+| cache miss (1 = miss; log-derived) | 340 | 92 | 27.1% | 3762 rows NULL (excluded from cache-model training) |
+| duration seconds (success/failure rows) | 3755 |  |  | mean 367.1s, median 58.0s, p90 1086.0s, max 3154s |
 
-**Failure rate: 5.45%** (38 of 697 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
+**Failure rate: 4.42%** (166 of 3755 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
 
-Cache outcome breakdown at row level: {'exact_hit': 64, 'miss': 92, 'partial_hit': 184, nan: 458}
+Cache outcome breakdown at row level: {'exact_hit': 64, 'miss': 92, 'partial_hit': 184, nan: 3762}
 
 ### quarkusio/quarkus
 
@@ -148,31 +148,31 @@ Cache outcome breakdown at row level: {'exact_hit': 100, 'hit_unresolved': 2, 'm
 
 | target | labelled rows | positives | positive rate | note |
 |---|---|---|---|---|
-| failure (1 = failure/timed_out) | 3623 | 160 | 4.4% | 1273 rows without label (cancelled/skipped/other) |
-| cache miss (1 = miss; log-derived) | 1144 | 638 | 55.8% | 3752 rows NULL (excluded from cache-model training) |
-| duration seconds (success/failure rows) | 3623 |  |  | mean 463.8s, median 148.0s, p90 1095.6s, max 17172s |
+| failure (1 = failure/timed_out) | 18970 | 923 | 4.9% | 5345 rows without label (cancelled/skipped/other) |
+| cache miss (1 = miss; log-derived) | 1170 | 656 | 56.1% | 23145 rows NULL (excluded from cache-model training) |
+| duration seconds (success/failure rows) | 18970 |  |  | mean 367.2s, median 151.0s, p90 989.0s, max 17172s |
 
-**Failure rate: 4.42%** (160 of 3623 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
+**Failure rate: 4.87%** (923 of 18970 labelled rows). The positive class is tiny, so accuracy and ROC-AUC would flatter any model; use PR-AUC against the prevalence and report the base rate.
 
-Cache outcome breakdown at row level: {'exact_hit': 300, 'hit_unresolved': 3, 'miss': 638, 'partial_hit': 203, nan: 3752}
+Cache outcome breakdown at row level: {'exact_hit': 308, 'hit_unresolved': 3, 'miss': 656, 'partial_hit': 203, nan: 23145}
 
 ## 5. Cache-label coverage
 
 | repo | job cells | cells hit | cells miss | cells NULL | rows | rows labelled | rows NULL | row coverage |
 |---|---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 7634 | 2082 | 1242 | 4310 | 780 | 93 | 687 | 11.9% |
-| fastapi/fastapi | 1840 | 65 | 206 | 1569 | 720 | 112 | 608 | 15.6% |
-| prometheus/prometheus | 2814 | 93 | 558 | 2163 | 2094 | 379 | 1715 | 18.1% |
-| apache/dubbo | 1672 | 906 | 92 | 674 | 798 | 340 | 458 | 42.6% |
+| python-poetry/poetry | 30961 | 2097 | 1263 | 27601 | 3576 | 94 | 3482 | 2.6% |
+| fastapi/fastapi | 9862 | 70 | 222 | 9570 | 3546 | 122 | 3424 | 3.4% |
+| prometheus/prometheus | 17191 | 99 | 579 | 16513 | 12587 | 394 | 12193 | 3.1% |
+| apache/dubbo | 8911 | 906 | 92 | 7913 | 4102 | 340 | 3762 | 8.3% |
 | quarkusio/quarkus | 1180 | 335 | 544 | 301 | 504 | 220 | 284 | 43.7% |
 
-* **python-poetry/poetry** — why cells have no label (`cache_label_status`): {'labelled': 3324, 'parsed_no_events': 1302, 'skipped_conclusion': 2724, 'skipped_not_cache_capable': 284}
+* **python-poetry/poetry** — why cells have no label (`cache_label_status`): {None: 23268, 'labelled': 3360, 'parsed_no_events': 1302, 'skipped_conclusion': 2745, 'skipped_not_cache_capable': 286}
 
-* **fastapi/fastapi** — why cells have no label (`cache_label_status`): {'labelled': 271, 'parsed_no_events': 1189, 'skipped_conclusion': 143, 'skipped_not_cache_capable': 237}
+* **fastapi/fastapi** — why cells have no label (`cache_label_status`): {None: 7896, 'labelled': 292, 'parsed_no_events': 1277, 'skipped_conclusion': 146, 'skipped_not_cache_capable': 251}
 
-* **prometheus/prometheus** — why cells have no label (`cache_label_status`): {'labelled': 651, 'parsed_no_events': 183, 'skipped_conclusion': 507, 'skipped_not_cache_capable': 1473}
+* **prometheus/prometheus** — why cells have no label (`cache_label_status`): {None: 14267, 'labelled': 678, 'parsed_no_events': 191, 'skipped_conclusion': 525, 'skipped_not_cache_capable': 1530}
 
-* **apache/dubbo** — why cells have no label (`cache_label_status`): {'labelled': 998, 'parsed_no_events': 56, 'skipped_conclusion': 137, 'skipped_not_cache_capable': 481}
+* **apache/dubbo** — why cells have no label (`cache_label_status`): {None: 7239, 'labelled': 998, 'parsed_no_events': 56, 'skipped_conclusion': 137, 'skipped_not_cache_capable': 481}
 
 * **quarkusio/quarkus** — why cells have no label (`cache_label_status`): {'labelled': 879, 'parsed_no_events': 44, 'skipped_conclusion': 165, 'skipped_not_cache_capable': 91, 'unavailable': 1}
 
@@ -186,15 +186,15 @@ Status meanings: `labelled` = a cache restore line was parsed; `parsed_no_events
 | files_changed_count | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
 | loc_added | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
 | loc_deleted | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
-| job_structurally_impacted | 130 (16.7%) | 120 (16.7%) | 894 (42.7%) | 14 (1.8%) | 72 (14.3%) |
-| cache_key_touched | 0 (0.0%) | 0 (0.0%) | 92 (4.4%) | 181 (22.7%) | 336 (66.7%) |
-| dep_graph_distance | 554 (71.0%) | 455 (63.2%) | 1097 (52.4%) | 14 (1.8%) | 90 (17.9%) |
-| historical_failure_rate | 18 (2.3%) | 11 (1.5%) | 283 (13.5%) | 14 (1.8%) | 55 (10.9%) |
-| historical_mean_duration | 18 (2.3%) | 11 (1.5%) | 283 (13.5%) | 14 (1.8%) | 55 (10.9%) |
-| recent_failure_streak | 18 (2.3%) | 11 (1.5%) | 283 (13.5%) | 14 (1.8%) | 55 (10.9%) |
-| recent_success_streak | 18 (2.3%) | 11 (1.5%) | 283 (13.5%) | 14 (1.8%) | 55 (10.9%) |
-| author_failure_rate | 216 (27.7%) | 114 (15.8%) | 399 (19.1%) | 182 (22.8%) | 210 (41.7%) |
-| cache_key_stability | 651 (83.5%) | 379 (52.6%) | 1698 (81.1%) | 406 (50.9%) | 210 (41.7%) |
+| job_structurally_impacted | 611 (17.1%) | 631 (17.8%) | 5397 (42.9%) | 14 (0.3%) | 72 (14.3%) |
+| cache_key_touched | 0 (0.0%) | 0 (0.0%) | 527 (4.2%) | 1041 (25.4%) | 336 (66.7%) |
+| dep_graph_distance | 2491 (69.7%) | 1792 (50.5%) | 6953 (55.2%) | 182 (4.4%) | 90 (17.9%) |
+| historical_failure_rate | 131 (3.7%) | 6 (0.2%) | 439 (3.5%) | 14 (0.3%) | 55 (10.9%) |
+| historical_mean_duration | 131 (3.7%) | 6 (0.2%) | 439 (3.5%) | 14 (0.3%) | 55 (10.9%) |
+| recent_failure_streak | 131 (3.7%) | 6 (0.2%) | 439 (3.5%) | 14 (0.3%) | 55 (10.9%) |
+| recent_success_streak | 131 (3.7%) | 6 (0.2%) | 439 (3.5%) | 14 (0.3%) | 55 (10.9%) |
+| author_failure_rate | 594 (16.6%) | 611 (17.2%) | 1719 (13.7%) | 812 (19.8%) | 210 (41.7%) |
+| cache_key_stability | 3446 (96.4%) | 3179 (89.7%) | 12175 (96.7%) | 3710 (90.4%) | 210 (41.7%) |
 | hour_of_day | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
 | day_of_week | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
 | is_weekend | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
@@ -207,10 +207,10 @@ Feature definition version 2. `impacted` = a changed file reaches the job throug
 
 | repo | (run, job) rows | no changed file in graph | job has file evidence | impacted = 1 | impacted = 0 | impacted unknown | cache touched = 1 | cache touched = 0 | cache unknown | distinct distances |
 |---|---|---|---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 780 | 0 (0.0%) | 650 (83.3%) | 226 (29.0%) | 424 (54.4%) | 130 (16.7%) | 26 | 754 | 0 | 2 |
-| fastapi/fastapi | 720 | 0 (0.0%) | 600 (83.3%) | 265 (36.8%) | 335 (46.5%) | 120 (16.7%) | 76 | 644 | 0 | 2 |
-| prometheus/prometheus | 2094 | 0 (0.0%) | 1200 (57.3%) | 997 (47.6%) | 203 (9.7%) | 894 (42.7%) | 31 | 1971 | 92 | 2 |
-| apache/dubbo | 798 | 14 (1.8%) | 798 (100.0%) | 784 (98.2%) | 0 (0.0%) | 14 (1.8%) | 130 | 487 | 181 | 2 |
+| python-poetry/poetry | 3576 | 18 (0.5%) | 2980 (83.3%) | 1085 (30.3%) | 1880 (52.6%) | 611 (17.1%) | 102 | 3474 | 0 | 2 |
+| fastapi/fastapi | 3546 | 42 (1.2%) | 2950 (83.2%) | 1754 (49.5%) | 1161 (32.7%) | 631 (17.8%) | 305 | 3241 | 0 | 2 |
+| prometheus/prometheus | 12587 | 21 (0.2%) | 7202 (57.2%) | 5634 (44.8%) | 1556 (12.4%) | 5397 (42.9%) | 291 | 11769 | 527 | 3 |
+| apache/dubbo | 4102 | 14 (0.3%) | 4102 (100.0%) | 3920 (95.6%) | 168 (4.1%) | 14 (0.3%) | 530 | 2531 | 1041 | 2 |
 | quarkusio/quarkus | 504 | 0 (0.0%) | 432 (85.7%) | 414 (82.1%) | 18 (3.6%) | 72 (14.3%) | 0 | 168 | 336 | 2 |
 
 ### 7.1 Does `impacted` agree with what the workflow actually did?
@@ -219,14 +219,14 @@ Ground truth available without any model: whether a job was **skipped** (every m
 
 | repo | scope | impacted=1 rows | of which skipped | impacted=0 rows | of which skipped | Fisher p |
 |---|---|---|---|---|---|---|
-| python-poetry/poetry | all jobs | 226 | 5.3% | 424 | 92.2% | 4.8e-118 |
-| python-poetry/poetry | jobs that skip at least once (4) | 129 | 9.3% | 391 | 100.0% | 2.5e-103 |
-| fastapi/fastapi | all jobs | 265 | 2.3% | 335 | 36.4% | 1.5e-28 |
-| fastapi/fastapi | jobs that skip at least once (3) | 174 | 3.4% | 186 | 65.6% | 1.1e-39 |
-| prometheus/prometheus | all jobs | 997 | 18.8% | 203 | 11.3% | 0.011 |
-| prometheus/prometheus | jobs that skip at least once (4) | 277 | 35.0% | 123 | 10.6% | 1.3e-07 |
-| apache/dubbo | all jobs | 784 | 9.1% | 0 | n/a | 1 |
-| apache/dubbo | jobs that skip at least once (11) | 616 | 11.5% | 0 | n/a | 1 |
+| python-poetry/poetry | all jobs | 1085 | 1.2% | 1880 | 93.2% | 0 |
+| python-poetry/poetry | jobs that skip at least once (4) | 614 | 2.1% | 1758 | 99.7% | 0 |
+| fastapi/fastapi | all jobs | 1754 | 2.8% | 1161 | 36.5% | 3.9e-135 |
+| fastapi/fastapi | jobs that skip at least once (3) | 1157 | 4.2% | 609 | 69.6% | 6.6e-197 |
+| prometheus/prometheus | all jobs | 5634 | 18.8% | 1556 | 13.0% | 6.9e-08 |
+| prometheus/prometheus | jobs that skip at least once (5) | 2108 | 50.3% | 886 | 22.9% | 2.2e-45 |
+| apache/dubbo | all jobs | 3920 | 5.3% | 168 | 2.4% | 0.11 |
+| apache/dubbo | jobs that skip at least once (11) | 3080 | 6.8% | 132 | 3.0% | 0.11 |
 | quarkusio/quarkus | all jobs | 414 | 33.8% | 18 | 5.6% | 0.0097 |
 | quarkusio/quarkus | jobs that skip at least once (17) | 391 | 29.9% | 17 | 0.0% | 0.0045 |
 
@@ -236,16 +236,16 @@ Descriptive only (no model): the label rate of all labelled rows split by the fe
 
 | repo | label | feature | feature = 1 | feature = 0 | feature unknown |
 |---|---|---|---|---|---|
-| python-poetry/poetry | failure rate | `job_structurally_impacted` | 12.1% (n=214) | 0.0% (n=33) | 0.0% (n=130) |
-| python-poetry/poetry | cache-miss rate | `cache_key_touched` | 0.0% (n=9) | 67.9% (n=84) | n/a |
-| python-poetry/poetry | exact key not restored (miss or partial hit) | `cache_key_touched` | 100.0% (n=9) | 70.2% (n=84) | n/a |
-| fastapi/fastapi | failure rate | `job_structurally_impacted` | 7.8% (n=257) | 1.9% (n=209) | 0.0% (n=119) |
-| fastapi/fastapi | cache-miss rate | `cache_key_touched` | 85.7% (n=35) | 22.1% (n=77) | n/a |
-| fastapi/fastapi | exact key not restored (miss or partial hit) | `cache_key_touched` | 85.7% (n=35) | 22.1% (n=77) | n/a |
-| prometheus/prometheus | failure rate | `job_structurally_impacted` | 3.6% (n=810) | 2.1% (n=141) | 0.9% (n=664) |
-| prometheus/prometheus | cache-miss rate | `cache_key_touched` | 79.2% (n=24) | 88.8% (n=268) | 86.2% (n=87) |
-| prometheus/prometheus | exact key not restored (miss or partial hit) | `cache_key_touched` | 79.2% (n=24) | 89.1% (n=267) | 86.2% (n=87) |
-| apache/dubbo | failure rate | `job_structurally_impacted` | 5.6% (n=683) | n/a | 0.0% (n=14) |
+| python-poetry/poetry | failure rate | `job_structurally_impacted` | 13.1% (n=1071) | 1.6% (n=128) | 0.2% (n=599) |
+| python-poetry/poetry | cache-miss rate | `cache_key_touched` | 0.0% (n=9) | 68.2% (n=85) | n/a |
+| python-poetry/poetry | exact key not restored (miss or partial hit) | `cache_key_touched` | 100.0% (n=9) | 70.6% (n=85) | n/a |
+| fastapi/fastapi | failure rate | `job_structurally_impacted` | 13.1% (n=1699) | 2.8% (n=724) | 0.0% (n=614) |
+| fastapi/fastapi | cache-miss rate | `cache_key_touched` | 86.5% (n=37) | 23.5% (n=85) | n/a |
+| fastapi/fastapi | exact key not restored (miss or partial hit) | `cache_key_touched` | 86.5% (n=37) | 23.5% (n=85) | n/a |
+| prometheus/prometheus | failure rate | `job_structurally_impacted` | 4.7% (n=4574) | 2.6% (n=1314) | 2.1% (n=4143) |
+| prometheus/prometheus | cache-miss rate | `cache_key_touched` | 79.2% (n=24) | 88.5% (n=279) | 85.7% (n=91) |
+| prometheus/prometheus | exact key not restored (miss or partial hit) | `cache_key_touched` | 79.2% (n=24) | 88.8% (n=278) | 85.7% (n=91) |
+| apache/dubbo | failure rate | `job_structurally_impacted` | 4.4% (n=3594) | 5.4% (n=147) | 0.0% (n=14) |
 | apache/dubbo | cache-miss rate | `cache_key_touched` | 20.0% (n=115) | 66.2% (n=74) | 13.2% (n=151) |
 | apache/dubbo | exact key not restored (miss or partial hit) | `cache_key_touched` | 97.4% (n=115) | 100.0% (n=74) | 59.6% (n=151) |
 | quarkusio/quarkus | failure rate | `job_structurally_impacted` | 12.2% (n=263) | 11.8% (n=17) | 0.0% (n=69) |
@@ -256,10 +256,10 @@ Descriptive only (no model): the label rate of all labelled rows split by the fe
 
 | repo | test period starts (run created_at) | train rows | train runs | test rows | test runs | failure rate train | failure rate test |
 |---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 2026-10-02T08:10:10Z | 624 | 104 | 156 | 26 | 7.67% (24/313) | 3.12% (2/64) |
-| fastapi/fastapi | 2026-10-02T11:14:40Z | 576 | 96 | 144 | 24 | 4.87% (23/472) | 0.88% (1/113) |
-| prometheus/prometheus | 2026-10-06T07:11:02Z | 1674 | 80 | 420 | 20 | 2.67% (34/1275) | 1.18% (4/340) |
-| apache/dubbo | 2026-09-24T13:33:18Z | 644 | 46 | 154 | 11 | 5.04% (28/556) | 7.09% (10/141) |
+| python-poetry/poetry | 2026-09-19T17:58:19Z | 2862 | 477 | 714 | 119 | 8.11% (119/1468) | 7.27% (24/330) |
+| fastapi/fastapi | 2026-09-29T10:20:00Z | 2832 | 477 | 714 | 119 | 9.09% (223/2454) | 3.26% (19/583) |
+| prometheus/prometheus | 2026-10-02T14:40:14Z | 10073 | 480 | 2514 | 120 | 3.68% (297/8078) | 2.10% (41/1953) |
+| apache/dubbo | 2026-09-06T00:31:56Z | 3276 | 234 | 826 | 59 | 4.22% (128/3030) | 5.24% (38/725) |
 | quarkusio/quarkus | 2026-10-06T14:14:53Z | 399 | 19 | 105 | 5 | 8.24% (23/279) | 15.71% (11/70) |
 
 Test fraction = last 20% of runs by creation time (`config.model.temporal_test_fraction`); all jobs of a run are on the same side; the split is never random.
@@ -272,14 +272,11 @@ Test fraction = last 20% of runs by creation time (`config.model.temporal_test_f
 * Only the **latest attempt** of a re-run is ingested.
 * `cancelled` jobs (mostly concurrency cancel-in-progress) and `skipped` jobs carry no failure or duration label; cancellation is not modelled.
 * The scheduler's cost / energy / CO₂ constants are configuration assumptions, not measurements from this data.
-* **python-poetry/poetry**: only 26 failure positives — failure-model metrics will have wide uncertainty.
-* **python-poetry/poetry**: runs come from several events {'pull_request': 111, 'push': 27}; event type is not a model feature.
-* **fastapi/fastapi**: only 24 failure positives — failure-model metrics will have wide uncertainty.
-* **fastapi/fastapi**: runs come from several events {'pull_request': 83, 'push': 35, 'schedule': 2}; event type is not a model feature.
-* **prometheus/prometheus**: only 38 failure positives — failure-model metrics will have wide uncertainty.
-* **prometheus/prometheus**: 106 of 2814 job cells (3.8%) could not be mapped to a YAML job key (ambiguous or unmatched display names) and are absent from the dataset.
-* **prometheus/prometheus**: runs come from several events {'pull_request': 107, 'push': 6}; event type is not a model feature.
-* **apache/dubbo**: only 38 failure positives — failure-model metrics will have wide uncertainty.
-* **apache/dubbo**: runs come from several events {'pull_request': 53, 'push': 9}; event type is not a model feature.
+* **python-poetry/poetry**: runs come from several events {'pull_request': 480, 'push': 127}; event type is not a model feature.
+* **fastapi/fastapi**: 2 of 9862 job cells (0.0%) could not be mapped to a YAML job key (ambiguous or unmatched display names) and are absent from the dataset.
+* **fastapi/fastapi**: runs come from several events {'pull_request': 497, 'push': 132, 'schedule': 11}; event type is not a model feature.
+* **prometheus/prometheus**: 604 of 17191 job cells (3.5%) could not be mapped to a YAML job key (ambiguous or unmatched display names) and are absent from the dataset.
+* **prometheus/prometheus**: runs come from several events {'pull_request': 518, 'push': 93}; event type is not a model feature.
+* **apache/dubbo**: runs come from several events {'pull_request': 243, 'push': 58}; event type is not a model feature.
 * **quarkusio/quarkus**: only 34 failure positives — failure-model metrics will have wide uncertainty.
 * **quarkusio/quarkus**: runs come from several events {'pull_request': 75, 'push': 1, 'schedule': 4}; event type is not a model feature.

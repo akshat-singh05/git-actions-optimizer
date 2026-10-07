@@ -71,48 +71,68 @@ Rows computed under an older definition are marked by `feature_version` (migrati
 The toolchain rules are an explicit **over-approximation** (confidence 0.5): they say "this job reads
 that language's sources", not "this job is affected by this particular file".
 
-## 4. Measured result (version 2, recomputed 2026-10-07 from the ingested data)
+## 4. Measured result (version 2, final data: 2026-10-07)
 
-Source: `docs/DATASET_REPORT.md` sections 7, 7.1, 7.2 (regenerate with `gha-optimizer dataset-report`).
-All five repositories were recomputed with the final code; the 207-test suite passes.
+Source: `docs/DATASET_REPORT.md` sections 7, 7.1, 7.2 and `docs/MODEL_EVAL.md` (regenerate with
+`gha-optimizer dataset-report` / `eval-models`). The history was extended after the first measurement
+(poetry / fastapi / prometheus 600 runs each, dubbo 300, quarkus still 30), so these figures replace the
+~120-run figures an earlier revision of this file quoted. The 220-test suite passes.
 
-**Coverage - before (version 1) → after (version 2)**
+**Coverage - before (version 1, ~100 runs) → after (version 2, final data)**
 
-| repo | rows impacted via a real graph path | rows with `cache_key_touched = 1` |
-|---|---|---|
-| python-poetry/poetry | 0 → 226 of 780 | 0 → 26 |
-| fastapi/fastapi | 0 → 265 of 720 | 0 → 76 |
-| prometheus/prometheus | 0 → 997 of 2094 (42.7% of rows unknown: `make` / remote actions) | 7 → 31 |
-| apache/dubbo | 0 → 784 of 798 | 130 → 130 |
-| quarkusio/quarkus | 0 → 414 of 504 | 0 → 0 (cache keys carry no `hashFiles`: 336 rows unknown) |
+| repo | (run, job) rows | impacted = 1 | impacted = 0 | unknown | `cache_key_touched = 1` |
+|---|---|---|---|---|---|
+| python-poetry/poetry | 3576 | 0 → 1085 (30.3%) | 1880 (52.6%) | 611 (17.1%) | 0 → 102 |
+| fastapi/fastapi | 3546 | 0 → 1754 (49.5%) | 1161 (32.7%) | 631 (17.8%) | 0 → 305 |
+| prometheus/prometheus | 12587 | 0 → 5634 (44.8%) | 1556 (12.4%) | 5397 (42.9%: `make` / remote actions) | 7 → 291 |
+| apache/dubbo | 4102 | 0 → 3920 (95.6%) | 168 (4.1%) | 14 | 130 → 530 |
+| quarkusio/quarkus | 504 | 0 → 414 (82.1%) | 18 (3.6%) | 72 | 0 → 0 (cache keys carry no `hashFiles`: 336 unknown) |
 
 **Does `impacted` agree with what the workflow did?** (skipped vs executed, no model involved)
 
 | repo | skipped when impacted = 1 | skipped when impacted = 0 | reading |
 |---|---|---|---|
-| poetry | 5.3% (n=226) | 92.2% (n=424) | strong - the workflow gates on paths-filter and the graph reproduces that gate |
-| fastapi | 2.3% (n=265) | 36.4% (n=335) | strong where gated (jobs that skip: 3.4% vs 65.6%) |
-| prometheus | 18.8% (n=997) | 11.3% (n=203) | **wrong direction / no signal** - its jobs skip on event / tag conditions, not on files |
-| dubbo | 9.1% (n=784) | n/a (no impacted = 0 row) | **uninformative** - 98.2% of rows impacted; the Maven toolchain rule links every Java file to every Maven job |
-| quarkus | 33.8% (n=414) | 5.6% (n=18) | **wrong direction** - jobs are skipped by a script-computed matrix the static graph cannot see |
+| poetry | 1.2% (n=1085) | 93.2% (n=1880) | strong - the workflow gates on paths-filter and the graph reproduces the gate |
+| fastapi | 2.8% (n=1754) | 36.5% (n=1161) | strong where gated (jobs that skip at least once: 4.2% vs 69.6%) |
+| prometheus | 18.8% (n=5634) | 13.0% (n=1556) | **wrong direction** (jobs that skip at least once: 50.3% vs 22.9%): its jobs skip on event / tag conditions, not on files |
+| dubbo | 5.3% (n=3920) | 2.4% (n=168) | **uninformative** (p = 0.11): 95.6% of rows are impacted; the Maven toolchain rule links every Java file to every Maven job |
+| quarkus | 33.8% (n=414) | 5.6% (n=18) | **wrong direction**: jobs are skipped by a script-computed matrix the static graph cannot see |
 
 So the structural features carry real signal **where the workflow itself states a file→job relationship**
-(poetry, fastapi) and little or none where it does not (prometheus, dubbo, quarkus). That is a property
-of those workflows, not something more rules of the same kind will fix.
+(poetry, fastapi) and none, or the opposite, where it does not (prometheus, dubbo, quarkus). That is a
+property of those workflows; more rules of the same kind will not fix it.
 
-**Label association** (descriptive, rows not independent): `cache_key_touched = 1` → exact cache key not
-restored in 85.7% of fastapi rows vs 22.1% when 0 (n=35 / 77). In poetry and dubbo the touched rows are
-almost all *partial* hits (a `restore-keys` prefix fallback) and the binary `label_cache_hit` counts those
-as hits, so the feature looks anti-predictive against that label there; against "exact key not restored"
-it is saturated (poetry 100% of 9 vs 70% of 84; dubbo 97% vs 100%). Failure rate by `impacted`:
-poetry 12.1% (n=214) vs 0.0% (n=33); fastapi 7.8% vs 1.9%; prometheus 3.6% vs 2.1%; quarkus 12.2% vs 11.8%.
-Failure positives per repository are 17-38, so none of these differences is established.
+**Label association** (descriptive, rows not independent). Failure rate when `impacted = 1` vs `0`:
+poetry 13.1% (n=1071) vs 1.6% (n=128); fastapi 13.1% (n=1699) vs 2.8% (n=724); prometheus 4.7% vs 2.6%;
+dubbo 4.4% vs 5.4% (reversed); quarkus 12.2% vs 11.8%. Cache: `cache_key_touched = 1` → exact key not
+restored in 86.5% of fastapi rows (n=37) vs 23.5% when 0 (n=85); in poetry and dubbo almost every touched
+row is a *partial* hit (a `restore-keys` fallback) that `label_cache_hit` counts as a hit, and against
+"exact key not restored" the feature is saturated (dubbo 97% vs 100%). The cache-labelled sample is small:
+cache labels exist only for runs inside GitHub's log-retention window (about 100 runs per repository).
 
-**What was NOT measured:** whether the models improved. The temporal holdouts contain 1-11 failure
-positives per repository, so a with/without-graph-features model comparison would not be meaningful and
-is not reported. `dep_graph_distance` now varies, but takes only 2 distinct values in every repository and is
-nearly redundant with `impacted`.
+## 5. Do the graph features help the models? (`docs/MODEL_EVAL.md`)
 
-**Cost:** with a warm parse cache a per-commit graph took about 9 s per run for poetry (five repositories
-recomputing in parallel) and about 90 s for quarkus (32k files, 176k nodes, 380k edges); quarkus dominates
-the recompute (24 distinct commits).
+Rolling-origin evaluation (expanding window, 5 folds over the runs that carry the target's label, pooled
+out-of-sample predictions, paired bootstrap over runs). Feature sets compared on identical folds: `all`,
+`no_structural`, `structural_only`, and a naive baseline that needs no model.
+
+* **Failure** (76-146 pooled test positives per repository): `all - no_structural` PR-AUC is not
+  distinguishable from 0 in any repository. No fitted model beats the prior-failure-rate baseline
+  (poetry / fastapi / prometheus: interval includes 0); in dubbo and quarkus the baseline is significantly
+  better.
+* **Cache** (25-197 labelled test rows - small): the graph features raise PR-AUC for fastapi
+  (`all - no_structural` +0.117, 95% interval [+0.016, +0.272]) but not for the others, and in prometheus the
+  baseline is significantly better than any model. For the `exact_miss` target dubbo's models beat the
+  baseline significantly, but that target is 84% positive there and the graph features are not the cause.
+* **Duration**: the fitted models are **significantly worse than the prior-mean baseline in every
+  repository** (MAE poetry 33.7 s vs 15.6 s, prometheus 121.8 vs 109.4, dubbo 44.1 vs 29.9). The graph
+  features change MAE by less than 1 s (fastapi -0.48 s, dubbo +0.63 s).
+
+Conclusion that the data supports: the graph features are a correct, informative description of the workflow
+for poetry and fastapi (section 4) but add **no demonstrable predictive value over history-based features**
+on failure and duration, and a possible one on fastapi's cache target. These are findings, not defects of
+the evaluation; the cache evidence rests on few rows.
+
+Procedure note: the first run of `eval-models` cut the folds over all runs, which left most cache folds
+without test labels (1-2 of 5 used). The folds are now cut over the runs that carry the target's label.
+That change was made after seeing the sparse folds; it is a correction of the procedure, not a tuning of results.
