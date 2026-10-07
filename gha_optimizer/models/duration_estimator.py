@@ -12,11 +12,14 @@ baseline is not evidence of learning.
 
 Two targets (the ``target`` argument):
 
-* ``"seconds"`` (default): regress the duration directly.
-* ``"log_ratio"``: regress ``log((duration+1)/(prior_mean+1))`` with an absolute-error loss and return
+* ``"log_ratio"`` (default): regress ``log((duration+1)/(prior_mean+1))`` with an absolute-error loss and return
   ``prior_mean * exp(prediction)``; the model only has to learn a *correction* to the job's own history
   instead of rediscovering job identity from a handful of rows.  Rows without a prior (a job's first
   runs) cannot be trained on and are predicted from the mean duration of the training data.
+  On the ingested repositories it beat raw seconds everywhere and the prior-mean baseline in poetry and
+  fastapi (docs/MODEL_EVAL.md); it is *not* better than the baseline in prometheus and dubbo.
+* ``"seconds"``: regress the duration directly (kept for comparison; significantly worse than the
+  prior-mean baseline in every repository).
 """
 from __future__ import annotations
 
@@ -59,7 +62,7 @@ class DurationEstimator:
         random_state: int = 13,
         quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
         test_fraction: float | None = None,
-        target: str = "seconds",
+        target: str = "log_ratio",
     ):
         from gha_optimizer.config import config
 
@@ -205,5 +208,6 @@ class DurationEstimator:
         self._backend_name = data.get("backend", "sklearn-hist")
         self._features = data.get("features", list(FEATURE_COLUMNS))
         self.target = data.get("target", "seconds")  # artifacts saved before the target option are 'seconds'
+        # (the constructor default is now "log_ratio"; a loaded artifact always keeps the target it was trained with)
         self._fallback_prior = data.get("fallback_prior", float("nan"))
         self._fitted = True
