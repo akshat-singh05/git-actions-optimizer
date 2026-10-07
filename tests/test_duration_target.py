@@ -55,13 +55,33 @@ def test_rows_without_a_prior_use_the_training_mean_not_nan():
     assert not math.isnan(model._fallback_prior) and model._fallback_prior > 0
 
 
-def test_seconds_target_is_unchanged_and_default():
+def test_log_ratio_is_the_default_and_seconds_remains_available():
     df = frame()
-    assert DurationEstimator().target == "seconds"
-    m = DurationEstimator(backend="sklearn")
+    assert DurationEstimator().target == "log_ratio"
+    m = DurationEstimator(backend="sklearn", target="seconds")
     metrics = m.fit(df)
     assert metrics["target"] == "seconds"
     assert (m.predict(df.tail(10)) >= 0).all()
+    assert DurationEstimator(backend="sklearn").fit(df)["target"] == "log_ratio"
+
+
+def test_loaded_artifacts_keep_the_target_they_were_trained_with(tmp_path):
+    df = frame()
+    old = DurationEstimator(backend="sklearn", target="seconds")
+    old.fit(df)
+    old.save(tmp_path / "old.joblib")
+    loaded = DurationEstimator(backend="sklearn")             # constructor default is now log_ratio ...
+    loaded.load(tmp_path / "old.joblib")
+    assert loaded.target == "seconds"                         # ... but the artifact decides
+    assert np.allclose(loaded.predict(df.tail(10)), old.predict(df.tail(10)))
+
+
+def test_the_seconds_evaluation_target_really_uses_the_seconds_estimator():
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    est = TARGETS["duration"].estimator()
+    ratio = TARGETS["duration_ratio"].estimator()
+    if isinstance(est, HistGradientBoostingRegressor):
+        assert est.loss == "squared_error" and ratio.loss == "absolute_error"
 
 
 def test_target_and_fallback_survive_save_load(tmp_path):

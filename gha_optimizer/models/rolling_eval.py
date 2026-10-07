@@ -71,7 +71,7 @@ TARGETS: dict[str, TargetSpec] = {
         "1 - the job's prior decayed cache-hit rate (a proxy: no exact-key prior is tracked)"),
     "duration": TargetSpec(
         "duration", "regression", lambda d: d["label_duration"], lambda d: d["historical_mean_duration"],
-        lambda: DurationEstimator().model, "the job's prior decayed mean duration"),
+        lambda: DurationEstimator(target="seconds").model, "the job's prior decayed mean duration"),
     "duration_ratio": TargetSpec(
         "duration_ratio", "regression", lambda d: d["label_duration"], lambda d: d["historical_mean_duration"],
         lambda: DurationEstimator(target="log_ratio").model, "the job's prior decayed mean duration",
