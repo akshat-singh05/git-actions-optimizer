@@ -92,10 +92,15 @@ def load_history(
 ) -> list[WorkflowRunRecord]:
     """Real ``(run, job key)`` records for ``repo`` (optionally one workflow), oldest first.
 
+    Only runs whose jobs *and* diff are known are admitted: a run listed but not yet (fully) ingested has no
+    ``run_changed_files`` rows, and would otherwise enter the dataset with ``files_changed_count = 0`` - a false
+    value, not an unknown one.
+
     Raises nothing for an empty result; callers decide (see :func:`require_history`).
     """
     runs_q = db.query(m.WorkflowRun).filter(m.WorkflowRun.repo == repo, m.WorkflowRun.status == "completed",
-                                            m.WorkflowRun.jobs_fetched_at.isnot(None))
+                                            m.WorkflowRun.jobs_fetched_at.isnot(None),
+                                            m.WorkflowRun.diff_source.isnot(None))
     if workflow_path:
         runs_q = runs_q.filter(m.WorkflowRun.workflow_path == workflow_path)
     if since is not None:

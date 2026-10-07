@@ -27,7 +27,12 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, brier_score_loss, mean_absolute_error, roc_auc_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, miss_target
@@ -59,6 +64,19 @@ TARGETS: dict[str, TargetSpec] = {
     "failure": TargetSpec(
         "failure", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
         lambda: FailurePredictor().model, "the job's prior decayed failure rate"),
+    # Candidate failure models for small, noisy data.  Their settings were fixed BEFORE looking at any fold result
+    # (no tuning on test folds); all candidates are reported, so read the intervals with the number of candidates
+    # in mind.
+    "failure_logistic": TargetSpec(
+        "failure_logistic", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
+        lambda: make_pipeline(SimpleImputer(strategy="median", add_indicator=True), StandardScaler(),
+                              LogisticRegression(C=0.3, max_iter=2000)),
+        "the job's prior decayed failure rate"),
+    "failure_regularized": TargetSpec(
+        "failure_regularized", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
+        lambda: HistGradientBoostingClassifier(max_iter=100, max_depth=3, learning_rate=0.05, min_samples_leaf=40,
+                                               l2_regularization=5.0, random_state=13),
+        "the job's prior decayed failure rate"),
     "cache_any_miss": TargetSpec(
         "cache_any_miss", "binary",
         lambda d: miss_target(d, "any_miss").where(d["label_cache_hit"].notna()),

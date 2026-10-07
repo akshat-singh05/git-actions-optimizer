@@ -1,20 +1,23 @@
 """
 Model D — GNN-based Cache-Miss Predictor.
 
-**This is the primary patent-differentiating component.**
+**Status: UNVERIFIED.**  This module has never been executed in the project's environment (torch is not
+installed there), it has not been compared with the tabular model or its naive baseline, and nothing here has
+been shown to beat them (see ``docs/MODEL_EVAL.md``: the tabular cache model itself does not).  When
+``model_backend="gnn"`` is requested and this path cannot run, the pipeline falls back to the tabular model and
+says so.  The description below is the *design intent*, not a result.
 
 Unlike the tabular baseline (Model A) which uses flat features, this model
-reasons directly over the *structural* dependency graph using a heterogeneous
-Graph Neural Network (GNN).  It can learn multi-hop patterns like:
+is intended to reason over the *structural* dependency graph with a heterogeneous
+Graph Neural Network (GNN).  The idea is that it could learn multi-hop patterns like:
 
     "when ``requirements.txt`` (file node) changes, and it has an import
     edge to ``requests`` (package node), and that package is cached by
     the ``pip-cache`` key (cachekey node), predict cache miss for the
     downstream ``unit_tests`` job (job node)"
 
-This structural reasoning over the file→package→cachekey→job graph is
-what existing CI/CD tools (which only hash lockfiles) cannot do, making
-it the defensible, non-obvious mechanism in the patent claims.
+Whether structural reasoning over the file→package→cachekey→job graph adds anything over the tabular
+features is an open question that this module does not answer.
 
 Architecture:
   - Input: ``torch_geometric.data.HeteroData`` from ``graph_utils.py``

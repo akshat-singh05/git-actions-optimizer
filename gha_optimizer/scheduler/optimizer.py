@@ -1,9 +1,10 @@
 """
 Layer 4 — Optimization / Scheduler.
 
-This is the system's core novel contribution: it converts per-job
-predictions (cache-miss probability, failure probability, expected
-duration) into a concrete, dependency-respecting execution plan.
+This layer converts per-job predictions (cache-miss probability, failure
+probability, expected duration) into a concrete, dependency-respecting execution
+plan.  Its estimated savings are ESTIMATES resting on the two levers described in
+``docs/SCHEDULER_ASSUMPTIONS.md``; it has not been benchmarked on real runs.
 
 Responsibilities:
   1. Priority-weighted topological scheduling (fail-fast ordering)
