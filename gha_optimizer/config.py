@@ -62,6 +62,11 @@ class SchedulerConfig(BaseModel):
     # Rewriting `runs-on` to a larger-runner label only works if the organisation has configured runners with
     # those labels, so it is opt-in.  Off: the plan keeps every job on its original runner.
     allow_runner_upsizing: bool = False
+    # Skip guards (`if: ${{ false }}` on jobs downstream of a job predicted to fail) are opt-in.  Under GitHub's default
+    # `needs` behaviour a dependent job is skipped anyway when its upstream really fails, so a correct prediction saves
+    # nothing and a wrong one removes tests; on held-out runs the predictions that reached the 0.85 threshold were
+    # right only 0-25% of the time (docs/SCHEDULER_ASSUMPTIONS.md).
+    allow_skip_recommendations: bool = False
 
     runner_cost_per_minute: Dict[str, float] = Field(
         default_factory=lambda: {

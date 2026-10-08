@@ -112,3 +112,12 @@ def test_runner_upsizing_is_opt_in_through_the_api(client, monkeypatch):
     assert r.status_code == 200, r.text
     summary = r.json()["plan_summary"]
     assert summary["runner_upsizing"] is True and summary["assumed_whatif_larger_runners"]["speedup_exponent"] == 0.9
+
+
+def test_skip_recommendations_are_opt_in_through_the_api(client, monkeypatch):
+    _with_history(monkeypatch)
+    off = client.post("/api/v1/optimize", json={"repo": "o/r", "workflow_path": str(WORKFLOW)})
+    assert off.status_code == 200 and off.json()["plan_summary"]["skip_recommendations_applied"] is False
+    on = client.post("/api/v1/optimize", json={"repo": "o/r", "workflow_path": str(WORKFLOW),
+                                               "allow_skip_recommendations": True})
+    assert on.status_code == 200 and on.json()["plan_summary"]["skip_recommendations_applied"] is True

@@ -90,6 +90,9 @@ def _plan_header(plan: SchedulePlan | None) -> str:
     for jp in plan.jobs:
         if jp.skip_recommended:
             lines.append(f"# Skip guard on '{jp.job_id}': {jp.skip_reason}")
+    candidates = [jp.job_id for jp in plan.jobs if jp.skip_candidate and not jp.skip_recommended]
+    if candidates:
+        lines.append(f"# Skip recommendations: off - {len(candidates)} job(s) would be guarded: {', '.join(candidates)}")
     return "\n".join(lines) + "\n"
 
 
@@ -183,8 +186,11 @@ def explain_changes(plan: SchedulePlan, sensitivity: list[dict[str, float]] | No
         "",
         "### Where the estimated saving comes from",
         "",
-        f"- Skip recommendations alone (jobs downstream of a predicted failure; needs no speed-up assumption but "
-        f"relies on the failure predictions): **{plan.time_saved_by_skipping_pct:.1f}%** wall-clock.",
+        f"- Skip recommendations: **{'ON' if plan.skip_applied else 'off - no skip guard is written'}**; "
+        f"{sum(1 for j in plan.jobs if j.skip_candidate)} candidate job(s) downstream of a predicted failure. "
+        f"They would be credited with {plan.time_saved_by_skipping_pct:.1f}% wall-clock, but only against a baseline in "
+        "which every job runs: GitHub already skips a job whose upstream (`needs`) fails, so a correct prediction "
+        "saves nothing and a wrong one removes tests that would have passed.",
         f"- Runner upsizing in this plan: **{'ON' if plan.runner_upsizing else 'off - no runner label is changed'}**.",
         f"- What-if, larger runners (ASSUMED speed-up exponent {plan.speedup_exponent}; the ingested history has one "
         f"runner size per OS, so this cannot be measured): {plan.time_saved_with_upsizing_whatif_pct:.1f}% wall-clock, "
@@ -214,7 +220,8 @@ def explain_changes(plan: SchedulePlan, sensitivity: list[dict[str, float]] | No
     for level in sorted(by_level.keys()):
         lines.append(f"**Level {level}** (parallel group):")
         for jp in by_level[level]:
-            status = "⛔ SKIP" if jp.skip_recommended else "✅ run"
+            status = ("⛔ SKIP" if jp.skip_recommended
+                      else "⚠ would skip (not applied)" if jp.skip_candidate else "✅ run")
             lines.append(
                 f"- `{jp.job_id}` → runner=`{jp.runner}`, "
                 f"P(fail)={jp.predicted_failure_prob:.2f}, "

@@ -118,7 +118,7 @@ def test_runner_labels_change_only_with_upsizing_and_only_for_base_tier_jobs(tmp
 
 
 def test_skip_guard_is_exactly_an_expression_and_keeps_the_original_condition(tmp_path):
-    wf, plan = _mixed_plan(failure={"lint": 0.95, "win": 0, "mac": 0, "mx": 0, "gated": 0})
+    wf, plan = _mixed_plan(failure={"lint": 0.95, "win": 0, "mac": 0, "mx": 0, "gated": 0}, allow_skipping=True)
     jobs = _write(wf, plan, tmp_path)["jobs"]
     assert jobs["win"]["if"] == "${{ false }}"                          # nothing after the closing braces
     assert jobs["gated"]["if"] == "${{ false && (needs.lint.result == 'success') }}"   # original condition preserved
@@ -126,7 +126,7 @@ def test_skip_guard_is_exactly_an_expression_and_keeps_the_original_condition(tm
 
 
 def test_reasons_and_estimate_are_comments_in_the_header_not_values(tmp_path):
-    wf, plan = _mixed_plan(failure={"lint": 0.95, "win": 0, "mac": 0, "mx": 0, "gated": 0})
+    wf, plan = _mixed_plan(failure={"lint": 0.95, "win": 0, "mac": 0, "mx": 0, "gated": 0}, allow_skipping=True)
     text = write_workflow(generate_optimized_workflow(wf, plan), tmp_path / "o.yml", plan).read_text(encoding="utf-8")
     head = text.split("\nname:")[0]
     assert "NOT measured" in head and "Skip guard on 'win'" in head and "off (no runner labels were changed)" in head

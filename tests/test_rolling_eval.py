@@ -130,9 +130,32 @@ def test_candidate_failure_models_run_on_the_same_folds_and_handle_missing_value
     """The candidates are evaluated exactly like the production model: same folds, same baseline, NaN-tolerant."""
     df = frame(100)
     base = evaluate_target(df, TARGETS["failure"], n_folds=4, min_train_runs=10, n_boot=50)
-    for name in ("failure_logistic", "failure_regularized"):
+    for name in ("failure_tree", "failure_regularized_tree"):
         r = evaluate_target(df, TARGETS[name], n_folds=4, min_train_runs=10, n_boot=50)
         assert r["folds_used"] == base["folds_used"] > 0, name
         assert r["n_test_rows"] == base["n_test_rows"] and r["positives"] == base["positives"]
         assert r["scores"]["baseline"] == base["scores"]["baseline"]          # the baseline is identical
         assert all(v is not None for v in r["scores"]["all"].values())
+
+
+def test_cutoff_mode_trains_before_and_tests_after_the_cutoff_only():
+    df = frame(100)
+    ordered = df.sort_values(["timestamp", "run_id"], kind="stable")
+    ts = ordered.groupby("run_id", sort=False)["timestamp"].first()
+    runs = list(ts.index)
+    cutoff = str(ts.iloc[70])                                   # the 71st run's timestamp
+    after = [r for r in runs if str(ts[r]) > cutoff]
+    r = evaluate_target(df, TARGETS["failure"], min_train_runs=10, n_boot=50, cutoff=cutoff)
+    assert r["folds_planned"] == 1 and r["folds_used"] == 1
+    assert r["n_test_runs"] <= len(after)                       # only runs strictly after the cutoff are tested
+    labelled_after = df[df["run_id"].isin(after) & df["label_failed"].notna()]
+    assert r["n_test_rows"] == len(labelled_after)
+    # the rendered report says it is the fresh-data check and names the cutoff
+    text = render_markdown({"o/r": {"failure": r}}, n_folds=5, n_boot=50, cutoff=cutoff)
+    assert "Fresh-data check" in text and cutoff in text
+
+
+def test_cutoff_with_no_later_runs_degrades_to_a_note_not_a_crash():
+    df = frame(60)
+    r = evaluate_target(df, TARGETS["failure"], min_train_runs=10, n_boot=50, cutoff="2999-01-01T00:00:00Z")
+    assert r["folds_planned"] == 0 and "scores" not in r and "note" in r

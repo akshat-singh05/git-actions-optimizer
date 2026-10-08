@@ -1,12 +1,25 @@
 """
 Model B — Job Failure Predictor.
 
-Gradient-boosted trees (NaN-capable) over structural, historical and temporal
-features.  Failures are the rare class in real CI history (1–13% of job rows in
-the ingested repositories), so evaluation is a **temporal holdout** reported as
-PR-AUC *against the test-period prevalence*, plus Brier score vs the base-rate
-predictor.  The decision threshold is chosen on a validation tail of the
-*training* period — never on the test set.
+Over structural, historical and temporal features.  Failures are the rare class in
+real CI history (1–13% of job rows in the ingested repositories), so evaluation is a
+**temporal holdout** reported as PR-AUC *against the test-period prevalence*, plus Brier
+score vs the base-rate predictor.  The decision threshold is chosen on a validation tail
+of the *training* period — never on the test set.
+
+Three variants (the ``variant`` argument), all evaluated in ``models/rolling_eval.py``:
+
+* ``"logistic"`` (default): median-imputed, standardised, L2-regularised logistic regression (C=0.3).  On
+  the ingested repositories it is the only variant never significantly worse than the "prior failure rate"
+  baseline (docs/MODEL_EVAL.md) - it can reproduce that baseline because the job's own failure history is
+  one of its inputs.  Its probabilities are close to the observed rate on average but over-confident in the
+  tail (few predictions above 0.85, and those that are fail far less often), so nothing should act on a
+  probability alone.  The choice was made after looking at the evaluation folds; confirm it on fresh runs
+  (``eval-models --after``).
+* ``"tree"``: NaN-capable gradient-boosted trees (XGBoost when importable) - the original model.  Significantly
+  worse than the baseline in dubbo and quarkus.
+* ``"regularized_tree"``: heavily regularised boosted trees (min_samples_leaf=40, l2=5).  Best in poetry,
+  fastapi and prometheus, clearly worse in dubbo and quarkus.
 
 The label is ``label_failed``: 1 = failure/timed-out, 0 = success; cancelled and
 skipped jobs carry no label and are excluded (counted in the metrics).
@@ -23,6 +36,10 @@ import joblib
 import pandas as pd
 from sklearn.base import clone
 from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
 from gha_optimizer.models.evaluation import (
@@ -41,6 +58,9 @@ except ImportError:
     _HAS_XGBOOST = False
 
 
+VARIANTS = ("logistic", "tree", "regularized_tree")
+
+
 class FailurePredictor:
     """Predict P(failure) per job using tabular features."""
 
@@ -52,27 +72,47 @@ class FailurePredictor:
         learning_rate: float = 0.08,
         random_state: int = 13,
         test_fraction: float | None = None,
+        variant: str = "logistic",
     ):
+        """``variant``: ``"logistic"`` (default) | ``"tree"`` | ``"regularized_tree"`` (see the module docstring);
+        ``backend`` (``"auto"`` | ``"sklearn"`` | ``"xgboost"``) only applies to ``variant="tree"``."""
         from gha_optimizer.config import config
 
+        if variant not in VARIANTS:
+            raise ValueError(f"unknown failure-model variant {variant!r}; expected one of {VARIANTS}")
+        self.variant = variant
         self.random_state = random_state
         self.test_fraction = test_fraction if test_fraction is not None else config.model.temporal_test_fraction
 
-        if backend == "xgboost" and not _HAS_XGBOOST:
-            raise ImportError("XGBoost requested but not installed.")
-        use_xgb = _HAS_XGBOOST if backend == "auto" else backend == "xgboost"
-        if use_xgb:
-            self.model: Any = XGBClassifier(
-                n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
-                random_state=random_state, eval_metric="logloss",
+        self.model: Any
+        if variant == "logistic":
+            self.model = make_pipeline(
+                SimpleImputer(strategy="median", add_indicator=True), StandardScaler(),
+                LogisticRegression(C=0.3, max_iter=2000),
             )
-            self._backend_name = "xgboost"
-        else:
+            self._backend_name = "sklearn-logistic"
+        elif variant == "regularized_tree":
             self.model = HistGradientBoostingClassifier(
-                max_iter=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
-                random_state=random_state,
+                max_iter=100, max_depth=3, learning_rate=0.05, min_samples_leaf=40,
+                l2_regularization=5.0, random_state=random_state,
             )
-            self._backend_name = "sklearn-hist"
+            self._backend_name = "sklearn-hist-regularized"
+        else:
+            if backend == "xgboost" and not _HAS_XGBOOST:
+                raise ImportError("XGBoost requested but not installed.")
+            use_xgb = _HAS_XGBOOST if backend == "auto" else backend == "xgboost"
+            if use_xgb:
+                self.model = XGBClassifier(
+                    n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
+                    random_state=random_state, eval_metric="logloss",
+                )
+                self._backend_name = "xgboost"
+            else:
+                self.model = HistGradientBoostingClassifier(
+                    max_iter=n_estimators, max_depth=max_depth, learning_rate=learning_rate,
+                    random_state=random_state,
+                )
+                self._backend_name = "sklearn-hist"
 
         self._fitted = False
         self._optimal_threshold: float = 0.5
@@ -85,6 +125,7 @@ class FailurePredictor:
         y_all = d["label_failed"].astype(int)
         metrics: dict[str, Any] = {
             "backend": self._backend_name,
+            "variant": self.variant,
             "n_rows_total": int(len(df)),
             "n_rows_labelled": int(len(d)),
             "n_rows_excluded_null_label": int(len(df) - len(d)),
@@ -156,7 +197,8 @@ class FailurePredictor:
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
             {"model": self.model, "backend": self._backend_name, "threshold": self._optimal_threshold,
-             "features": self._features, "feature_importance": self._feature_importance},
+             "features": self._features, "feature_importance": self._feature_importance,
+             "variant": self.variant},
             path,
         )
 
@@ -164,6 +206,7 @@ class FailurePredictor:
         data = joblib.load(path)
         self.model = data["model"]
         self._backend_name = data.get("backend", "sklearn-hist")
+        self.variant = data.get("variant", "tree")  # artifacts saved before the variant option are the original trees
         self._optimal_threshold = data.get("threshold", 0.5)
         self._feature_importance = data.get("feature_importance", {})
         self._features = data.get("features", list(FEATURE_COLUMNS))

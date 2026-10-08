@@ -119,6 +119,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             workflow_repo_path=wf_repo_path,
             allow_runner_upsizing=args.larger_runners or None,
             speedup_exponent=args.speedup_exponent,
+            allow_skipping=args.enable_skips or None,
             model_dir=None if args.no_model_store else args.model_dir,
         )
     except InsufficientHistoryError as exc:
@@ -304,14 +305,14 @@ def cmd_eval_models(args: argparse.Namespace) -> None:
                 continue
             results[repo] = evaluate_frame(
                 df, args.target or list(TARGETS), n_folds=args.folds, n_boot=args.bootstrap,
-                initial_fraction=args.initial_fraction, min_train_runs=args.min_train_runs,
+                initial_fraction=args.initial_fraction, min_train_runs=args.min_train_runs, cutoff=args.after,
             )
     finally:
         db.close()
     if not results:
         _decline(RuntimeError("no ingested data for the requested repositories"))
-    text = render_markdown(results, args.folds, args.bootstrap)
-    out = Path(args.out)
+    text = render_markdown(results, args.folds, args.bootstrap, cutoff=args.after)
+    out = Path(args.out or ("docs/MODEL_EVAL_FRESH.md" if args.after else "docs/MODEL_EVAL.md"))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(f"wrote {out} ({len(text.splitlines())} lines)")
@@ -411,6 +412,8 @@ def main() -> None:
     p_analyze.add_argument("--model-dir", default=str(config.model.model_dir),
                            help="persisted models are loaded from / saved to here when their data fingerprint matches")
     p_analyze.add_argument("--no-model-store", action="store_true", help="always refit; never read or write saved models")
+    p_analyze.add_argument("--enable-skips", action="store_true",
+                           help="apply skip recommendations (`if: ${{ false }}` guards); off by default - see docs/SCHEDULER_ASSUMPTIONS.md")
     p_analyze.add_argument("--larger-runners", action="store_true",
                            help="let the plan relabel base-tier jobs to larger-runner labels (they must exist in your org)")
     p_analyze.add_argument("--speedup-exponent", type=float,
@@ -469,14 +472,17 @@ def main() -> None:
         "eval-models", help="Rolling-origin evaluation, feature-set ablation and bootstrap intervals -> docs/MODEL_EVAL.md")
     p_ev.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
     p_ev.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
-    p_ev.add_argument("--target", action="append", choices=["failure", "failure_logistic", "failure_regularized", "cache_any_miss", "cache_exact_miss",
+    p_ev.add_argument("--target", action="append", choices=["failure", "failure_tree", "failure_regularized_tree", "cache_any_miss", "cache_exact_miss",
                                "duration", "duration_ratio"],
                       help="target to evaluate (repeatable; default: all)")
     p_ev.add_argument("--folds", type=int, default=5)
     p_ev.add_argument("--initial-fraction", type=float, default=0.5, help="share of runs used only as the first training prefix")
     p_ev.add_argument("--min-train-runs", type=int, default=20)
     p_ev.add_argument("--bootstrap", type=int, default=1000)
-    p_ev.add_argument("--out", default="docs/MODEL_EVAL.md")
+    p_ev.add_argument("--after", metavar="ISO_TIMESTAMP",
+                      help="fresh-data check: train on runs at or before this timestamp (e.g. 2026-10-06T23:31:13Z), "
+                           "test once on every later run; writes docs/MODEL_EVAL_FRESH.md unless --out is given")
+    p_ev.add_argument("--out", default=None, help="default: docs/MODEL_EVAL.md (docs/MODEL_EVAL_FRESH.md with --after)")
     _add_db(p_ev)
 
     args = parser.parse_args()
