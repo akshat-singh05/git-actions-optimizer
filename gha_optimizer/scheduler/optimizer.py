@@ -12,7 +12,6 @@ Responsibilities:
   3. Early-exit recommendation with probabilistic skip propagation
   4. Parallel execution modeling (wall-clock = max of parallel groups)
   5. Energy / CO₂ cost term (γ weight in the objective)
-  6. Matrix reduction integration
 """
 from __future__ import annotations
 
