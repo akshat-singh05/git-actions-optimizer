@@ -235,7 +235,6 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
                 history=history,
                 changed_files=request.changed_files,
                 out_path=out_path,
-                model_backend=request.model_backend,
                 alpha=request.alpha,
                 beta=request.beta,
                 gamma=request.gamma,

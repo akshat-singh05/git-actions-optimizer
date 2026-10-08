@@ -194,12 +194,6 @@ def run_demo_pipeline():
     cache_miss_prob = trained["cache_miss"].predict_proba(infer_df).to_dict()
     failure_prob = trained["failure"].predict_proba(infer_df).to_dict()
     duration_pred = trained["duration"].predict(infer_df).to_dict()
-    try:
-        import torch_geometric  # noqa: F401
-        gnn = "importable (tabular models used in this demo)"
-    except ImportError:
-        gnn = "NOT RUN (torch / torch_geometric not installed)"
-    step7["gnn"] = {"status": gnn}
     step7["predictions"] = {
         j: {"cache_miss": round(cache_miss_prob[j], 4), "failure": round(failure_prob[j], 4),
             "duration": round(duration_pred[j], 1)} for j in workflow.jobs
@@ -250,7 +244,6 @@ def run_demo_pipeline():
         "fused_edges": fused_graph.number_of_edges(),
         "jobs": len(workflow.jobs),
         "models_trained": len(trained),
-        "gnn_available": not gnn.startswith("NOT"),
         "baseline_wall_clock": round(plan.baseline_wall_clock_seconds, 1),
         "optimized_wall_clock": round(plan.estimated_wall_clock_seconds, 1),
         "time_saved_pct": round(plan.time_saved_pct, 1),

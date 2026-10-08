@@ -22,14 +22,11 @@ setup(
     extras_require={
         "server": ["fastapi>=0.110", "uvicorn>=0.29"],
         "ml": ["xgboost>=2.0"],
-        "gnn": ["torch>=2.2", "torch-geometric>=2.5"],
         "dev": ["pytest>=8.0", "httpx>=0.27"],
         "all": [
             "fastapi>=0.110",
             "uvicorn>=0.29",
             "xgboost>=2.0",
-            "torch>=2.2",
-            "torch-geometric>=2.5",
             "pytest>=8.0",
             "httpx>=0.27",
         ],

@@ -34,7 +34,3 @@ tree-sitter-go>=0.21
 
 # Improved ML backends (optional — install with: pip install gha-optimizer[ml])
 # xgboost>=2.0
-
-# GNN model (optional — install with: pip install gha-optimizer[gnn])
-# torch>=2.2
-# torch-geometric>=2.5

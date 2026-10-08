@@ -47,10 +47,6 @@ class ModelConfig(BaseModel):
         default_factory=lambda: Path(os.environ.get("GHA_MODEL_DIR", ".gha_optimizer/models"))
     )
 
-    model_backend: str = Field(
-        default_factory=lambda: os.environ.get("GHA_MODEL_BACKEND", "tabular")
-    )
-
 
 class SchedulerConfig(BaseModel):
     """Scheduler / optimizer weights and thresholds."""

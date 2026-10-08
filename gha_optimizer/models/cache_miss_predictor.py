@@ -8,16 +8,14 @@ labels only.  Two targets (the ``target`` argument):
   fallback ("partial hit") counts as a hit.
 * ``"exact_miss"``: miss = the job's *exact* key was not restored (a miss or a partial hit).  This is
   what a changed ``hashFiles`` input causes, so it is the target ``cache_key_touched`` describes.
-  Rows whose cache label is NULL (no log / no cache line) are excluded
-— never defaulted — and counted in the returned metrics.
+
+Rows whose cache label is NULL (no log / no cache line) are excluded - never defaulted - and counted in the
+returned metrics.
 
 Estimator: gradient-boosted trees that accept NaN natively
 (``HistGradientBoostingClassifier``; XGBoost when importable), because real
 features are legitimately missing at cold start.  Evaluation is a **temporal
 holdout** (see :mod:`gha_optimizer.models.evaluation`), not shuffled CV.
-
-The GNN-based upgrade lives in ``gnn_cache_predictor.py`` and does not change
-this interface.
 """
 from __future__ import annotations
 
