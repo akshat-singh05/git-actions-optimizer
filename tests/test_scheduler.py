@@ -53,7 +53,7 @@ def test_downstream_of_high_risk_job_flagged_skip():
     cache_miss = {n: 0.1 for n in dag.nodes}
     duration = {n: 60.0 for n in dag.nodes}
 
-    plan = build_schedule(dag, failure_prob, cache_miss, duration, failure_skip_threshold=0.85)
+    plan = build_schedule(dag, failure_prob, cache_miss, duration, failure_skip_threshold=0.85, allow_skipping=True)
     skip_by_id = {jp.job_id: jp.skip_recommended for jp in plan.jobs}
 
     assert skip_by_id["unit_tests"] is True
@@ -68,7 +68,7 @@ def test_optimized_wall_clock_less_than_or_equal_baseline_when_skips_occur():
     cache_miss = {n: 0.1 for n in dag.nodes}
     duration = {n: 60.0 for n in dag.nodes}
 
-    plan = build_schedule(dag, failure_prob, cache_miss, duration, failure_skip_threshold=0.85)
+    plan = build_schedule(dag, failure_prob, cache_miss, duration, failure_skip_threshold=0.85, allow_skipping=True)
     assert plan.estimated_wall_clock_seconds < plan.baseline_wall_clock_seconds
     assert plan.time_saved_pct > 0
 

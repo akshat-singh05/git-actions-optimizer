@@ -71,6 +71,7 @@ def run_pipeline(
     allow_runner_upsizing: bool | None = None,
     speedup_exponent: float | None = None,
     model_dir: str | Path | None = None,
+    allow_skipping: bool | None = None,
 ) -> tuple[SchedulePlan, str]:
     """
     Run the full optimization pipeline end to end.
@@ -90,6 +91,8 @@ def run_pipeline(
     allow_runner_upsizing : Let the plan move base-tier jobs to larger-runner labels (default off; those labels must
         exist in the organisation).  The larger-runner case is always reported as an ASSUMED what-if.
     speedup_exponent : ASSUMED runner speed-up law exponent (default ``config.scheduler.speedup_exponent``).
+    allow_skipping : Apply skip recommendations - `if: ${{ false }}` guards on jobs downstream of a job predicted to
+        fail (default off; candidates are still reported).
     model_dir : Directory of persisted models (``models/store.py``).  If it holds models trained on exactly this
         history/feature/hyper-parameter fingerprint they are loaded instead of refit; otherwise the models are fit
         and saved there.  ``None`` (default): always fit, never touch disk.
@@ -215,6 +218,8 @@ def run_pipeline(
     sensitivity_kwargs.pop("speedup_exponent", None)
     if allow_runner_upsizing is not None:
         schedule_kwargs["allow_upsizing"] = allow_runner_upsizing
+    if allow_skipping is not None:
+        schedule_kwargs["allow_skipping"] = allow_skipping
 
     plan = build_schedule(dag, failure_prob, cache_miss_prob, duration_pred, **schedule_kwargs)
     sensitivity = speedup_sensitivity(dag, failure_prob, cache_miss_prob, duration_pred, **sensitivity_kwargs)

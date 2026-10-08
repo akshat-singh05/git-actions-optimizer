@@ -12,30 +12,6 @@ Pooled out-of-sample PR-AUC (higher is better; a no-skill model scores the base 
 
 | repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
 |---|---|---|---|---|---|---|---|
-| python-poetry/poetry | 922 / 298 | 76 (8.2%) | 5/5 | 0.2015 | 0.2075 | 0.1335 | 0.1403 |
-| fastapi/fastapi | 1786 / 340 | 160 (9.0%) | 5/5 | 0.3753 | 0.3586 | 0.2211 | 0.3325 |
-| prometheus/prometheus | 18069 / 1081 | 808 (4.5%) | 5/5 | 0.2525 | 0.246 | 0.0617 | 0.1561 |
-| apache/dubbo | 1860 / 147 | 93 (5.0%) | 5/5 | 0.1132 | 0.1146 | 0.0657 | 0.2168 |
-| quarkusio/quarkus | 52 / 4 | 9 (17.3%) | 2/2 | 0.5772 | 0.5539 | 0.2368 | 0.6952 |
-
-Paired difference (PR-AUC; higher is better), mean and 95% interval:
-
-| repo | all - no_structural | all - baseline | no_structural - baseline |
-|---|---|---|---|
-| python-poetry/poetry | -0.0109 [-0.0649, +0.0260] (includes 0) | +0.0674 [-0.0215, +0.1753] (includes 0) | +0.0783 [-0.0270, +0.1923] (includes 0) |
-| fastapi/fastapi | +0.0154 [-0.0110, +0.0427] (includes 0) | +0.0409 [-0.0420, +0.1305] (includes 0) | +0.0255 [-0.0555, +0.1099] (includes 0) |
-| prometheus/prometheus | +0.0065 [-0.0112, +0.0260] (includes 0) | +0.0975 [+0.0558, +0.1437] (excludes 0) | +0.0910 [+0.0524, +0.1328] (excludes 0) |
-| apache/dubbo | -0.0022 [-0.0167, +0.0100] (includes 0) | -0.1100 [-0.1971, -0.0326] (excludes 0) | -0.1078 [-0.1941, -0.0282] (excludes 0) |
-| quarkusio/quarkus | +0.0304 [-0.0284, +0.0881] (includes 0) | -0.0997 [-0.1850, -0.0093] (excludes 0) | -0.1301 [-0.2004, -0.0417] (excludes 0) |
-
-## failure_logistic
-
-Baseline (no model): the job's prior decayed failure rate.
-
-Pooled out-of-sample PR-AUC (higher is better; a no-skill model scores the base rate):
-
-| repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
-|---|---|---|---|---|---|---|---|
 | python-poetry/poetry | 922 / 298 | 76 (8.2%) | 5/5 | 0.2047 | 0.1713 | 0.1329 | 0.1403 |
 | fastapi/fastapi | 1786 / 340 | 160 (9.0%) | 5/5 | 0.4187 | 0.3771 | 0.2232 | 0.3325 |
 | prometheus/prometheus | 18069 / 1081 | 808 (4.5%) | 5/5 | 0.1732 | 0.1814 | 0.0607 | 0.1561 |
@@ -52,7 +28,31 @@ Paired difference (PR-AUC; higher is better), mean and 95% interval:
 | apache/dubbo | -0.0173 [-0.0465, +0.0066] (includes 0) | -0.0066 [-0.0619, +0.0562] (includes 0) | +0.0107 [-0.0358, +0.0647] (includes 0) |
 | quarkusio/quarkus | -0.0048 [-0.1667, +0.0417] (includes 0) | -0.0101 [-0.1224, +0.0804] (includes 0) | -0.0053 [-0.1091, +0.2500] (includes 0) |
 
-## failure_regularized
+## failure_tree
+
+Baseline (no model): the job's prior decayed failure rate.
+
+Pooled out-of-sample PR-AUC (higher is better; a no-skill model scores the base rate):
+
+| repo | test rows / runs | positives | folds used | all | no_structural | structural_only | baseline |
+|---|---|---|---|---|---|---|---|
+| python-poetry/poetry | 922 / 298 | 76 (8.2%) | 5/5 | 0.2015 | 0.2075 | 0.1335 | 0.1403 |
+| fastapi/fastapi | 1786 / 340 | 160 (9.0%) | 5/5 | 0.3753 | 0.3586 | 0.2211 | 0.3325 |
+| prometheus/prometheus | 18069 / 1081 | 808 (4.5%) | 5/5 | 0.2525 | 0.246 | 0.0617 | 0.1561 |
+| apache/dubbo | 1860 / 147 | 93 (5.0%) | 5/5 | 0.1132 | 0.1146 | 0.0657 | 0.2168 |
+| quarkusio/quarkus | 52 / 4 | 9 (17.3%) | 2/2 | 0.5772 | 0.5539 | 0.2368 | 0.6952 |
+
+Paired difference (PR-AUC; higher is better), mean and 95% interval:
+
+| repo | all - no_structural | all - baseline | no_structural - baseline |
+|---|---|---|---|
+| python-poetry/poetry | -0.0109 [-0.0649, +0.0260] (includes 0) | +0.0674 [-0.0215, +0.1753] (includes 0) | +0.0783 [-0.0270, +0.1923] (includes 0) |
+| fastapi/fastapi | +0.0154 [-0.0110, +0.0427] (includes 0) | +0.0409 [-0.0420, +0.1305] (includes 0) | +0.0255 [-0.0555, +0.1099] (includes 0) |
+| prometheus/prometheus | +0.0065 [-0.0112, +0.0260] (includes 0) | +0.0975 [+0.0558, +0.1437] (excludes 0) | +0.0910 [+0.0524, +0.1328] (excludes 0) |
+| apache/dubbo | -0.0022 [-0.0167, +0.0100] (includes 0) | -0.1100 [-0.1971, -0.0326] (excludes 0) | -0.1078 [-0.1941, -0.0282] (excludes 0) |
+| quarkusio/quarkus | +0.0304 [-0.0284, +0.0881] (includes 0) | -0.0997 [-0.1850, -0.0093] (excludes 0) | -0.1301 [-0.2004, -0.0417] (excludes 0) |
+
+## failure_regularized_tree
 
 Baseline (no model): the job's prior decayed failure rate.
 

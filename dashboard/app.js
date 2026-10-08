@@ -7,7 +7,7 @@
    durations — none of it is a measured execution.
 
    Usage: open index.html?repo=owner/repo&workflow=<path of the workflow file
-   on the machine running the server>[&changed=a.py,b.py][&larger_runners=1]
+   on the machine running the server>[&changed=a.py,b.py][&larger_runners=1][&skips=1]
    ================================================================ */
 
 const API_BASE = 'http://localhost:8000';
@@ -89,7 +89,7 @@ async function runOptimization() {
         if (!repo || !workflow) {
             showEmpty('Nothing to optimize yet. Open this page as ' +
                 'index.html?repo=owner/repo&workflow=<path of the workflow file on the server>' +
-                '[&changed=a.py,b.py][&larger_runners=1] — the repository must have been ingested ' +
+                '[&changed=a.py,b.py][&larger_runners=1][&skips=1] — the repository must have been ingested ' +
                 '(gha-optimizer ingest / build-dataset).');
             return;
         }
@@ -103,6 +103,7 @@ async function runOptimization() {
             changed_files: (q.get('changed') || '').split(',').filter(Boolean),
         };
         if (q.get('larger_runners') === '1') body.allow_runner_upsizing = true;
+        if (q.get('skips') === '1') body.allow_skip_recommendations = true;
 
         const resp = await fetch(`${API_BASE}/api/v1/optimize`, {
             method: 'POST',

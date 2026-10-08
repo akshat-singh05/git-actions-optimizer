@@ -35,11 +35,33 @@ def test_default_figures_do_not_depend_on_the_assumed_exponent():
 
 def test_skip_effect_is_separated_from_the_runner_assumption():
     failure = {**ZERO, "lint": 0.95}                                           # lint predicted to fail -> descendants skipped
-    p = plan(failure=failure)
+    p = plan(failure=failure, allow_skipping=True)
     assert {jp.job_id for jp in p.jobs if jp.skip_recommended} == {"unit", "integ", "build"}
-    assert p.time_saved_by_skipping_pct > 0
-    assert p.estimated_wall_clock_seconds == p.skip_only_wall_clock_seconds    # default mode == skip-only
+    assert p.skip_applied is True and p.time_saved_by_skipping_pct > 0
+    assert p.estimated_wall_clock_seconds == p.skip_only_wall_clock_seconds    # skipping on, upsizing off == skip-only
     assert p.time_saved_by_skipping_pct == pytest.approx(p.time_saved_pct)
+
+
+def test_skip_guards_are_off_by_default_but_candidates_are_still_reported():
+    failure = {**ZERO, "lint": 0.95}
+    p = plan(failure=failure)
+    assert p.skip_applied is False
+    assert not any(jp.skip_recommended for jp in p.jobs)                        # nothing is guarded ...
+    assert {jp.job_id for jp in p.jobs if jp.skip_candidate} == {"unit", "integ", "build"}   # ... but it is visible
+    assert p.estimated_wall_clock_seconds == p.baseline_wall_clock_seconds     # headline figures stay at the baseline
+    assert p.time_saved_by_skipping_pct > 0                                    # what the credit WOULD be
+    d = p.summary_dict()
+    assert d["jobs_skipped"] == 0 and d["skip_candidates"] == 3 and d["skip_recommendations_applied"] is False
+
+
+def test_skipping_and_upsizing_are_independent_switches():
+    failure = {**ZERO, "lint": 0.95}
+    both = plan(failure=failure, allow_skipping=True, allow_upsizing=True)
+    assert both.skip_applied and both.runner_upsizing
+    assert both.estimated_wall_clock_seconds == both.both_wall_clock_seconds
+    only_up = plan(failure=failure, allow_upsizing=True)
+    assert only_up.runner_upsizing and not only_up.skip_applied
+    assert only_up.estimated_wall_clock_seconds == only_up.runner_only_wall_clock_seconds
 
 
 def test_exponent_zero_means_larger_runners_never_help_so_the_whatif_collapses():

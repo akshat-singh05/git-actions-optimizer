@@ -71,6 +71,7 @@ class JobPlan:
     skip_recommended: bool
     skip_probability: float = 0.0
     skip_reason: str | None = None
+    skip_candidate: bool = False  # the predictions would recommend skipping this job; applied only if skipping is enabled
 
 
 @dataclass
@@ -88,8 +89,10 @@ class SchedulePlan:
     baseline_co2_grams: float
     # How the estimate was obtained.  Everything here is ESTIMATED from predicted durations.
     runner_upsizing: bool = False         # were jobs moved to larger-runner tiers in this plan?
+    skip_applied: bool = False            # were skip recommendations applied (skip guards written) in this plan?
     speedup_exponent: float = 0.6         # ASSUMED runner speed-up law, used only by the upsizing figures below
-    # Counterfactual decomposition (wall-clock s / cost USD).  skip_only needs no speed-up assumption; the others do.
+    # Counterfactual decomposition (wall-clock s / cost USD): what the skip CANDIDATES would be credited with, what
+    # larger runners would be credited with, and both.  Only the levers that are switched on enter the headline figures.
     skip_only_wall_clock_seconds: float = 0.0
     skip_only_cost_usd: float = 0.0
     runner_only_wall_clock_seconds: float = 0.0   # larger runners, no skipping (depends on the ASSUMED law)
@@ -103,7 +106,9 @@ class SchedulePlan:
 
     @property
     def time_saved_by_skipping_pct(self) -> float:
-        """Estimated wall-clock saved by skip recommendations alone (no speed-up assumption)."""
+        """Wall-clock the skip candidates would be credited with (applied only if ``skip_applied``).  The credit is
+        measured against a baseline in which every job runs; under GitHub's default ``needs`` semantics a dependent of
+        a job that really fails is skipped anyway, so this is not a saving a real run would see."""
         return self._pct(self.baseline_wall_clock_seconds, self.skip_only_wall_clock_seconds)
 
     @property
@@ -165,6 +170,8 @@ class SchedulePlan:
         return {
             "jobs_total": len(self.jobs),
             "jobs_skipped": sum(1 for j in self.jobs if j.skip_recommended),
+            "skip_candidates": sum(1 for j in self.jobs if j.skip_candidate),
+            "skip_recommendations_applied": self.skip_applied,
             "basis": "ESTIMATED from predicted durations; not a measured execution",
             "runner_upsizing": self.runner_upsizing,
             "estimated_time_saved_by_skipping_pct": round(self.time_saved_by_skipping_pct, 1),
@@ -419,6 +426,7 @@ def build_schedule(
     region: str = "default",
     speedup_exponent: float | None = None,
     allow_upsizing: bool | None = None,
+    allow_skipping: bool | None = None,
 ) -> SchedulePlan:
     """
     Build an optimized execution schedule from ML predictions.
@@ -427,6 +435,9 @@ def build_schedule(
     ``config.scheduler.allow_runner_upsizing``, off) decides whether jobs may move to larger-runner tiers; the
     wall-clock saving of those tiers depends on ``speedup_exponent`` (ASSUMED, not measured).  With upsizing off the
     plan's headline figures contain only the skip effect; the larger-runner case is still reported as a what-if.
+    ``allow_skipping`` (default ``config.scheduler.allow_skip_recommendations``, off) decides whether skip guards are
+    applied: candidates are always identified and reported, but with it off no job is marked ``skip_recommended`` and
+    the headline figures equal the baseline unless upsizing is on.
 
     Parameters
     ----------
@@ -442,6 +453,7 @@ def build_schedule(
     region : Runner region for carbon intensity calculation.
     speedup_exponent : ASSUMED runner speed-up law exponent (default ``config.scheduler.speedup_exponent``).
     allow_upsizing : Let jobs move to larger-runner tiers (default ``config.scheduler.allow_runner_upsizing``).
+    allow_skipping : Apply skip recommendations (default ``config.scheduler.allow_skip_recommendations``).
     """
     # Use config defaults if not explicitly provided
     if failure_skip_threshold is None:
@@ -456,6 +468,8 @@ def build_schedule(
         speedup_exponent = config.scheduler.speedup_exponent
     if allow_upsizing is None:
         allow_upsizing = config.scheduler.allow_runner_upsizing
+    if allow_skipping is None:
+        allow_skipping = config.scheduler.allow_skip_recommendations
 
     # Compute DAG levels for parallel execution modeling
     levels = _compute_dag_levels(dag)
@@ -528,6 +542,8 @@ def build_schedule(
                 f"cumulative skip probability {skip_probs[job_id]:.2f} "
                 f"exceeds threshold {failure_skip_threshold}"
             )
+        candidate = skip
+        skip = candidate and allow_skipping   # a candidate becomes a recommendation only when skipping is enabled
 
         job_plans.append(
             JobPlan(
@@ -545,6 +561,7 @@ def build_schedule(
                 skip_recommended=skip,
                 skip_probability=skip_probs.get(job_id, 0.0),
                 skip_reason=skip_reason,
+                skip_candidate=candidate,
             )
         )
 
@@ -554,6 +571,7 @@ def build_schedule(
             optimized_co2_total += est_co2
 
     skip_set = {jp.job_id for jp in job_plans if jp.skip_recommended}
+    candidate_set = {jp.job_id for jp in job_plans if jp.skip_candidate}
     optimized_wall_clock = _parallel_wall_clock(
         optimized_durations, dag, levels, skip_set
     )
@@ -575,13 +593,14 @@ def build_schedule(
         baseline_energy_wh=baseline_energy_total,
         baseline_co2_grams=baseline_co2,
         runner_upsizing=allow_upsizing,
+        skip_applied=allow_skipping,
         speedup_exponent=speedup_exponent,
-        skip_only_wall_clock_seconds=_wall(selected_base, skip_set),
-        skip_only_cost_usd=_cost(selected_base, skip_set),
+        skip_only_wall_clock_seconds=_wall(selected_base, candidate_set),
+        skip_only_cost_usd=_cost(selected_base, candidate_set),
         runner_only_wall_clock_seconds=_wall(selected_up, set()),
         runner_only_cost_usd=_cost(selected_up, set()),
-        both_wall_clock_seconds=_wall(selected_up, skip_set),
-        both_cost_usd=_cost(selected_up, skip_set),
+        both_wall_clock_seconds=_wall(selected_up, candidate_set),
+        both_cost_usd=_cost(selected_up, candidate_set),
     )
 
 

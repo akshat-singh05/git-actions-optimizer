@@ -240,6 +240,7 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
                 gamma=request.gamma,
                 allow_runner_upsizing=request.allow_runner_upsizing,
                 speedup_exponent=request.speedup_exponent,
+                allow_skipping=request.allow_skip_recommendations,
                 model_dir=config.model.model_dir,
                 workflow_repo_path=wf_repo_path,
             )

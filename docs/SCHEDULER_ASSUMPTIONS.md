@@ -1,6 +1,6 @@
 # What the scheduler's estimate rests on
 
-Written 2026-10-07. Every figure below was produced by running the code on the ingested data
+Written 2026-10-07, revised 2026-10-08 (skip guards became opt-in). Every figure below was produced by running the code on the ingested data
 (`python examples/demo.py --repo python-poetry/poetry`, and `POST /api/v1/optimize` against a live server).
 All savings are **ESTIMATED from predicted durations**; none is a measured execution.
 
@@ -12,7 +12,7 @@ optimized plan differs in exactly two ways:
 
 | lever | what it does | what it depends on |
 |---|---|---|
-| **skip recommendations** | jobs downstream of a job with predicted failure probability >= 0.85 (or cumulative skip probability > 0.85) are removed from the plan | the failure predictions - which do **not** beat a naive baseline (`docs/MODEL_EVAL.md`) |
+| **skip recommendations** (**off by default**, `--enable-skips` / `allow_skip_recommendations`) | jobs downstream of a job with predicted failure probability >= 0.85 (or cumulative skip probability > 0.85) get an `if: ${{ false }}` guard | the failure predictions, **and** a baseline that assumes every job runs - see section 3b: it cannot save time under GitHub's `needs` rules |
 | **runner upsizing** | a job moves to a larger-runner tier when that lowers `α·time + β·cost + γ·energy` | an **assumed** speed-up law `speedup = price_multiplier ** exponent` (default exponent 0.6) |
 
 Two things the earlier headline implied but the code does not do:
@@ -20,6 +20,30 @@ Two things the earlier headline implied but the code does not do:
 * **Fail-fast ordering has no effect on the estimate.** Wall-clock is a function of levels and durations only,
   so reordering jobs inside a level changes nothing in the figures.
 * **The cache-miss probability is not consumed by the scheduler.** It is reported per job and unused in the plan.
+
+## 1b. Why skip guards are opt-in (measured 2026-10-08)
+
+Two independent reasons, one logical and one empirical.
+
+**Logical.** GitHub already skips a job whose `needs` upstream failed (unless the job says `if: always()` or
+similar). The plan only skips jobs *downstream* of a job predicted to fail. If the prediction is right, GitHub
+would have skipped them anyway, so nothing is saved; if it is wrong, the guard removes tests that would have run
+and passed. The "saving" the skip lever is credited with exists only against a baseline in which every job runs.
+
+**Empirical.** On held-out runs (train on the first 80% of runs, score the last 20%), how often do the failure models
+reach the thresholds, and how often are those flags right?
+
+| repo (held-out base failure rate) | model | rows >= 0.85 (precision) | rows >= 0.5 (precision) |
+|---|---|---|---|
+| poetry (7.3%) | production tree / regularised tree / logistic | 0 / 0 / 0 | 7 (0.43) / 2 (1.00) / 0 |
+| fastapi (4.9%) | production tree / regularised tree / logistic | 0 / 0 / **12 (0.25)** | 4 (0.50) / 5 (0.20) / 21 (0.19) |
+| prometheus (3.1%) | production tree / regularised tree / logistic | **1 (0.00)** / 0 / 0 | 28 (0.32) / 4 (0.00) / 41 (0.10) |
+| dubbo (5.2%) | production tree / regularised tree / logistic | 0 / 0 / 0 | 2 (0.00) / 0 / 2 (0.00) |
+
+The 0.85 threshold is almost never reached; when it is, the flagged job failed 0-25% of the time. Mean predicted
+probabilities are close to the observed rates (calibrated on average), but the tail is over-confident, so no
+decision should act on a single probability. Skip candidates are still identified and reported ("would skip (not
+applied)"); only the guards are opt-in.
 
 ## 2. Why the speed-up law cannot be measured here
 
@@ -50,6 +74,8 @@ That threshold behaviour is a property of the objective, not evidence about real
 
 ## 4. Changes made because of this
 
+* Skip guards are **opt-in** (`config.scheduler.allow_skip_recommendations`, `--enable-skips`, API
+  `allow_skip_recommendations`); with both levers off the plan equals the baseline, which is the honest default.
 * Larger-runner relabelling is **opt-in** (`config.scheduler.allow_runner_upsizing`, `--larger-runners`,
   API `allow_runner_upsizing`); the larger-tier labels only exist if the organisation configured them.
 * The speed-up exponent is a named, documented configuration value (`config.scheduler.speedup_exponent`),

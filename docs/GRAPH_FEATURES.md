@@ -118,12 +118,14 @@ out-of-sample predictions, paired bootstrap over runs). Feature sets compared on
 `no_structural`, `structural_only`, and a naive baseline that needs no model. Pooled failure positives:
 poetry 76, fastapi 160, prometheus 808, dubbo 93, quarkus 9.
 
-**Failure.** Three model variants were evaluated; the two candidates (a regularised logistic regression and a
-heavily regularised boosted tree) had their settings fixed *before* any fold result was seen.
+**Failure.** Three `FailurePredictor` variants were evaluated (the evaluator targets `failure` = the default variant,
+logistic since 2026-10-08, `failure_tree`, `failure_regularized_tree`); the settings of the two candidates were fixed
+*before* any fold result was seen. The logistic default was chosen afterwards from these results - see
+`docs/FROZEN_CHOICE.md` for the pre-stated fresh-data test.
 
 | model | poetry | fastapi | prometheus | dubbo | quarkus |
 |---|---|---|---|---|---|
-| production tree vs baseline (PR-AUC) | +0.067 (n.s.) | +0.041 (n.s.) | **+0.098** | **-0.110** | **-0.100** |
+| original tree vs baseline (PR-AUC) | +0.067 (n.s.) | +0.041 (n.s.) | **+0.098** | **-0.110** | **-0.100** |
 | regularised tree vs baseline | **+0.094** | **+0.099** | **+0.110** | **-0.102** | **-0.092** |
 | logistic vs baseline | +0.070 (n.s.) | **+0.085** | +0.018 (n.s.) | -0.007 (n.s.) | -0.010 (n.s.) |
 | graph features, logistic (`all - no_structural`) | **+0.037** | **+0.038** | **-0.009** | -0.017 (n.s.) | -0.005 (n.s.) |
@@ -131,7 +133,7 @@ heavily regularised boosted tree) had their settings fixed *before* any fold res
 
 (Bold = the 95% interval excludes 0; n.s. = it includes 0.) Reading: graph features help the simple logistic
 model modestly in exactly the two repos where the graph describes the workflow (poetry, fastapi), and slightly
-hurt it in prometheus; for the production tree they never have a significant effect. The regularised tree
+hurt it in prometheus; for the original tree they never have a significant effect. The regularised tree
 is the strongest model where it wins but loses clearly in dubbo and quarkus; the logistic model is the only
 one never significantly worse than the baseline.
 
@@ -149,7 +151,7 @@ features under that target: fastapi -0.31 s (helps), dubbo +1.45 s (hurts), othe
 "significant" cells are expected by chance; the intervals are optimistic because runs of one PR share a lineage;
 quarkus has 4 test runs. Treat the pattern - benefit only where the graph describes the workflow - as a lead
 supported by the skip-agreement table above, not as an established effect. No candidate has been made the
-production failure model; that is a decision for the project owner.
+failure model; that is a decision for the project owner.
 
 Procedure note: the first run of `eval-models` cut the folds over all runs, which left most cache folds without
 test labels. The folds are now cut over the runs that carry the target's label. That change was made after

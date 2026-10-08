@@ -27,12 +27,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
-from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, brier_score_loss, mean_absolute_error, roc_auc_score
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
 
 from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, miss_target
@@ -64,19 +59,14 @@ TARGETS: dict[str, TargetSpec] = {
     "failure": TargetSpec(
         "failure", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
         lambda: FailurePredictor().model, "the job's prior decayed failure rate"),
-    # Candidate failure models for small, noisy data.  Their settings were fixed BEFORE looking at any fold result
-    # (no tuning on test folds); all candidates are reported, so read the intervals with the number of candidates
-    # in mind.
-    "failure_logistic": TargetSpec(
-        "failure_logistic", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
-        lambda: make_pipeline(SimpleImputer(strategy="median", add_indicator=True), StandardScaler(),
-                              LogisticRegression(C=0.3, max_iter=2000)),
-        "the job's prior decayed failure rate"),
-    "failure_regularized": TargetSpec(
-        "failure_regularized", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
-        lambda: HistGradientBoostingClassifier(max_iter=100, max_depth=3, learning_rate=0.05, min_samples_leaf=40,
-                                               l2_regularization=5.0, random_state=13),
-        "the job's prior decayed failure rate"),
+    # The other FailurePredictor variants, evaluated on the same folds against the same baseline.  "failure" above
+    # is the default variant (logistic); the variants' settings were fixed before any fold result was seen.
+    "failure_tree": TargetSpec(
+        "failure_tree", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
+        lambda: FailurePredictor(variant="tree").model, "the job's prior decayed failure rate"),
+    "failure_regularized_tree": TargetSpec(
+        "failure_regularized_tree", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
+        lambda: FailurePredictor(variant="regularized_tree").model, "the job's prior decayed failure rate"),
     "cache_any_miss": TargetSpec(
         "cache_any_miss", "binary",
         lambda d: miss_target(d, "any_miss").where(d["label_cache_hit"].notna()),
@@ -134,8 +124,11 @@ def _metric(spec: TargetSpec, name: str, y: np.ndarray, p: np.ndarray) -> float 
 
 def evaluate_target(
     df: pd.DataFrame, spec: TargetSpec, n_folds: int = 5, initial_fraction: float = 0.5,
-    min_train_runs: int = 20, n_boot: int = 1000,
+    min_train_runs: int = 20, n_boot: int = 1000, cutoff: str | None = None,
 ) -> dict[str, Any]:
+    """``cutoff`` (ISO timestamp, same format as the data): instead of rolling folds, ONE split - train on every
+    run that started at or before the cutoff, test on every later run.  Used to validate a choice that was made
+    from earlier evaluations on runs that arrived afterwards."""
     d = chronological(df)
     y_all = spec.label(d).astype(float)
     lab = d[y_all.notna()].copy()
@@ -144,7 +137,13 @@ def evaluate_target(
     # folds are cut over the runs that carry a label for THIS target: cache labels come from job logs and exist
     # only inside GitHub's log-retention window, so cutting over all runs left most folds without test labels
     runs = list(dict.fromkeys(lab["_run"]))
-    folds = rolling_origin_folds(runs, n_folds, initial_fraction, min_train_runs)
+    if cutoff is None:
+        folds = rolling_origin_folds(runs, n_folds, initial_fraction, min_train_runs)
+    else:
+        first_ts = lab.groupby("_run", sort=False)["timestamp"].first()
+        before = [r for r in runs if str(first_ts[r]) <= cutoff]
+        after = [r for r in runs if str(first_ts[r]) > cutoff]
+        folds = [(before, after)] if len(before) >= min_train_runs and after else []
     result: dict[str, Any] = {"target": spec.name, "kind": spec.kind, "n_runs": len(runs),
                               "n_runs_total": int(d["run_id"].nunique()),
                               "n_labelled_rows": int(len(lab)), "baseline": spec.baseline_description}
@@ -268,10 +267,15 @@ def _fmt_ci(c: dict[str, Any]) -> str:
     return f"{c['delta']:+.4f} [{lo:+.4f}, {hi:+.4f}] ({verdict})"
 
 
-def render_markdown(results: dict[str, dict[str, dict[str, Any]]], n_folds: int, n_boot: int) -> str:
-    out = ["# Rolling-origin model evaluation\n",
+def render_markdown(results: dict[str, dict[str, dict[str, Any]]], n_folds: int, n_boot: int,
+                    cutoff: str | None = None) -> str:
+    design = (f"Expanding-window folds ({n_folds} requested), pooled out-of-sample predictions"
+              if cutoff is None else
+              f"**Fresh-data check: ONE split.** Trained on every run that started at or before {cutoff}, tested once "
+              "on every later run (none of which existed when the choice under test was made)")
+    out = ["# Rolling-origin model evaluation\n" if cutoff is None else "# Fresh-data model evaluation\n",
            "Generated by `gha-optimizer eval-models` from the database; every figure is computed. "
-           f"Expanding-window folds ({n_folds} requested), pooled out-of-sample predictions, paired cluster "
+           f"{design}, paired cluster "
            f"bootstrap over runs ({n_boot} resamples, seed {SEED}). Method and caveats: "
            "`gha_optimizer/models/rolling_eval.py` docstring.\n",
            "Reading guide: a difference whose interval **includes 0** is not distinguishable from no difference "

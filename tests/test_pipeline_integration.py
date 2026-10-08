@@ -120,3 +120,17 @@ def test_opt_in_upsizing_flag_reaches_the_plan():
     )
     assert plan.runner_upsizing is True and plan.speedup_exponent == 0.9
     assert "Runner upsizing in this plan: **ON**" in explanation
+
+
+def test_skip_recommendations_are_off_by_default_and_opt_in_reaches_the_plan():
+    history = generate_synthetic_test_history(n_runs=50)
+    plan, explanation, _ = _run(history)
+    assert plan.skip_applied is False
+    assert "Skip recommendations: **off - no skip guard is written**" in explanation
+    with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
+        out = f.name
+    plan_on, explanation_on = run_pipeline(
+        workflow_path=FIXTURE_WORKFLOW, repo_root=FIXTURE_REPO, tracked_files=TRACKED_FILES,
+        history=history, changed_files=CHANGED_FILES, out_path=out, allow_skipping=True,
+    )
+    assert plan_on.skip_applied is True and "Skip recommendations: **ON**" in explanation_on
