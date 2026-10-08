@@ -146,7 +146,6 @@ class OptimizationRequest(BaseModel):
     workflow_path: str = ".github/workflows/ci.yml"
     commit_sha: Optional[str] = None
     changed_files: List[str] = Field(default_factory=list)
-    model_backend: str = "tabular"
     alpha: Optional[float] = None
     beta: Optional[float] = None
     gamma: Optional[float] = None

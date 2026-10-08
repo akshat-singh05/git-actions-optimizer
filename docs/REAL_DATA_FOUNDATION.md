@@ -35,7 +35,7 @@ GitHub REST API ──► GithubClient ──► RepoIngestor ──► DB (runs
 | Dataset, temporal split, `dataset-report` | IMPLEMENTED | `docs/DATASET_REPORT.md` is produced by `gha-optimizer dataset-report` |
 | Alembic `002_real_ingestion` | IMPLEMENTED | upgrade → downgrade → upgrade verified; zero ORM/DB drift after upgrade |
 | Models (cache-miss, failure, duration) | PARTIALLY IMPLEMENTED | NaN-capable GBT, temporal-holdout metrics with base rates and a naive baseline. `fit` still happens on every `run_pipeline()`; `gha-optimizer train` persists joblib artifacts (verified to reload) but the pipeline does not load them. **On the real data the models show little or no skill over naive baselines** (see `docs/DATASET_REPORT.md` and the metrics block printed by `train` / `analyze`) |
-| GNN cache predictor | STUB (not runnable here) | torch / torch-geometric not installed; the pipeline now *reports* when the GNN did not run instead of silently using tabular |
+| GNN cache predictor | REMOVED (2026-10-08) | never ran (torch not installed) and could not work on the current graph schema; see CLAUDE.md. Recoverable from git history |
 | Scheduler | IMPLEMENTED, **assumption-driven** | see §5: the estimated gain is dominated by an assumed runner speed-up law |
 | Demos (`demo.py`, `demo_server.py`, `examples/demo.py`) | IMPLEMENTED | re-pointed to real ingested repositories; their own synthetic generators were deleted |
 | Synthetic generator | TEST-ONLY | `tests/fixtures/synthetic_history.py::generate_synthetic_test_history`; not importable from `gha_optimizer/` |

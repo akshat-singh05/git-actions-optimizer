@@ -101,7 +101,6 @@ async function runOptimization() {
             repo,
             workflow_path: workflow,
             changed_files: (q.get('changed') || '').split(',').filter(Boolean),
-            model_backend: 'tabular',
         };
         if (q.get('larger_runners') === '1') body.allow_runner_upsizing = true;
 

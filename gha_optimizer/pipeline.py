@@ -3,9 +3,8 @@ End-to-end orchestration: wires together all six layers described in the
 architecture.  This is the module a CLI or GitHub App webhook handler
 would call.
 
-Supports two model backends:
-  - ``"tabular"`` (default): GBT/XGBoost models on flat features
-  - ``"gnn"``: Graph Neural Network over the dependency graph
+Models are gradient-boosted trees on flat features (the dependency graph reaches them through the structural
+features computed in ``features/graph_features.py``).
 
 Uses the Heterogeneous Graph Engine (GraphBuilder + GraphFusion) as
 the canonical graph implementation.
@@ -65,7 +64,6 @@ def run_pipeline(
     history: list[WorkflowRunRecord],
     changed_files: list[str],
     out_path: str | Path,
-    model_backend: str = "tabular",
     alpha: float | None = None,
     beta: float | None = None,
     gamma: float | None = None,
@@ -88,7 +86,6 @@ def run_pipeline(
         :class:`~gha_optimizer.ingestion.history.InsufficientHistoryError`.
     changed_files : Files changed in the current diff.
     out_path : Where to write the optimized workflow YAML.
-    model_backend : ``"tabular"`` (default) or ``"gnn"``.
     alpha, beta, gamma : Scheduler objective weights (time, cost, energy).
     allow_runner_upsizing : Let the plan move base-tier jobs to larger-runner labels (default off; those labels must
         exist in the organisation).  The larger-runner case is always reported as an ASSUMED what-if.
@@ -200,20 +197,6 @@ def run_pipeline(
             model_version=trace_id,
         ))
 
-    # Optionally override cache-miss with GNN predictions.  The GNN path degrades to
-    # tabular on any import/training failure; that outcome is reported, never hidden.
-    gnn_metrics = None
-    gnn_note = None
-    if model_backend == "gnn":
-        gnn_metrics = _try_gnn_prediction(
-            simple_graph, history, changed_files, cache_miss_prob
-        )
-        if gnn_metrics is None:
-            gnn_note = (
-                "GNN backend was requested but did NOT run (torch/torch-geometric unavailable or "
-                "training failed) — all cache-miss probabilities above are TABULAR."
-            )
-
     # ──────────────────────────────────────────────────────────────
     # Layer 4 — Optimization / Scheduling
     # ──────────────────────────────────────────────────────────────
@@ -265,10 +248,6 @@ def run_pipeline(
         f"- Failure predictor: {failure_metrics}",
         f"- Duration estimator: {duration_metrics}",
     ]
-    if gnn_metrics:
-        model_lines.append(f"- GNN cache predictor: {gnn_metrics}")
-    if gnn_note:
-        model_lines.append(f"- {gnn_note}")
     labelled_jobs = {r.job_id for r in history if r.cache_hit is not None}
     unsupported = [j for j in workflow.jobs if j not in labelled_jobs]
     if unsupported:
@@ -305,59 +284,3 @@ def run_pipeline(
 
     return plan, full_explanation
 
-
-def _try_gnn_prediction(
-    graph: nx.DiGraph,
-    history: list[WorkflowRunRecord],
-    changed_files: list[str],
-    cache_miss_prob: dict[str, float],
-) -> dict | None:
-    """
-    Attempt GNN-based cache-miss prediction.  If torch/torch_geometric
-    are not installed, log a warning and fall back silently.
-    """
-    try:
-        from gha_optimizer.models.gnn_cache_predictor import GNNCachePredictor
-    except ImportError:
-        logger.warning(
-            "GNN backend requested but torch/torch-geometric not available. "
-            "Falling back to tabular predictions."
-        )
-        return None
-
-    try:
-        # Build training data for the GNN
-        graphs = []
-        changed_list = []
-        labels_list = []
-
-        # Group history by run_id
-        runs: dict[str, list[WorkflowRunRecord]] = {}
-        for rec in history:
-            runs.setdefault(rec.run_id, []).append(rec)
-
-        for run_id, run_records in runs.items():
-            graphs.append(graph)
-            changed_list.append(run_records[0].files_changed)
-            labels = {
-                rec.job_id: int(not rec.cache_hit) for rec in run_records if rec.cache_hit is not None
-            }
-            if not labels:  # no log-derived labels in this run: it cannot supervise the GNN
-                graphs.pop()
-                changed_list.pop()
-                continue
-            labels_list.append(labels)
-
-        gnn = GNNCachePredictor(epochs=30, hidden_channels=32, num_layers=2)
-        metrics = gnn.fit(graphs, changed_list, labels_list)
-
-        # Override cache_miss_prob with GNN predictions
-        gnn_probs = gnn.predict_proba_graph(graph, changed_files)
-        cache_miss_prob.update(gnn_probs)
-
-        logger.info("GNN cache predictor: %s", metrics)
-        return metrics
-
-    except Exception as exc:
-        logger.warning("GNN prediction failed: %s. Using tabular fallback.", exc)
-        return None

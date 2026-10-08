@@ -212,12 +212,6 @@ def main() -> int:
     if len(trained) < 3:
         print("\n  Not all models could be trained from the real labels; declining to schedule.")
         return 2
-    try:
-        import torch_geometric  # noqa: F401
-        print("  GNN: torch/torch_geometric importable, but the demo uses the tabular models.")
-    except ImportError:
-        print("  GNN: NOT RUN (torch / torch_geometric not installed); all predictions are tabular.")
-
     infer_df.index = infer_df["job_id"]
     cache_miss_prob = trained["cache_miss"].predict_proba(infer_df).to_dict()
     failure_prob = trained["failure"].predict_proba(infer_df).to_dict()

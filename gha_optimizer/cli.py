@@ -106,7 +106,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     workflow_path, repo_root, wf_repo_path, tracked, changed = _analysis_inputs(args)
     out_path = repo_root / ".github" / "workflows" / f"{workflow_path.stem}.optimized.yml"
 
-    logger.info("Analyzing %s (history: %s :: %s), model backend: %s", workflow_path, args.repo, wf_repo_path, args.model)
+    logger.info("Analyzing %s (history: %s :: %s)", workflow_path, args.repo, wf_repo_path)
     history = _load_real_history(args.repo, wf_repo_path)
     try:
         plan, explanation = run_pipeline(
@@ -116,7 +116,6 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             history=history,
             changed_files=changed,
             out_path=out_path,
-            model_backend=args.model,
             workflow_repo_path=wf_repo_path,
             allow_runner_upsizing=args.larger_runners or None,
             speedup_exponent=args.speedup_exponent,
@@ -416,7 +415,6 @@ def main() -> None:
                            help="let the plan relabel base-tier jobs to larger-runner labels (they must exist in your org)")
     p_analyze.add_argument("--speedup-exponent", type=float,
                            help="ASSUMED runner speed-up law exponent (default config.scheduler.speedup_exponent)")
-    p_analyze.add_argument("--model", default="tabular", choices=["tabular", "gnn"])
 
     p_eval = subparsers.add_parser("evaluate", help="Scheduler-weight ablation from ingested history")
     _add_analysis_args(p_eval)
