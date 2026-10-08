@@ -318,6 +318,27 @@ def cmd_eval_models(args: argparse.Namespace) -> None:
     print(f"wrote {out} ({len(text.splitlines())} lines)")
 
 
+def cmd_replay_impact(args: argparse.Namespace) -> None:
+    """Counterfactual replay of "skip jobs the graph says the diff cannot reach" -> docs/IMPACT_REPLAY.md."""
+    _use_db(args)
+    from gha_optimizer.replay import render_replay, replay_repo
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    try:
+        results = [replay_repo(db, repo, args.workflow_path, args.bootstrap) for repo in args.repo]
+    finally:
+        db.close()
+    if not any("dag_safe" in r for r in results):
+        _decline(RuntimeError("no ingested runs with current graph features for the requested repositories"))
+    text = render_replay(results, args.bootstrap)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"wrote {out} ({len(text.splitlines())} lines)")
+
+
 def cmd_train(args: argparse.Namespace) -> None:
     """Train the three models on the ingested dataset (temporal-holdout metrics) and save them."""
     _use_db(args)
@@ -485,6 +506,14 @@ def main() -> None:
     p_ev.add_argument("--out", default=None, help="default: docs/MODEL_EVAL.md (docs/MODEL_EVAL_FRESH.md with --after)")
     _add_db(p_ev)
 
+    p_ri = subparsers.add_parser(
+        "replay-impact", help="Replay 'skip jobs the graph says the diff cannot reach' on real history -> docs/IMPACT_REPLAY.md")
+    p_ri.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
+    p_ri.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
+    p_ri.add_argument("--bootstrap", type=int, default=1000)
+    p_ri.add_argument("--out", default="docs/IMPACT_REPLAY.md")
+    _add_db(p_ri)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -501,6 +530,7 @@ def main() -> None:
         "build-dataset": cmd_build_dataset,
         "dataset-report": cmd_dataset_report,
         "eval-models": cmd_eval_models,
+        "replay-impact": cmd_replay_impact,
     }
     commands[args.command](args)
 

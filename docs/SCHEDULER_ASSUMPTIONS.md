@@ -45,6 +45,52 @@ probabilities are close to the observed rates (calibrated on average), but the t
 decision should act on a single probability. Skip candidates are still identified and reported ("would skip (not
 applied)"); only the guards are opt-in.
 
+## 1c. Replaying a graph-based skip policy on real history (measured 2026-10-08)
+
+The one lever that needs neither a speed-up assumption nor a failure prediction is the graph itself: skip a job
+the diff cannot reach. `gha-optimizer replay-impact` replays that policy over every ingested run
+(`docs/IMPACT_REPLAY.md`, `gha_optimizer/replay.py`). The figures are **MEASURED on history** - billable time is the
+summed cell durations of what actually ran - but the policy was not run, so it is a counterfactual that assumes
+skipping a job changes no other job's outcome. Only jobs that really ran are counted: what is measured is the
+*additional* saving over the workflow as written. Three variants: *naive*; *dag_safe* (a job is skipped only if every
+`needs` dependent also did not run or is also unreached, because skipping a job makes GitHub skip its dependents);
+and *readable* (additionally never skip a job, or let one be skipped through `needs`, whose steps the graph cannot
+read: `make`, remote / composite actions, reusable-workflow calls).
+
+| repo (runs) | DAG-safe: billable time saved | DAG-safe: failing runs that would look green | readable: time saved | readable: failing runs that would look green |
+|---|---|---|---|---|
+| poetry (596) | 0.2% | 1 of 72 | 0.0% | 0 of 72 |
+| fastapi (682) | 13.4% [10.6%, 16.4%] | 14 of 133 (10.5%) | 12.4% [9.8%, 15.1%] | 14 of 133 (10.5%) |
+| prometheus (2,163) | 17.1% [15.9%, 18.5%] | 38 of 698 (5.4%) | 1.6% [1.5%, 1.8%] | 22 of 698 (3.2%) |
+| dubbo (293) | 3.8% [1.8%, 6.4%] | 5 of 85 (5.9%) | 0.4% | 2 of 85 (2.4%) |
+| quarkus (24) | 6.5% [0.0%, 21.1%] | 1 of 20 | 0.0% | 0 of 20 |
+
+What it shows:
+
+* **The saving is real where a workflow runs many jobs for diffs the graph cannot reach** (fastapi about 12-13%,
+  prometheus 17%), with intervals that exclude 0, and it is **not free**: the plain policy would make 5-10% of failing
+  runs look green. Poetry's workflow already gates its jobs with `paths-filter`, so there is nothing extra to save.
+* **The misses are graph blind spots, not noise.** In prometheus the largest miss is the Go test job: 147 failures
+  among the 491 runs the graph calls "unreached" (30% vs 19% overall), almost all bot dependency-update branches
+  changing `web/ui` - because that job runs through `make`, which also builds the UI, and the Makefile is not read.
+* **The readable guard removes most of that saving where the opacity is real** (prometheus 17.1% -> 1.6%, dubbo
+  3.8% -> 0.4%) and does not make the remaining flags safer there (failure rate of skipped jobs 10.1% vs 5.7% in
+  prometheus, 15.6% vs 4.3% over 32 jobs in dubbo). In fastapi it keeps the saving (12.4%) and the skipped jobs do fail
+  less than the rest (3.7% vs 8.3%, lift 0.49), but 14 failing runs would still look green; they include failures of
+  the `alls-green` aggregator, which can be cancellations of superseded runs rather than real failures - the stored data
+  cannot separate the two.
+* Counting is per job, so an aggregator that fails because an upstream job failed is counted again; the run-level
+  column ("failing runs that would look green") is the fairer safety figure.
+
+**Conclusion.** A static graph-skip policy trades roughly 12-17% of billable time (in the two repos where it applies)
+for hiding 3-10% of failing runs. That is not shippable as an automatic default, so no generator for it was built;
+`replay-impact` is the evidence. Defensible uses are advisory (report which jobs the graph considers unreached, with
+these measured rates) or deferral (run unreached jobs only on pushes to the default branch); neither is implemented.
+
+Caveats: the rule set was written after reading these repositories' workflows, so this is not a held-out test of the
+rules; the opacity guard and the `alls-green` exemption were added after seeing the first results; intervals are
+cluster bootstraps over runs and optimistic (runs of one PR share a lineage); quarkus has 24 runs.
+
 ## 2. Why the speed-up law cannot be measured here
 
 The ingested history contains **one standard runner size per operating system** (poetry: ubuntu/windows/macos
