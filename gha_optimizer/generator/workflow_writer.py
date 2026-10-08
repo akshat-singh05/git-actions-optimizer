@@ -4,8 +4,7 @@ Layer 5 — Workflow Generation.
 Takes a ``SchedulePlan`` and the original ``WorkflowSpec`` / raw YAML dict,
 and produces a rewritten workflow: jobs reordered, runner labels updated per
 the cost-aware allocation, skip-recommended jobs annotated with ``if:``
-guards (non-destructive), matrix reductions applied, and inline comments
-explaining each change.
+guards (non-destructive), and header comments explaining each change.
 
 Also produces a unified diff and a human-readable PR explanation.
 """
@@ -15,7 +14,6 @@ import copy
 import difflib
 import re
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -23,26 +21,21 @@ from gha_optimizer.ingestion.workflow_parser import WorkflowSpec
 from gha_optimizer.scheduler.optimizer import SchedulePlan, base_runner_label
 
 
-def generate_optimized_workflow(
-    workflow: WorkflowSpec,
-    plan: SchedulePlan,
-    reduced_matrix: dict[str, list[dict[str, Any]]] | None = None,
-) -> dict:
+def generate_optimized_workflow(workflow: WorkflowSpec, plan: SchedulePlan) -> dict:
     """
     Rewrite the workflow YAML from an optimized ``SchedulePlan``.
+
+    Build matrices are never modified: dropping a cell removes a tested configuration, which a history of past
+    failures cannot justify (see CLAUDE.md, "matrix reduction was evaluated and removed").
 
     Parameters
     ----------
     workflow : Original parsed workflow.
     plan : Optimized schedule from the scheduler.
-    reduced_matrix : Optional ``{job_id: [kept_cell_params, ...]}`` from
-        the matrix reducer.  If provided, the strategy.matrix is replaced
-        with an explicit ``include:`` list of surviving cells.
     """
     optimized = copy.deepcopy(workflow.raw)
     ordered_job_ids = [jp.job_id for jp in plan.jobs]
     plan_by_id = {jp.job_id: jp for jp in plan.jobs}
-    reduced_matrix = reduced_matrix or {}
 
     original_jobs = optimized.get("jobs", {})
     reordered_jobs = {}
@@ -74,14 +67,6 @@ def generate_optimized_workflow(
             else:
                 inner = re.sub(r"^\s*\$\{\{\s*|\s*\}\}\s*$", "", str(original_if))
                 job_body["if"] = "${{ false && (" + inner + ") }}"
-
-        # --- Matrix reduction ---
-        if job_id in reduced_matrix and reduced_matrix[job_id]:
-            kept_cells = reduced_matrix[job_id]
-            job_body["strategy"] = {
-                "fail-fast": job_body.get("strategy", {}).get("fail-fast", True),
-                "matrix": {"include": kept_cells},
-            }
 
         reordered_jobs[job_id] = job_body
 
