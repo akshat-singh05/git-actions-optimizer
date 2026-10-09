@@ -228,8 +228,15 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
             out_path = f.name
 
         try:
+            from gha_optimizer.advisory import advisory_stats
+            try:
+                replay_stats = advisory_stats(db, request.repo, wf_repo_path)
+            except Exception as exc:  # optional context for the advisory section only
+                logger.warning("Advisory replay figures unavailable: %s", exc)
+                replay_stats = None
             plan, explanation = run_pipeline(
                 workflow_path=workflow_path,
+                replay_stats=replay_stats,
                 repo_root=repo_root,
                 tracked_files=tracked_files(repo_root) or request.changed_files,
                 history=history,

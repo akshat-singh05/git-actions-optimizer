@@ -17,6 +17,7 @@ from pathlib import Path
 
 import networkx as nx
 
+from gha_optimizer.advisory import advise_unreached_jobs, render_advisory
 from gha_optimizer.config import config
 from gha_optimizer.features.feature_extraction import (
     build_inference_frame,
@@ -72,6 +73,7 @@ def run_pipeline(
     speedup_exponent: float | None = None,
     model_dir: str | Path | None = None,
     allow_skipping: bool | None = None,
+    replay_stats: dict | None = None,
 ) -> tuple[SchedulePlan, str]:
     """
     Run the full optimization pipeline end to end.
@@ -93,6 +95,9 @@ def run_pipeline(
     speedup_exponent : ASSUMED runner speed-up law exponent (default ``config.scheduler.speedup_exponent``).
     allow_skipping : Apply skip recommendations - `if: ${{ false }}` guards on jobs downstream of a job predicted to
         fail (default off; candidates are still reported).
+    replay_stats : Result of :func:`gha_optimizer.advisory.advisory_stats` (counterfactual replay of the graph skip
+        policy on this repository's history).  Only used to attach measured rates to the advisory section of the
+        explanation; ``None`` says so there.  It never affects the schedule.
     model_dir : Directory of persisted models (``models/store.py``).  If it holds models trained on exactly this
         history/feature/hyper-parameter fingerprint they are loaded instead of refit; otherwise the models are fit
         and saved there.  ``None`` (default): always fit, never touch disk.
@@ -268,6 +273,10 @@ def run_pipeline(
         model_lines.append(f"  - {feat}: {imp:.4f}")
 
     full_explanation = explanation + "\n".join(model_lines)
+
+    # Advisory only: which jobs the graph says this diff cannot reach. Never changes the plan or the proposed YAML.
+    advice, unknown_jobs = advise_unreached_jobs(workflow, infer_df["job_structurally_impacted"].to_dict())
+    full_explanation += "\n\n" + render_advisory(advice, unknown_jobs, replay_stats)
 
     if diff:
         full_explanation += "\n\n### Workflow diff\n```diff\n" + diff + "\n```"

@@ -85,7 +85,18 @@ What it shows:
 **Conclusion.** A static graph-skip policy trades roughly 12-17% of billable time (in the two repos where it applies)
 for hiding 3-10% of failing runs. That is not shippable as an automatic default, so no generator for it was built;
 `replay-impact` is the evidence. Defensible uses are advisory (report which jobs the graph considers unreached, with
-these measured rates) or deferral (run unreached jobs only on pushes to the default branch); neither is implemented.
+these measured rates) or deferral (run unreached jobs only on pushes to the default branch).
+
+**Status (2026-10-10): the advisory use is IMPLEMENTED; deferral is not.** `gha_optimizer/advisory.py` classifies the
+unreached jobs of a live diff with the same `skipped_jobs` / `opaque_job_keys` code that was replayed (skip candidate /
+kept because a dependent is reached or unreadable / kept because its own steps are unreadable; jobs with no file
+evidence are never advised) and `analyze` / `/api/v1/optimize` append the section "Advisory: jobs the dependency graph
+says this diff cannot reach (NOT applied)" with the repository's replay figures. It changes neither the schedule nor the
+proposed YAML (checked by a test). Deferral is not built because the replay cannot measure it - it shows what skipping
+costs but not how often a failure hidden on a pull request recurs at merge - and by trigger event the saving is
+concentrated where deferral would not touch it: fastapi 2% of its saving is on `pull_request` runs (85% on `push`),
+prometheus 78% (naive) / 92% (readable) on pull requests, dubbo 71% / 54%. "push" here is any push, not only pushes to
+the default branch.
 
 Caveats: the rule set was written after reading these repositories' workflows, so this is not a held-out test of the
 rules; the opacity guard and the `alls-green` exemption were added after seeing the first results; intervals are
