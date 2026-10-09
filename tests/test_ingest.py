@@ -332,6 +332,17 @@ def test_max_runs_keeps_the_newest_runs(session_factory):
     assert done == newest
 
 
+def test_max_runs_counts_only_this_invocations_runs(session_factory):
+    ing, client, s = make(session_factory, max_runs=2)
+    ing.run()
+    first = {k for (k,) in s.query(m.IngestionProgress.key).filter_by(stage="run_done")}
+    ing2, _, _ = make(session_factory, client, max_runs=2)
+    ing2.db = s
+    ing2.run()                                                           # earlier runs must not use up the new cap
+    second = {k for (k,) in s.query(m.IngestionProgress.key).filter_by(stage="run_done")}
+    assert len(first) == 2 and len(second) == 4 and first < second
+
+
 def test_no_logs_option_leaves_every_cache_label_null(session_factory):
     ing, client, s = make(session_factory, fetch_logs=False)
     ing.run()

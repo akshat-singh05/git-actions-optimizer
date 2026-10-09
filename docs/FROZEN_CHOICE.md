@@ -43,4 +43,33 @@ and not judged.
 * The tree variants are reported for context only. They are not allowed to change the verdict.
 
 ## Result
-Not yet run - no runs after the cutoff have been ingested.
+
+### Interim run, 2026-10-10 (report: `docs/MODEL_EVAL_FRESH.md`)
+Only about 3 days of data exist after the cutoff, so this is an interim run of the procedure, not the final verdict.
+Ingested with `--no-logs` and bounded `--max-runs` (poetry 6 runs, fastapi 14, prometheus 83, dubbo 1), then
+`build-dataset` and `eval-models --after 2026-10-07T07:51:04Z`.
+
+| repo | fresh test rows / runs | positives | judged (>= 20)? | logistic - baseline (PR-AUC) |
+|---|---|---|---|---|
+| prometheus | 1,396 / 83 | 47 | **yes** | +0.0016 [-0.0575, +0.0671] -> upper bound above 0: **PASS** |
+| poetry | 18 / 6 | 12 | no | 0.0000 (both models and baseline score 1.0 on 18 rows) |
+| fastapi | 83 / 14 | 1 | no | +0.0312 [0.0000, +0.1098] |
+| dubbo | 12 / 1 | 2 | no | -0.2500 (one run; reported, not judged) |
+
+By the stated rule the logistic default **passes in the one judged repository, and the choice is not yet confirmed**:
+confirmation requires it to hold in every judged repository, and three of four repositories have too few fresh
+positives. The tree variants are context only: in prometheus the original tree is significantly worse than the
+baseline (-0.062 [-0.140, -0.005]) and the regularised tree is indistinguishable (-0.029 [-0.106, +0.052]); in fastapi
+both beat the baseline but on a single positive.
+
+**Plan for the final verdict:** repeat the same three commands once roughly two weeks of runs exist (about
+2026-10-21) so that poetry, fastapi and dubbo can be judged; the verdict is taken from that run, and this interim
+table stays in the file. This interim run is not used to change the pass/fail rule or the choice.
+
+A tooling defect found while doing this: `ingest --max-runs N` counted every run the repository already had in the
+database, so on a repository holding at least N runs it stopped immediately (the first attempt ingested nothing). It
+now counts only the runs finished by the current invocation (`ingestion/ingest.py::_cap_reached`, test
+`test_max_runs_counts_only_this_invocations_runs`). The pydantic and cli/cli ingests started from empty
+databases for those repositories, so the cap behaved as intended there; I did not audit the older ingests of the five
+original repositories for this effect (those that used `--max-runs` on a partly filled repository may have stopped
+early, which would only have meant fewer runs, never wrong ones).
