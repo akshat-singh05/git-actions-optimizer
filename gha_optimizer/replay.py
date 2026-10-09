@@ -286,6 +286,8 @@ def replay_repo(db: Session, repo: str, workflow_path: str | None = None, n_boot
         block["missed_failure_ci95"] = ci(missed)
         block["masked_run_ci95"] = ci(masked)
         top = sorted(per_job.items(), key=lambda kv: -kv[1][2])[:6]
+        block["by_job"] = {k: {"executed": int(v[0]), "skipped": int(v[1]), "skipped_failures": int(v[3]),
+                               "job_failures": int(v[4])} for k, v in per_job.items()}
         block["top_jobs"] = [
             {"job": k, "executed": int(v[0]), "skipped": int(v[1]), "skipped_seconds": float(v[2]),
              "skipped_failures": int(v[3]), "job_failures": int(v[4])} for k, v in top if v[1] > 0

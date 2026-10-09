@@ -62,6 +62,24 @@ def test_full_pipeline_produces_plan():
     assert Path(out_path).exists()
 
 
+def test_advisory_section_is_reported_but_never_changes_the_proposed_workflow():
+    history = generate_synthetic_test_history(n_runs=50)
+    _, explanation, out_without = _run(history)
+    assert "Advisory: jobs the dependency graph says this diff cannot reach (NOT applied)" in explanation
+    assert "safety of this advice on past runs is unknown" in explanation          # no replay figures were passed
+
+    stats = {"runs": 7, "dag_safe_readable": {"saved_seconds_share": 0.5, "masked_runs": 1, "failing_runs": 4,
+                                              "masked_run_share": 0.25, "failure_rate_skipped": 0.1,
+                                              "failure_rate_rest": 0.2, "by_job": {}}}
+    with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
+        out_with = f.name
+    _, explanation_with = run_pipeline(
+        workflow_path=FIXTURE_WORKFLOW, repo_root=FIXTURE_REPO, tracked_files=TRACKED_FILES, history=history,
+        changed_files=CHANGED_FILES, out_path=out_with, replay_stats=stats)
+    assert "Measured on this repository's 7 ingested runs" in explanation_with
+    assert Path(out_with).read_text(encoding="utf-8") == Path(out_without).read_text(encoding="utf-8")
+
+
 def test_pipeline_declines_with_too_little_history_and_writes_nothing():
     """Cold start: no synthetic fallback, no default predictions — it refuses."""
     out = Path(tempfile.mkdtemp()) / "should_not_exist.yml"

@@ -66,6 +66,21 @@ def _load_real_history(repo: str, workflow_repo_path: str):
         db.close()
 
 
+def _replay_stats(repo: str, workflow_repo_path: str):
+    """Replay figures for the advisory section, or None (with a warning) if they cannot be computed."""
+    from gha_optimizer.advisory import advisory_stats
+    from gha_optimizer.server.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return advisory_stats(db, repo, workflow_repo_path)
+    except Exception as exc:  # the advisory is optional; never block the analysis on it
+        logger.warning("Advisory replay figures unavailable: %s", exc)
+        return None
+    finally:
+        db.close()
+
+
 def _decline(exc: Exception) -> None:
     print(f"\nDeclining to predict: {exc}")
     print("No synthetic or default values are substituted. Ingest real history first, e.g.:\n"
@@ -121,6 +136,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             speedup_exponent=args.speedup_exponent,
             allow_skipping=args.enable_skips or None,
             model_dir=None if args.no_model_store else args.model_dir,
+            replay_stats=_replay_stats(args.repo, wf_repo_path),
         )
     except InsufficientHistoryError as exc:
         _decline(exc)
