@@ -102,6 +102,7 @@ class RepoIngestor:
         self._matcher_cache: dict[str, list[JobMatcher]] = {}
         self._expired_age_days: float | None = None      # smallest run age (days) seen with an expired log
         self._log_downloads = 0
+        self._done_at_start: int | None = None           # runs already finished before this invocation (see _cap_reached)
         self._started = time.time()
         self._last_report = 0.0
         self._ingestion_run: m.IngestionRun | None = None
@@ -316,7 +317,13 @@ class RepoIngestor:
                 self._process_window_runs(wf, lo, hi)
 
     def _cap_reached(self) -> bool:
-        return self.opts.max_runs is not None and self._done_count() >= self.opts.max_runs
+        """``max_runs`` bounds the runs fully processed by THIS invocation (runs finished by earlier invocations do not
+        count; counting them made ``--max-runs`` a no-op on any repository that already held that many runs)."""
+        if self.opts.max_runs is None:
+            return False
+        if self._done_at_start is None:
+            self._done_at_start = self._done_count()
+        return self._done_count() - self._done_at_start >= self.opts.max_runs
 
     def _scan_window(self, repo_row: m.Repository, wf: dict[str, Any], lo: datetime, hi: datetime) -> None:
         key = f"{wf['id']}:{lo:%Y-%m-%d}"
