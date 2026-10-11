@@ -321,7 +321,8 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
 
 @app.get("/api/v1/metrics", tags=["metrics"])
 async def get_metrics(db: Session = Depends(get_db)):
-    """Return prediction accuracy and system metrics."""
+    """Accuracy of predictions recorded in the ``predictions`` table.  Nothing in this version writes that table (the
+    feedback loop was retired, see docs/FULL_STACK_RUN.md), so ``sample_count`` is 0 unless rows are inserted externally."""
     from gha_optimizer.server.db import crud
     return crud.get_prediction_accuracy(db)
 

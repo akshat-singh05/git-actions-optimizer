@@ -1,8 +1,7 @@
 """Celery tasks executed in-process (eager mode, no broker): routing, refusals and decisions.
 
 The webhook handler must dispatch exactly the right downstream task for each event type, never invent a result
-row, refuse work it has no credentials for, and retrain only when drift or ``force`` says so - and never train on
-too little data.
+row, refuse work it has no credentials for, and never report a graph for a commit it cannot read.
 """
 from __future__ import annotations
 
@@ -97,8 +96,74 @@ def test_ingestion_tasks_refuse_to_run_without_a_github_token(eager, monkeypatch
     assert out["status"] == "blocked" and out["reason"] == "no_github_token"
 
 
-def test_retrain_skips_without_drift_and_blocks_on_too_little_data(eager):
-    skipped = tasks.retrain_models.apply(args=("o/r",)).get()
-    assert skipped["status"] == "skipped" and skipped["reason"] == "no_drift"
-    blocked = tasks.retrain_models.apply(args=("o/r",), kwargs={"force": True}).get()
-    assert blocked["status"] == "blocked" and blocked["reason"] == "insufficient_data" and blocked["runs"] == 0
+# ---- graph tasks read the real commit graph from the git mirror ------------------------------------------
+
+WORKFLOW = """\
+name: CI
+on: [push]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ruff check src
+  unit:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - run: pytest tests
+"""
+
+
+@pytest.fixture()
+def mirror_of_a_real_repo(tmp_path, monkeypatch):
+    """A bare mirror of a tiny local git repository, in the layout RepoMirror expects; no network is touched."""
+    import subprocess
+
+    from gha_optimizer.ingestion import mirror as mirror_module
+
+    work = tmp_path / "work"
+    (work / ".github" / "workflows").mkdir(parents=True)
+    (work / "src").mkdir()
+    (work / ".github" / "workflows" / "ci.yml").write_text(WORKFLOW, encoding="utf-8")
+    (work / "src" / "app.py").write_text("import os\n\ndef main():\n    return os.getcwd()\n", encoding="utf-8")
+    (work / "README.md").write_text("hello\n", encoding="utf-8")
+
+    def git(*args, cwd=work):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd,
+                              capture_output=True, text=True, check=True).stdout.strip()
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-q", "-m", "init")
+    sha = git("rev-parse", "HEAD")
+    root = tmp_path / "mirrors"
+    root.mkdir()
+    git("clone", "-q", "--bare", str(work), str(root / "o__r.git"), cwd=tmp_path)
+
+    real = mirror_module.RepoMirror
+    monkeypatch.setattr(mirror_module, "RepoMirror",
+                        lambda repo, root_=None, token=None, **kw: real(repo, root, offline=True))
+    return sha
+
+
+def test_graph_task_builds_the_real_graph_of_the_commit(eager, mirror_of_a_real_repo):
+    out = tasks.generate_dependency_graph.apply(args=("o/r", mirror_of_a_real_repo, ["src/app.py"])).get()
+    assert out["status"] == "complete" and out["changed_files"] == 1
+    assert out["source_nodes"] >= 3                                    # at least the three tree paths are File nodes
+    wf = out["workflows"][".github/workflows/ci.yml"]
+    assert wf["nodes"] > out["source_nodes"] - 1 and wf["edges"] > 0   # the CI graph is fused into the source graph
+
+
+def test_graph_task_is_blocked_for_a_commit_the_mirror_does_not_have(eager, mirror_of_a_real_repo):
+    out = tasks.generate_dependency_graph.apply(args=("o/r", "f" * 40)).get()
+    assert out == {"status": "blocked", "reason": "commit_not_in_mirror", "repo": "o/r", "commit_sha": "f" * 40}
+
+
+def test_benchmark_measures_the_real_graph_and_refuses_an_unknown_commit(eager, mirror_of_a_real_repo):
+    out = tasks.run_benchmark.apply(args=("o/r", mirror_of_a_real_repo)).get()
+    report = out["benchmark"]
+    assert out["status"] == "complete" and report["node_count"] > 0 and report["edge_count"] > 0
+    assert report["graph_build_time_ms"] > 0 and report["memory_usage_bytes"] > 0 and report["snapshot_storage_bytes"] > 0
+    assert report["incremental_update_time_ms"] is None and report["traversal_time_ms"] is None   # not measured: None, never 0
+    assert tasks.run_benchmark.apply(args=("o/r", "e" * 40)).get()["reason"] == "commit_not_in_mirror"

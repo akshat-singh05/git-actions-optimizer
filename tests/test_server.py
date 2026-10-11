@@ -191,3 +191,12 @@ def test_celery_ok_is_false_when_the_broker_is_unreachable(monkeypatch):
 
     monkeypatch.setattr(celery_module.celery_app, "control", Broken())
     assert app_module._celery_ok() is False
+
+
+def test_signature_check_matches_githubs_published_test_vector():
+    """Secret, payload and expected value are the example in GitHub's 'Validating webhook deliveries' documentation."""
+    secret, payload = "It's a Secret to Everybody", b"Hello, World!"
+    expected = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17"
+    assert app_module._verify_webhook_signature(payload, expected, secret) is True
+    assert app_module._verify_webhook_signature(payload, expected.replace("7571", "7572"), secret) is False
+    assert app_module._verify_webhook_signature(payload, "", secret) is False

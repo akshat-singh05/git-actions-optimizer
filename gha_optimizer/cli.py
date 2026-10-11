@@ -8,7 +8,6 @@ Real-data workflow::
     gha-optimizer build-dataset --repo owner/repo        # per-commit graph features + dataset
     gha-optimizer dataset-report --repo owner/repo       # writes docs/DATASET_REPORT.md
     gha-optimizer eval-models --repo owner/repo          # rolling-origin eval + ablation -> docs/MODEL_EVAL.md
-    gha-optimizer train --repo owner/repo [--workflow ci.yml]
     gha-optimizer analyze <workflow.yml> --repo owner/repo [--changed a,b]
     gha-optimizer evaluate <workflow.yml> --repo owner/repo
     gha-optimizer serve [--host H] [--port P]
@@ -369,47 +368,6 @@ def cmd_replay_impact(args: argparse.Namespace) -> None:
     print(f"wrote {out} ({len(text.splitlines())} lines)")
 
 
-def cmd_train(args: argparse.Namespace) -> None:
-    """Train the three models on the ingested dataset (temporal-holdout metrics) and save them."""
-    _use_db(args)
-    from gha_optimizer.config import config
-    from gha_optimizer.features.dataset import build_dataset
-    from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
-    from gha_optimizer.models.duration_estimator import DurationEstimator
-    from gha_optimizer.models.failure_predictor import FailurePredictor
-    from gha_optimizer.server.db.session import SessionLocal, init_db
-
-    init_db()
-    db = SessionLocal()
-    try:
-        df, info = build_dataset(db, args.repo, args.workflow_path)
-    finally:
-        db.close()
-    if df.empty or df["run_id"].nunique() < config.model.min_history_runs:
-        _decline(RuntimeError(f"only {df['run_id'].nunique() if not df.empty else 0} ingested runs "
-                              f"(< {config.model.min_history_runs})"))
-    logger.info("dataset: %s", info)
-    model_dir = Path(args.output)
-    model_dir.mkdir(parents=True, exist_ok=True)
-
-    for name, model, fname in (
-        ("Cache-miss predictor (any_miss)", CacheMissPredictor(), "cache_miss.joblib"),
-        ("Cache-miss predictor (exact_miss)", CacheMissPredictor(target="exact_miss"), "cache_exact_miss.joblib"),
-        ("Failure predictor", FailurePredictor(), "failure.joblib"),
-        ("Duration estimator", DurationEstimator(), "duration.joblib"),
-    ):
-        try:
-            metrics = model.fit(df)
-        except ValueError as exc:
-            print(f"{name}: NOT TRAINED — {exc}")
-            continue
-        model.save(model_dir / fname)
-        print(f"{name}: {metrics}")
-    print(f"\nModels saved to: {model_dir}")
-    print("Note: these are standalone artifacts fitted on the per-commit-graph dataset. `analyze` and the API do not "
-          "read them; they keep their own fingerprint-checked models under <model-dir>/<workflow>/ (models/store.py).")
-
-
 def cmd_serve(args: argparse.Namespace) -> None:
     """Start the FastAPI server."""
     try:
@@ -483,12 +441,6 @@ def main() -> None:
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--reload", action="store_true")
 
-    p_train = subparsers.add_parser("train", help="Train models on the ingested dataset")
-    p_train.add_argument("--repo", required=True, help="owner/repo")
-    p_train.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
-    p_train.add_argument("--output", default=".gha_optimizer/models")
-    _add_db(p_train)
-
     p_ing = subparsers.add_parser("ingest", help="Ingest real GitHub Actions history into the database")
     p_ing.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
     p_ing.add_argument("--since", default="40d", help="'40d' (days back) or an ISO date (UTC); default 40d")
@@ -561,7 +513,6 @@ def main() -> None:
         "analyze": cmd_analyze,
         "evaluate": cmd_evaluate,
         "serve": cmd_serve,
-        "train": cmd_train,
         "ingest": cmd_ingest,
         "ingest-status": cmd_ingest_status,
         "build-dataset": cmd_build_dataset,
