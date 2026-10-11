@@ -87,6 +87,12 @@ for hiding 3-10% of failing runs. That is not shippable as an automatic default,
 `replay-impact` is the evidence. Defensible uses are advisory (report which jobs the graph considers unreached, with
 these measured rates) or deferral (run unreached jobs only on pushes to the default branch).
 
+**Update 2026-10-11: deferral was evaluated under a pre-registered plan (`docs/DEFERRAL_PLAN.md`, figures in
+`docs/DEFERRAL_REPLAY.md`) and is not supported** - the readable policy defers 0.0-1.5% of total billable time in
+every repository with enough failing PR runs, so it is not worth building even though the share of hidden failing PR
+runs stays under 5% (worst case 0.0-2.6%); recurrence after merge could not be measured. The paragraph below is the
+earlier state, kept for the record.
+
 **Status (2026-10-10): the advisory use is IMPLEMENTED; deferral is not.** `gha_optimizer/advisory.py` classifies the
 unreached jobs of a live diff with the same `skipped_jobs` / `opaque_job_keys` code that was replayed (skip candidate /
 kept because a dependent is reached or unreadable / kept because its own steps are unreadable; jobs with no file

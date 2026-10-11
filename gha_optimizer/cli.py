@@ -337,19 +337,20 @@ def cmd_eval_models(args: argparse.Namespace) -> None:
 def cmd_replay_impact(args: argparse.Namespace) -> None:
     """Counterfactual replay of "skip jobs the graph says the diff cannot reach" -> docs/IMPACT_REPLAY.md."""
     _use_db(args)
-    from gha_optimizer.replay import render_replay, replay_repo
+    from gha_optimizer.replay import deferral_repo, render_deferral, render_replay, replay_repo
     from gha_optimizer.server.db.session import SessionLocal, init_db
 
     init_db()
     db = SessionLocal()
     try:
-        results = [replay_repo(db, repo, args.workflow_path, args.bootstrap) for repo in args.repo]
+        replay = deferral_repo if args.deferral else replay_repo
+        results = [replay(db, repo, args.workflow_path, args.bootstrap) for repo in args.repo]
     finally:
         db.close()
     if not any("dag_safe" in r for r in results):
         _decline(RuntimeError("no ingested runs with current graph features for the requested repositories"))
-    text = render_replay(results, args.bootstrap)
-    out = Path(args.out)
+    text = (render_deferral if args.deferral else render_replay)(results, args.bootstrap)
+    out = Path(args.out or ("docs/DEFERRAL_REPLAY.md" if args.deferral else "docs/IMPACT_REPLAY.md"))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(f"wrote {out} ({len(text.splitlines())} lines)")
@@ -529,7 +530,9 @@ def main() -> None:
     p_ri.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
     p_ri.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
     p_ri.add_argument("--bootstrap", type=int, default=1000)
-    p_ri.add_argument("--out", default="docs/IMPACT_REPLAY.md")
+    p_ri.add_argument("--deferral", action="store_true",
+                      help="evaluate deferring the unreached jobs on pull_request runs instead (docs/DEFERRAL_PLAN.md)")
+    p_ri.add_argument("--out", help="default: docs/IMPACT_REPLAY.md, or docs/DEFERRAL_REPLAY.md with --deferral")
     _add_db(p_ri)
 
     args = parser.parse_args()
