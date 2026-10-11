@@ -80,6 +80,17 @@ def test_require_history_reasons():
         require_history(one_class, ["a"], 5, need_cache_labels=30)
 
 
+def test_require_history_needs_both_failure_outcomes_when_asked():
+    ok = [rec_stub(str(i), "a") for i in range(8)]                      # rec_stub: every job succeeded
+    require_history(ok, ["a"], 5)                                       # not asked: fine
+    with pytest.raises(InsufficientHistoryError, match="failure model") as ei:
+        require_history(ok, ["a"], 5, need_failure_labels=True)
+    assert ei.value.details == {"failing_job_runs": 0, "passing_job_runs": 8}
+    mixed = ok + [rec_stub("9", "a")]
+    mixed[-1].conclusion = "failure"
+    require_history(mixed, ["a"], 5, need_failure_labels=True)           # one failure and passes: enough to fit
+
+
 # --------------------------------------------------------------------------- DB-backed
 
 @pytest.fixture()

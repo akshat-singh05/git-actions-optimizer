@@ -178,6 +178,7 @@ def require_history(
     job_ids: Iterable[str],
     min_runs: int,
     need_cache_labels: int = 0,
+    need_failure_labels: bool = False,
 ) -> None:
     """Decline to predict unless the history can support it.  Raises
     :class:`InsufficientHistoryError` with the precise reason."""
@@ -197,4 +198,12 @@ def require_history(
             raise InsufficientHistoryError(
                 "cache-miss model cannot be trained from the available log-derived labels",
                 labelled_rows=len(labelled), classes_present=sorted(map(str, classes)), required_rows=need_cache_labels,
+            )
+    if need_failure_labels:
+        failed = sum(1 for r in history if r.conclusion in ("failure", "timed_out"))
+        passed = sum(1 for r in history if r.conclusion == "success")
+        if failed == 0 or passed == 0:
+            raise InsufficientHistoryError(
+                "failure model cannot be trained: the history needs at least one failing and one passing job outcome",
+                failing_job_runs=failed, passing_job_runs=passed,
             )

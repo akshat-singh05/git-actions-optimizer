@@ -407,3 +407,30 @@ def test_legacy_head_commit_diffs_of_pr_runs_are_upgraded_and_derived_rows_dropp
     assert run.diff_source == "compare_pr" and run.pr_number == 7
     assert {f for (f,) in s.query(m.RunChangedFile.filename).filter_by(run_id=run.run_id)} == {"src/a.py", "requirements.txt"}
     assert s.query(m.RunGraphFeatures).filter_by(run_id=run.run_id).count() == 0   # stale graph features removed
+
+
+def test_naive_datetimes_are_formatted_as_utc_not_local_time():
+    """The run-listing windows are naive UTC; on a machine away from UTC they used to be shifted by its offset."""
+    from datetime import timezone as tz
+
+    from gha_optimizer.ingestion.github_client import _fmt
+
+    assert _fmt(datetime(2026, 10, 11, 0, 0, 0)) == "2026-10-11T00:00:00Z"
+    assert _fmt(datetime(2026, 10, 11, 23, 59, 59)) == "2026-10-11T23:59:59Z"
+    from datetime import timedelta
+    assert _fmt(datetime(2026, 10, 11, 5, 30, tzinfo=tz(timedelta(hours=5, minutes=30)))) == "2026-10-11T00:00:00Z"
+
+
+@pytest.mark.skipif(not hasattr(__import__("time"), "tzset"), reason="needs POSIX tzset to force a non-UTC local zone")
+def test_run_windows_do_not_depend_on_the_local_timezone(monkeypatch):
+    import time
+
+    from gha_optimizer.ingestion.github_client import _fmt
+
+    monkeypatch.setenv("TZ", "Asia/Kolkata")
+    time.tzset()
+    try:
+        assert _fmt(datetime(2026, 10, 11, 0, 0, 0)) == "2026-10-11T00:00:00Z"
+    finally:
+        monkeypatch.undo()
+        time.tzset()

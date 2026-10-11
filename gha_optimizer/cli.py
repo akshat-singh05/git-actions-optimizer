@@ -368,6 +368,27 @@ def cmd_replay_impact(args: argparse.Namespace) -> None:
     print(f"wrote {out} ({len(text.splitlines())} lines)")
 
 
+def cmd_llm_check(args: argparse.Namespace) -> None:
+    """Connectivity check for the optional LLM layer: one tiny request, no repository data is sent."""
+    import time
+
+    from gha_optimizer.llm_summary import LLMError, client_from_env
+
+    client = client_from_env()
+    if client is None:
+        print("Not configured: set GEMINI_API_KEY and GHA_LLM_MODEL (a .env file in the repo root works; see .env.example).")
+        sys.exit(2)
+    t0 = time.time()
+    try:
+        reply = client.complete("Reply with exactly the single word OK.", "ping")
+    except LLMError as exc:
+        print(f"FAILED: {exc}")
+        print("  HTTP 400/404 usually means a wrong model id; 401/403 a wrong or disabled key; 429 a rate or quota limit.")
+        sys.exit(1)
+    print(f"OK: model '{client.model}' answered in {time.time() - t0:.1f}s: {reply.strip()[:80]!r}")
+    print("The request format works. Next: python demo.py --repo python-poetry/poetry --llm-summary")
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     """Start the FastAPI server."""
     try:
@@ -435,6 +456,8 @@ def main() -> None:
 
     p_eval = subparsers.add_parser("evaluate", help="Scheduler-weight ablation from ingested history")
     _add_analysis_args(p_eval)
+
+    subparsers.add_parser("llm-check", help="Check the optional LLM layer (GEMINI_API_KEY, GHA_LLM_MODEL) with one tiny request")
 
     p_serve = subparsers.add_parser("serve", help="Start the API server")
     p_serve.add_argument("--host", default="0.0.0.0")
@@ -513,6 +536,7 @@ def main() -> None:
         "analyze": cmd_analyze,
         "evaluate": cmd_evaluate,
         "serve": cmd_serve,
+        "llm-check": cmd_llm_check,
         "ingest": cmd_ingest,
         "ingest-status": cmd_ingest_status,
         "build-dataset": cmd_build_dataset,

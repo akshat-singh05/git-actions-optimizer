@@ -106,7 +106,10 @@ class RunWindow:
 
 
 def _fmt(ts: datetime) -> str:
-    return ts.astimezone(timezone.utc).strftime(_TS_FMT)
+    """API timestamp for ``ts``.  Naive datetimes in this module are UTC (see ``parse_ts``): they must never be
+    reinterpreted as local time, which shifted every run-listing window by the machine's UTC offset."""
+    ts = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.astimezone(timezone.utc)
+    return ts.strftime(_TS_FMT)
 
 
 def parse_ts(value: str | None) -> datetime | None:

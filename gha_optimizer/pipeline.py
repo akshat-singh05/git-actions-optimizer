@@ -134,6 +134,7 @@ def run_pipeline(
         workflow.jobs.keys(),
         min_runs=config.model.min_history_runs,
         need_cache_labels=config.model.min_cache_labels,
+        need_failure_labels=True,
     )
 
     # ──────────────────────────────────────────────────────────────

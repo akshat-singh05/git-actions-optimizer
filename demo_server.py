@@ -156,7 +156,8 @@ def run_demo_pipeline():
     }
 
     try:
-        require_history(snap.history, workflow.jobs.keys(), config.model.min_history_runs, config.model.min_cache_labels)
+        require_history(snap.history, workflow.jobs.keys(), config.model.min_history_runs, config.model.min_cache_labels,
+                        need_failure_labels=True)
     except InsufficientHistoryError as exc:
         results["declined"] = True
         results["reason"] = str(exc)
