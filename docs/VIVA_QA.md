@@ -11,7 +11,9 @@ job failure / duration / cache misses, schedules jobs without violating `needs`,
 reviewable diff. [README, CLAUDE.md]
 
 **2. Does it make CI faster?**
-Not shown. The default plan equals the baseline (0.0% estimated saving on poetry). The only figures above zero are
+Not shown. The default plan equals the baseline (0.0% estimated saving on poetry), and a real run agrees: the original and the
+proposed workflow were executed 6 times each on GitHub Actions with no detectable difference (+0.3%, p = 0.92) and identical
+behaviour (`docs/VALIDITY_RUN.md`). The only figures above zero are
 labelled ESTIMATED what-ifs that rest on an assumed speed-up law (exponent 0.6) which the data cannot confirm. A measured
 claim needs real runs of both workflows, which have not been done. [SCHEDULER_ASSUMPTIONS 1-2, demo output]
 

@@ -66,6 +66,23 @@ both beat the baseline but on a single positive.
 2026-10-21) so that poetry, fastapi and dubbo can be judged; the verdict is taken from that run, and this interim
 table stays in the file. This interim run is not used to change the pass/fail rule or the choice.
 
+### Interim run 2, 2026-10-12 (report: `docs/MODEL_EVAL_FRESH_2.md`)
+Same procedure, run to see how close each repository is to the 20-failure threshold (runs through 2026-10-11).
+
+| repo | fresh test rows / runs | positives | judged (>= 20)? | logistic - baseline (PR-AUC) |
+|---|---|---|---|---|
+| poetry | 55 / 18 | 28 | **yes** | +0.0393 [-0.1526, +0.2504] -> upper bound above 0: **PASS** |
+| prometheus | 2,323 / 138 | 100 | **yes** | +0.0421 [-0.0151, +0.1201] -> **PASS** |
+| fastapi | 98 / 17 | 1 | no | -0.0334 [-0.1500, +0.0462] (one failure; not judged) |
+| dubbo | 58 / 5 | 8 | no | -0.1229 [-0.2838, 0.0000] (8 failures; not judged) |
+
+Two of four repositories are now judgeable and both pass. The choice is **still not confirmed**: fastapi has one fresh
+failure in 98 rows (its fresh failure rate is far below its historical 9%), so it may never reach 20; dubbo may on the
+21st. The plan does not change: the final verdict is one run on or after 2026-10-21 with whichever repositories then
+have at least 20 failures, as pre-stated; this interim table is kept and is not used to alter the rule or the default.
+(The fresh runs of this interim were ingested after the 2026-10-12 fix of a UTC-offset bug in the run-listing windows, which had
+hidden the newest 5.5 hours of each earlier ingest; see `docs/VALIDITY_RUN.md`.)
+
 A tooling defect found while doing this: `ingest --max-runs N` counted every run the repository already had in the
 database, so on a repository holding at least N runs it stopped immediately (the first attempt ingested nothing). It
 now counts only the runs finished by the current invocation (`ingestion/ingest.py::_cap_reached`, test

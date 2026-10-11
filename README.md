@@ -57,7 +57,8 @@ B.Tech CSE capstone (BCSE497J), VIT. Akshat Singh (23BKT0005), Aditya Choubey (2
 | LLM explanation layer (opt-in wording only) | IMPLEMENTED, **not verified against the live API** | cannot influence the result |
 | FastAPI server, Celery worker and dashboard | IMPLEMENTED (run once end to end) | `docker compose up` was exercised with a signed webhook, a private repo and Postgres (`docs/FULL_STACK_RUN.md`); without `GITHUB_WEBHOOK_SECRET` the webhook accepts unsigned requests |
 | Feedback loop (drift detection, retraining) | REMOVED | nothing recorded predictions, so it could never run; see `docs/FULL_STACK_RUN.md` |
-| Measured end-to-end speed-up | **NOT DONE** | would need real runs of both workflows |
+| Generated workflow executed on real GitHub Actions | VALIDATED (small scale) | original vs proposed, 12 measured runs: identical behaviour, `needs` respected, no detectable time difference (`docs/VALIDITY_RUN.md`) |
+| Measured end-to-end speed-up | **NOT SHOWN** | the default plan is the baseline by design; larger runners (the only lever that shortens the critical path) need paid organisation runners |
 
 ## Quick start
 
@@ -86,6 +87,7 @@ gha-optimizer dataset-report --repo owner/repo --out docs/DATASET_REPORT.md
 
 Useful flags for `analyze`: `--enable-skips`, `--larger-runners`, `--speedup-exponent`, `--llm-summary` (needs
 `GEMINI_API_KEY` and `GHA_LLM_MODEL`; sends only job ids and computed numbers), `--no-model-store`.
+Check the LLM setup with `gha-optimizer llm-check`, then `python demo.py --repo python-poetry/poetry --llm-summary`.
 
 Server: `gha-optimizer serve` (FastAPI on :8000; `POST /api/v1/optimize` returns 422 when history is missing).
 Full stack: `docker-compose up --build` (Postgres, Redis, API, Celery worker).
@@ -107,7 +109,7 @@ gha_optimizer/
   server/, worker/                   FastAPI app + DB, Celery tasks (ingest, per-commit graph, benchmark)
 dashboard/                           static page that shows only what the API returns
 docs/                                design notes, generated reports, pre-registered plans, results
-tests/                               330 tests (fixtures are data, not tests)
+tests/                               335 tests (fixtures are data, not tests)
 ```
 
 ## Documentation

@@ -71,8 +71,10 @@ Show `docs/IMPACT_REPLAY.md`, then `docs/HELDOUT_RESULTS.md` and `docs/HELDOUT_R
   the Advisory section; needs a git checkout of the repo (not available for the mirrors alone).
 * `python demo_server.py --repo python-poetry/poetry` serves a UI at http://localhost:8501 (not re-run when this was written).
 * The full stack (`docker compose up --build`) was run once end to end: `docs/FULL_STACK_RUN.md`.
-* The LLM summary (`analyze --llm-summary`) needs `GEMINI_API_KEY` and `GHA_LLM_MODEL`; it has not been run against the
-  live service, so do not demo it unless it has been tried beforehand.
+* The generated workflow was executed on real GitHub Actions: `docs/VALIDITY_RUN.md` (12 runs, identical behaviour, no speed-up).
+* The LLM summary needs `GEMINI_API_KEY` and `GHA_LLM_MODEL`. Check them with `gha-optimizer llm-check`, then
+  `python demo.py --repo python-poetry/poetry --llm-summary`. It has not been run against the live service by us, so try it
+  once beforehand and do not demo it unless it worked.
 
 ## If something goes wrong
 

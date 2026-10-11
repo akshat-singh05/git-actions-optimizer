@@ -127,4 +127,5 @@ be measured.
 * The failure-model default was selected on the same folds it is evaluated on; the fresh-data check is interim.
 * The graph rules were written after reading the first five workflows; pydantic, cli/cli, ruff and uv are held out.
 * Replay results are counterfactual: they assume skipping a job changes no other job's outcome.
-* All improvement numbers are ESTIMATED; none has been confirmed by running both workflows.
+* All improvement numbers are ESTIMATED. The one real execution (`docs/VALIDITY_RUN.md`: original vs proposed, 12 runs on the
+  project's own CI) confirmed identical behaviour and the 0.0% estimate within a noisy +-20 s; it shows no speed-up.
