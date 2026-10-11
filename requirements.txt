@@ -34,3 +34,4 @@ tree-sitter-go>=0.21
 
 # Improved ML backends (optional — install with: pip install gha-optimizer[ml])
 # xgboost>=2.0
+# validation history marker 2
