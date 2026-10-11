@@ -195,7 +195,9 @@ def load_runs(db: Session, repo: str, workflow_path: str | None = None) -> dict[
         )
         if run_id not in out:
             desc, opaque = workflow_facts(runs[run_id])
-            out[run_id] = {"jobs": {}, "descendants": desc, "opaque": opaque}
+            r = runs[run_id]
+            out[run_id] = {"jobs": {}, "descendants": desc, "opaque": opaque, "event": r.event, "commit": r.commit_sha,
+                           "base": r.diff_base_sha, "branch": r.head_branch, "created": r.gh_created_at}
         entry = out[run_id]
         # a workflow we could not read has no provably readable job
         job.opaque = True if entry["opaque"] is None else key in entry["opaque"]
@@ -297,6 +299,131 @@ def replay_repo(db: Session, repo: str, workflow_path: str | None = None, n_boot
 
 
 # ---------------------------------------------------------------------------
+# Deferral: do not run the unreached jobs on pull_request runs (docs/DEFERRAL_PLAN.md, pre-registered)
+# ---------------------------------------------------------------------------
+
+PR_EVENTS = ("pull_request", "pull_request_target")
+MIN_FAILING_PR_RUNS = 20         # fewer failing PR runs: inconclusive
+MIN_SAVING_SHARE = 0.05          # criterion A: share of the repository's total billable time
+MAX_HIDDEN_SHARE = 0.05          # criterion B: worst-case masked PR runs / failing PR runs
+
+
+def _base_run_index(runs: dict[str, dict[str, Any]], default_branch: str | None) -> dict[str, dict[str, JobOutcome]]:
+    """``{commit sha: jobs of the newest push run on the default branch at that commit}``."""
+    newest: dict[str, tuple[Any, dict[str, JobOutcome]]] = {}
+    for e in runs.values():
+        if e.get("event") != "push" or not default_branch or e.get("branch") != default_branch or not e.get("commit"):
+            continue
+        stamp = e.get("created")
+        if e["commit"] not in newest or (stamp is not None and (newest[e["commit"]][0] is None or stamp > newest[e["commit"]][0])):
+            newest[e["commit"]] = (stamp, e["jobs"])
+    return {sha: jobs for sha, (_, jobs) in newest.items()}
+
+
+def _failure_vs_base(failed: set[str], base_jobs: dict[str, JobOutcome] | None) -> dict[str, int]:
+    """Classify each failed (deferred) job against the push run at the PR's base commit."""
+    c = {"new": 0, "pre_existing": 0, "unknown": 0}
+    for k in failed:
+        bj = None if base_jobs is None else base_jobs.get(k)
+        if bj is None or not bj.executed:
+            c["unknown"] += 1
+        elif bj.failed:
+            c["pre_existing"] += 1
+        else:
+            c["new"] += 1
+    return c
+
+
+def _deferral_vectors(runs: dict[str, dict[str, Any]], default_branch: str | None, readable: bool
+                      ) -> tuple[np.ndarray, float]:
+    """Per PR run ``[exec_s, deferred_s, failing_run, masked, masked_new, masked_unknown_only, masked_pre_existing,
+    base_found, deferred_failed_jobs, dj_new, dj_unknown, dj_pre_existing]`` and the total executed seconds of ALL runs."""
+    base_index = _base_run_index(runs, default_branch)
+    total = sum(j.seconds for e in runs.values() for j in e["jobs"].values() if j.executed)
+    rows = []
+    for e in runs.values():
+        if e.get("event") not in PR_EVENTS:
+            continue
+        jobs = e["jobs"]
+        defer = skipped_jobs(jobs, e["descendants"], True, readable)
+        failed = {k for k, j in jobs.items() if j.executed and j.failed}
+        base_jobs = base_index.get(e.get("base") or "")
+        v = np.zeros(12)
+        v[0] = sum(j.seconds for j in jobs.values() if j.executed)
+        v[1] = sum(jobs[k].seconds for k in defer)
+        v[2] = 1.0 if failed else 0.0
+        v[7] = 1.0 if base_jobs is not None else 0.0
+        if failed and failed <= defer:
+            cls = _failure_vs_base(failed, base_jobs)
+            v[3] = 1.0
+            if cls["new"]:
+                v[4] = 1.0
+            elif cls["unknown"]:
+                v[5] = 1.0
+            else:
+                v[6] = 1.0
+        dfail = failed & defer
+        if dfail:
+            cls = _failure_vs_base(dfail, base_jobs)
+            v[8], v[9], v[10], v[11] = len(dfail), cls["new"], cls["unknown"], cls["pre_existing"]
+        rows.append(v)
+    return (np.array(rows) if rows else np.zeros((0, 12))), float(total)
+
+
+def _deferral_shares(v: np.ndarray, total: float) -> dict[str, float | None]:
+    s = v.sum(axis=0) if len(v) else np.zeros(12)
+    fail = s[2]
+    return {
+        "saving_of_pr_time": float(s[1] / s[0]) if s[0] else None,
+        "saving_of_total_time": float(s[1] / total) if total else None,
+        "hidden_share_worst_case": float((s[4] + s[5]) / fail) if fail else None,
+        "hidden_share_new_only": float(s[4] / fail) if fail else None,
+    }
+
+
+def deferral_repo(db: Session, repo: str, workflow_path: str | None = None, n_boot: int = 1000) -> dict[str, Any]:
+    """Measured consequences of deferring the graph-unreached jobs on pull_request runs (see docs/DEFERRAL_PLAN.md)."""
+    runs = load_runs(db, repo, workflow_path)
+    result: dict[str, Any] = {"repo": repo, "runs": len(runs)}
+    if not runs:
+        result["note"] = "no ingested runs with current graph features"
+        return result
+    default_branch = db.query(m.Repository.default_branch).filter(m.Repository.full_name == repo).scalar()
+    result["default_branch"] = default_branch
+    for name, readable in (("readable", True), ("dag_safe", False)):
+        per_run, total = _deferral_vectors(runs, default_branch, readable)
+        s = per_run.sum(axis=0) if len(per_run) else np.zeros(12)
+        block: dict[str, Any] = {
+            "pr_runs": int(len(per_run)), "pr_seconds": float(s[0]), "total_seconds": total, "deferred_seconds": float(s[1]),
+            "failing_pr_runs": int(s[2]), "masked_runs": int(s[3]), "masked_new": int(s[4]),
+            "masked_unknown_only": int(s[5]), "masked_pre_existing": int(s[6]), "base_found_runs": int(s[7]),
+            "deferred_failed_jobs": int(s[8]), "deferred_failed_jobs_new": int(s[9]),
+            "deferred_failed_jobs_unknown": int(s[10]), "deferred_failed_jobs_pre_existing": int(s[11]),
+            **_deferral_shares(per_run, total),
+        }
+        if len(per_run):
+            rng = np.random.default_rng(SEED)
+            boots = [_deferral_shares(per_run[rng.integers(0, len(per_run), len(per_run))], total) for _ in range(n_boot)]
+            for key in ("saving_of_total_time", "hidden_share_worst_case"):
+                xs = [b[key] for b in boots if b[key] is not None]
+                block[key + "_ci95"] = [float(np.percentile(xs, 2.5)), float(np.percentile(xs, 97.5))] if xs else None
+        block["verdict"] = deferral_verdict(block)
+        result[name] = block
+    return result
+
+
+def deferral_verdict(b: dict[str, Any]) -> str:
+    """The pre-stated reading of docs/DEFERRAL_PLAN.md (applied to the readable policy)."""
+    if b["failing_pr_runs"] < MIN_FAILING_PR_RUNS:
+        return "inconclusive (fewer than %d failing PR runs)" % MIN_FAILING_PR_RUNS
+    if (b["saving_of_total_time"] or 0.0) < MIN_SAVING_SHARE:
+        return "not supported: saves under %.0f%% of total billable time" % (100 * MIN_SAVING_SHARE)
+    if (b["hidden_share_worst_case"] or 0.0) >= MAX_HIDDEN_SHARE:
+        return "not supported: at least %.0f%% of failing PR runs would first show after merge (worst case)" % (100 * MAX_HIDDEN_SHARE)
+    return "supported by the pre-stated criteria (recurrence at merge is NOT measured)"
+
+
+# ---------------------------------------------------------------------------
 # Markdown (every figure comes from the dicts above)
 # ---------------------------------------------------------------------------
 
@@ -362,3 +489,42 @@ def _table(headers: list[str], rows: list[list[Any]]) -> str:
     lines = ["| " + " | ".join(headers) + " |", "|" + "|".join("---" for _ in headers) + "|"]
     lines += ["| " + " | ".join("" if v is None else str(v) for v in r) + " |" for r in rows]
     return "\n".join(lines) + "\n"
+
+
+def render_deferral(results: list[dict[str, Any]], n_boot: int) -> str:
+    out = ["# Counterfactual replay: defer the graph-unreached jobs on pull_request runs\n",
+           "Generated by `gha-optimizer replay-impact --deferral` from the database (**MEASURED on history**; the policy was "
+           f"not run). Cluster bootstrap over PR runs ({n_boot} resamples, seed {SEED}). Definitions, criteria and what is "
+           "NOT measured were fixed before any figure was computed: `docs/DEFERRAL_PLAN.md`.\n",
+           "Policy: on `pull_request` runs, do not run the jobs the readable DAG-safe policy would skip; they still run on "
+           "`push` runs. Savings can only come from PR runs. A failure of a deferred job is **pre-existing** if the same job "
+           "also failed in the push run on the default branch at the PR's base commit, **new** if it ran and passed there, "
+           "**unknown** if no such run / job exists. **Whether a hidden failure recurs after merge is not measured** (the "
+           "database cannot link a PR to its merge commit).\n"]
+    for key, title in (("readable", "Readable DAG-safe policy (the one the verdict applies to)"), ("dag_safe", "DAG-safe policy (context)")):
+        out.append(f"## {title}\n")
+        rows = []
+        for r in results:
+            b = r.get(key)
+            if not b:
+                rows.append([r["repo"], r["runs"], r.get("note", "no result")] + [""] * 9)
+                continue
+            rows.append([
+                r["repo"], b["pr_runs"],
+                f"{_pct(b['saving_of_pr_time'])}", f"{_pct(b['saving_of_total_time'])}{_ci(b.get('saving_of_total_time_ci95'))}",
+                b["failing_pr_runs"], b["masked_runs"],
+                f"{b['masked_new']} / {b['masked_unknown_only']} / {b['masked_pre_existing']}",
+                f"{_pct(b['hidden_share_worst_case'])}{_ci(b.get('hidden_share_worst_case_ci95'))}",
+                _pct(b["hidden_share_new_only"]),
+                f"{b['base_found_runs']} of {b['pr_runs']}",
+                f"{b['deferred_failed_jobs']} ({b['deferred_failed_jobs_new']} / {b['deferred_failed_jobs_unknown']} / {b['deferred_failed_jobs_pre_existing']})",
+                b["verdict"] if key == "readable" else "",
+            ])
+        out.append(_table(["repo", "PR runs", "saved of PR time", "saved of total time", "failing PR runs",
+                           "would look green", "of those: new / unknown / pre-existing", "hidden share (worst case)",
+                           "hidden share (new only)", "PR runs with a base push run", "deferred job failures (new / unknown / pre-existing)",
+                           "pre-stated verdict"], rows))
+    out.append("`hidden share (worst case)` counts masked PR runs that are *new* or *unknown* against the base; "
+               "`new only` is the optimistic count. Criteria: saving >= 5% of total billable time and worst-case hidden "
+               "share < 5%, judged only with >= 20 failing PR runs.\n")
+    return "\n".join(out)
