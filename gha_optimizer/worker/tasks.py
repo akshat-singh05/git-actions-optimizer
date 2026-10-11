@@ -367,6 +367,10 @@ def retrain_models(self, repo: str, force: bool = False) -> Dict[str, Any]:
     Retrain ML models on the real ingested dataset of ``repo``.
     Checks for drift first, then fits cache-miss, failure and duration models; a model whose
     labels are insufficient (e.g. no log-derived cache labels) is reported as not trained.
+
+    The saved artifacts (``<model_dir>/<kind>.joblib``, registered in the model_versions table) are fitted on the
+    per-commit-graph dataset and are NOT read by ``run_pipeline`` / ``/api/v1/optimize``, which use their own
+    fingerprint-checked models under ``<model_dir>/<workflow>/`` (``models/store.py``).
     """
     cid = str(uuid.uuid4())[:8]
     _log("retrain_models", cid, "Retraining models for %s (force=%s)", repo, force)
