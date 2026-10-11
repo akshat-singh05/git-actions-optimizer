@@ -81,6 +81,18 @@ def _replay_stats(repo: str, workflow_repo_path: str):
         db.close()
 
 
+def _llm_client(requested: bool):
+    """The explanation-layer client if requested AND configured; otherwise None (the analysis is unchanged)."""
+    if not requested:
+        return None
+    from gha_optimizer.llm_summary import client_from_env
+
+    client = client_from_env()
+    if client is None:
+        print("--llm-summary requested but GEMINI_API_KEY and GHA_LLM_MODEL are not both set; continuing without it.")
+    return client
+
+
 def _decline(exc: Exception) -> None:
     print(f"\nDeclining to predict: {exc}")
     print("No synthetic or default values are substituted. Ingest real history first, e.g.:\n"
@@ -137,6 +149,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             allow_skipping=args.enable_skips or None,
             model_dir=None if args.no_model_store else args.model_dir,
             replay_stats=_replay_stats(args.repo, wf_repo_path),
+            llm_client=_llm_client(args.llm_summary),
         )
     except InsufficientHistoryError as exc:
         _decline(exc)
@@ -454,6 +467,9 @@ def main() -> None:
     p_analyze.add_argument("--no-model-store", action="store_true", help="always refit; never read or write saved models")
     p_analyze.add_argument("--enable-skips", action="store_true",
                            help="apply skip recommendations (`if: ${{ false }}` guards); off by default - see docs/SCHEDULER_ASSUMPTIONS.md")
+    p_analyze.add_argument("--llm-summary", action="store_true",
+                           help="append a plain-language summary written by an LLM (needs GEMINI_API_KEY and GHA_LLM_MODEL). "
+                                "Sends only job ids, runner labels and computed numbers to the provider; never affects the plan")
     p_analyze.add_argument("--larger-runners", action="store_true",
                            help="let the plan relabel base-tier jobs to larger-runner labels (they must exist in your org)")
     p_analyze.add_argument("--speedup-exponent", type=float,

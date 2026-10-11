@@ -34,6 +34,7 @@ from gha_optimizer.graph.dependency_graph import build_dependency_graph
 from gha_optimizer.ingestion.github_client import WorkflowRunRecord
 from gha_optimizer.ingestion.history import require_history
 from gha_optimizer.ingestion.workflow_parser import WorkflowSpec, parse_workflow
+from gha_optimizer.llm_summary import LLMClient, summarize
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
 from gha_optimizer.models.duration_estimator import DurationEstimator
 from gha_optimizer.models.store import ModelStore, fingerprint
@@ -74,6 +75,7 @@ def run_pipeline(
     model_dir: str | Path | None = None,
     allow_skipping: bool | None = None,
     replay_stats: dict | None = None,
+    llm_client: LLMClient | None = None,
 ) -> tuple[SchedulePlan, str]:
     """
     Run the full optimization pipeline end to end.
@@ -98,6 +100,8 @@ def run_pipeline(
     replay_stats : Result of :func:`gha_optimizer.advisory.advisory_stats` (counterfactual replay of the graph skip
         policy on this repository's history).  Only used to attach measured rates to the advisory section of the
         explanation; ``None`` says so there.  It never affects the schedule.
+    llm_client : Optional explanation-layer client (``llm_summary.py``).  When given, a validated plain-language
+        summary is appended to the explanation; it never affects the plan, the predictions or the written workflow.
     model_dir : Directory of persisted models (``models/store.py``).  If it holds models trained on exactly this
         history/feature/hyper-parameter fingerprint they are loaded instead of refit; otherwise the models are fit
         and saved there.  ``None`` (default): always fit, never touch disk.
@@ -277,6 +281,11 @@ def run_pipeline(
     # Advisory only: which jobs the graph says this diff cannot reach. Never changes the plan or the proposed YAML.
     advice, unknown_jobs = advise_unreached_jobs(workflow, infer_df["job_structurally_impacted"].to_dict())
     full_explanation += "\n\n" + render_advisory(advice, unknown_jobs, replay_stats)
+
+    # Explanation layer (opt-in): plain-language wording of the facts above. It runs after the plan, the YAML and the
+    # advisory are final and cannot change them; failures and invalid answers are reported in text (llm_summary.py).
+    if llm_client is not None:
+        full_explanation += "\n\n" + summarize(llm_client, plan, advice, unknown_jobs, replay_stats)
 
     if diff:
         full_explanation += "\n\n### Workflow diff\n```diff\n" + diff + "\n```"
