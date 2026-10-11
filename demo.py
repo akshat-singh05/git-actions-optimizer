@@ -70,6 +70,8 @@ def main() -> int:
     parser.add_argument("--repo", required=True, help="owner/repo (must have been ingested)")
     parser.add_argument("--workflow", help="repo-relative workflow path (default: the most-ingested workflow)")
     parser.add_argument("--db", help="database URL (default: DATABASE_URL or sqlite:///gha_optimizer.db)")
+    parser.add_argument("--llm-summary", action="store_true",
+                        help="also print the optional LLM plain-language summary (needs GEMINI_API_KEY and GHA_LLM_MODEL)")
     args = parser.parse_args()
     if args.db:
         os.environ["DATABASE_URL"] = args.db
@@ -180,7 +182,8 @@ def main() -> int:
     # ── STEP 6 ─────────────────────────────────────────────────────
     banner("FEATURE EXTRACTION (strictly-prior history)", step=6)
     try:
-        require_history(snap.history, workflow.jobs.keys(), config.model.min_history_runs, config.model.min_cache_labels)
+        require_history(snap.history, workflow.jobs.keys(), config.model.min_history_runs, config.model.min_cache_labels,
+                        need_failure_labels=True)
     except InsufficientHistoryError as exc:
         print(f"  Declining to predict: {exc}")
         return 2
@@ -251,6 +254,17 @@ def main() -> int:
     for line in (diff or "(no differences)").split("\n")[:40]:
         print(f"    {line}")
     print(explain_changes(plan))
+
+    if args.llm_summary:
+        from gha_optimizer.advisory import advise_unreached_jobs
+        from gha_optimizer.llm_summary import client_from_env, summarize
+
+        llm = client_from_env()
+        if llm is None:
+            print("\n  --llm-summary requested but GEMINI_API_KEY and GHA_LLM_MODEL are not both set; skipping it.")
+        else:
+            advice, unknown = advise_unreached_jobs(workflow, infer_df["job_structurally_impacted"].to_dict())
+            print("\n" + summarize(llm, plan, advice, unknown, None))
 
     # ── STEP 11 ────────────────────────────────────────────────────
     banner("SUMMARY (all improvement figures ESTIMATED, not measured)", step=11)

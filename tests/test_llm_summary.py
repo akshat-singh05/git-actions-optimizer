@@ -186,3 +186,43 @@ def test_summary_never_changes_the_plan_or_the_workflow_and_is_appended_when_val
     plan3, text3, yaml3 = _run(tmp_path, "boom", history, ExplodingClient())
     assert plan3.summary_dict() == plan0.summary_dict() and yaml3 == yaml0
     assert "Unavailable: the model client failed (RuntimeError)" in text3 and "SECRET" not in text3
+
+
+# ---- `gha-optimizer llm-check` ------------------------------------------------------------------------------
+
+class _CheckClient:
+    model = "m-1"
+
+    def __init__(self, reply=None, error=None):
+        self.reply, self.error = reply, error
+
+    def complete(self, system, prompt):
+        assert "ping" == prompt and "OK" in system                       # a tiny fixed request, no repository data
+        if self.error:
+            raise LLMError(self.error)
+        return self.reply
+
+
+def _run_check(monkeypatch, client):
+    import argparse
+
+    from gha_optimizer import cli
+    import gha_optimizer.llm_summary as llm_module
+
+    monkeypatch.setattr(llm_module, "client_from_env", lambda env=None: client)
+    cli.cmd_llm_check(argparse.Namespace())
+
+
+def test_llm_check_reports_success(monkeypatch, capsys):
+    _run_check(monkeypatch, _CheckClient(reply="OK"))
+    out = capsys.readouterr().out
+    assert "OK: model 'm-1' answered" in out and "demo.py" in out
+
+
+def test_llm_check_explains_failures_and_missing_configuration(monkeypatch, capsys):
+    with pytest.raises(SystemExit) as ei:
+        _run_check(monkeypatch, _CheckClient(error="HTTP 404"))
+    assert ei.value.code == 1 and "FAILED: HTTP 404" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as ei:
+        _run_check(monkeypatch, None)
+    assert ei.value.code == 2 and "GEMINI_API_KEY" in capsys.readouterr().out
