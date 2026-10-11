@@ -5,7 +5,7 @@ GitHub Actions Performance Optimizer — Live Local Demo (real data)
 
 Team:
   - Akshat Singh  — 23BKT0005
-  - Aditya Chaubey — 23BCE2274
+  - Aditya Choubey — 23BCE2274
 
 Usage:
     gha-optimizer ingest --repo owner/repo --since 40d       # once
