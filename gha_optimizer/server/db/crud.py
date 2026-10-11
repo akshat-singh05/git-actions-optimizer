@@ -59,28 +59,3 @@ def get_prediction_accuracy(db: Session, limit: int = 100):
         "duration_mae": sum(duration_errors) / len(duration_errors) if duration_errors else 0.0,
         "sample_count": total,
     }
-
-def insert_model_version(db: Session, model_type: str, version: str, metrics: dict, artifact_path: str, training_samples: int):
-    # Deactivate previous versions
-    db.query(models.ModelVersion).filter(models.ModelVersion.model_type == model_type).update({"is_active": False})
-
-    new_version = models.ModelVersion(
-        model_type=model_type,
-        version=version,
-        metrics=metrics,
-        artifact_path=artifact_path,
-        training_samples=training_samples,
-        is_active=True
-    )
-    db.add(new_version)
-    db.commit()
-
-def get_active_model(db: Session, model_type: str):
-    row = db.query(models.ModelVersion).filter(
-        models.ModelVersion.model_type == model_type,
-        models.ModelVersion.is_active.is_(True)
-    ).order_by(desc(models.ModelVersion.created_at)).first()
-
-    if row:
-        return {c.name: getattr(row, c.name) for c in row.__table__.columns}
-    return None

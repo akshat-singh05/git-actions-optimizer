@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from gha_optimizer.worker.celery_app import celery_app
@@ -128,7 +127,7 @@ def process_webhook(self, event_type: str, payload: Dict[str, Any]) -> Dict[str,
     Events handled:
       - push: extract changed files, trigger graph update
       - pull_request: extract changed files, trigger predictions
-      - workflow_run: record execution results, trigger feedback
+      - workflow_run: ingest the real run
       - workflow_job: record per-job results
     """
     cid = str(uuid.uuid4())[:8]
@@ -243,6 +242,32 @@ def _handle_workflow_job(cid: str, repo: str, payload: dict) -> dict:
 
 # ─── 3. Graph Construction ─────────────────────────────────────────
 
+def _graphs_at(repo: str, commit_sha: str):
+    """``(source graph, {workflow path: fused graph})`` of ``repo`` at ``commit_sha`` read from its git mirror, or
+    ``None`` when the commit is not available.  Uses the same per-commit builder as the dataset (no checkout needed)."""
+    from gha_optimizer.config import config
+    from gha_optimizer.features.graph_features import GraphFeatureComputer
+    from gha_optimizer.ingestion.mirror import DEFAULT_MIRROR_ROOT, RepoMirror
+
+    mirror = RepoMirror(repo, DEFAULT_MIRROR_ROOT, token=config.github.token)
+    mirror.ensure(refresh=True)
+    if not mirror.has_commit(commit_sha) and not mirror.fetch_sha(commit_sha):
+        return None
+    computer = GraphFeatureComputer(mirror)
+    try:
+        source = computer.source_graph(commit_sha)
+        fused = {}
+        for path, blob in mirror.list_tree(commit_sha):
+            if path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml")):
+                data = mirror.read_blob(blob)
+                graph = computer.graph_at(commit_sha, data.decode("utf-8", "replace")) if data else None
+                if graph is not None:
+                    fused[path] = graph
+        return source, fused
+    finally:
+        computer.close()
+
+
 @celery_app.task(
     bind=True,
     name="gha_optimizer.generate_dependency_graph",
@@ -254,43 +279,29 @@ def generate_dependency_graph(
     self, repo: str, commit_sha: str, changed_files: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
-    Build/update the heterogeneous dependency graph for a repository.
-    Stores the snapshot in the database.
+    Build the dependency graph of ``repo`` at ``commit_sha`` from the local git mirror (the repository tree plus each
+    workflow fused with it) and report its size.  Nothing is stored: the dataset path recomputes graphs per commit.
+    ``changed_files`` is informational (the whole tree is built).  Returns ``blocked`` if the commit is unavailable.
     """
     cid = str(uuid.uuid4())[:8]
     _log("generate_graph", cid, "Building graph for %s@%s", repo, commit_sha[:8])
 
     try:
-        from gha_optimizer.graph.builder import GraphBuilder
-        from gha_optimizer.graph.analytics import GraphAnalytics
-
-        # Use the repo root or a temp directory
-        repo_root = Path(".gha_optimizer/repos") / repo.replace("/", "_")
-        repo_root.mkdir(parents=True, exist_ok=True)
-
-        builder = GraphBuilder(repo_root)
-
-        # If we have changed files, build source graph from them
-        if changed_files:
-            source_paths = [repo_root / f for f in changed_files if (repo_root / f).exists()]
-            builder.build_from_source(source_paths)
-
-        graph = builder.get_graph()
-
-        # Compute analytics
-        if graph.number_of_nodes() > 0:
-            GraphAnalytics.compute_all_metrics(graph)
-
-        _log("generate_graph", cid, "Graph: %d nodes, %d edges",
-             graph.number_of_nodes(), graph.number_of_edges())
-
+        built = _graphs_at(repo, commit_sha)
+        if built is None:
+            return {"status": "blocked", "reason": "commit_not_in_mirror", "repo": repo, "commit_sha": commit_sha}
+        source, fused = built
+        _log("generate_graph", cid, "Source graph: %d nodes, %d edges; %d workflow graph(s)",
+             source.number_of_nodes(), source.number_of_edges(), len(fused))
         return {
             "status": "complete",
             "correlation_id": cid,
             "repo": repo,
             "commit_sha": commit_sha,
-            "node_count": graph.number_of_nodes(),
-            "edge_count": graph.number_of_edges(),
+            "changed_files": len(changed_files or []),
+            "source_nodes": source.number_of_nodes(),
+            "source_edges": source.number_of_edges(),
+            "workflows": {p: {"nodes": g.number_of_nodes(), "edges": g.number_of_edges()} for p, g in fused.items()},
         }
 
     except Exception as exc:
@@ -353,106 +364,7 @@ def extract_features(self, repo: str, commit_sha: str) -> Dict[str, Any]:
         raise self.retry(exc=exc)
 
 
-# ─── 5. Model Retraining ───────────────────────────────────────────
-
-@celery_app.task(
-    bind=True,
-    name="gha_optimizer.retrain_models",
-    max_retries=1,
-    default_retry_delay=60,
-    time_limit=1800,
-)
-def retrain_models(self, repo: str, force: bool = False) -> Dict[str, Any]:
-    """
-    Retrain ML models on the real ingested dataset of ``repo``.
-    Checks for drift first, then fits cache-miss, failure and duration models; a model whose
-    labels are insufficient (e.g. no log-derived cache labels) is reported as not trained.
-
-    The saved artifacts (``<model_dir>/<kind>.joblib``, registered in the model_versions table) are fitted on the
-    per-commit-graph dataset and are NOT read by ``run_pipeline`` / ``/api/v1/optimize``, which use their own
-    fingerprint-checked models under ``<model_dir>/<workflow>/`` (``models/store.py``).
-    """
-    cid = str(uuid.uuid4())[:8]
-    _log("retrain_models", cid, "Retraining models for %s (force=%s)", repo, force)
-
-    try:
-        from gha_optimizer.server.db.session import SessionLocal, init_db
-        from gha_optimizer.server.db import crud
-        from gha_optimizer.feedback.drift_detector import DriftDetector
-        from gha_optimizer.features.dataset import build_dataset
-        from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
-        from gha_optimizer.models.failure_predictor import FailurePredictor
-        from gha_optimizer.models.duration_estimator import DurationEstimator
-        from gha_optimizer.config import config
-
-        init_db()
-        db = SessionLocal()
-        try:
-            # Check drift first
-            accuracy = crud.get_prediction_accuracy(db)
-            detector = DriftDetector()
-            drift_report = detector.check(accuracy)
-
-            if not drift_report.any_drift and not force:
-                _log("retrain_models", cid, "No drift detected, skipping retrain")
-                return {
-                    "status": "skipped",
-                    "reason": "no_drift",
-                    "drift_report": drift_report.summary,
-                }
-
-            train_df, _info = build_dataset(db, repo)
-            n_runs = int(train_df["run_id"].nunique()) if len(train_df) else 0
-            if n_runs < config.model.min_history_runs:
-                _log("retrain_models", cid, "Insufficient training data (%d runs, need %d)",
-                     n_runs, config.model.min_history_runs)
-                return {
-                    "status": "blocked",
-                    "reason": "insufficient_data",
-                    "runs": n_runs,
-                    "required_runs": config.model.min_history_runs,
-                }
-
-            _log("retrain_models", cid, "Retraining with %d rows from %d runs", len(train_df), n_runs)
-
-            model_dir = config.model.model_dir
-            model_dir.mkdir(parents=True, exist_ok=True)
-            version = str(uuid.uuid4())[:8]
-            results: Dict[str, Any] = {}
-            for kind, model, fname in (
-                ("cache_miss", CacheMissPredictor(), "cache_miss.joblib"),
-                ("failure", FailurePredictor(), "failure.joblib"),
-                ("duration", DurationEstimator(), "duration.joblib"),
-            ):
-                try:
-                    metrics = model.fit(train_df)
-                except ValueError as exc:  # labels insufficient: report, do not fabricate
-                    results[kind] = {"status": "not_trained", "reason": str(exc)}
-                    continue
-                model.save(model_dir / fname)
-                crud.insert_model_version(db, kind, version, metrics, str(model_dir / fname), len(train_df))
-                results[kind] = {"status": "trained", "metrics": metrics}
-
-            _log("retrain_models", cid, "Retraining complete: %s", {k: v["status"] for k, v in results.items()})
-            return {
-                "status": "complete",
-                "correlation_id": cid,
-                "rows_used": len(train_df),
-                "runs_used": n_runs,
-                "drift_report": drift_report.summary,
-                "models": results,
-                "model_version": version,
-            }
-
-        finally:
-            db.close()
-
-    except Exception as exc:
-        _err("retrain_models", cid, "Failed: %s", exc)
-        raise self.retry(exc=exc)
-
-
-# ─── 6. Benchmark Execution ────────────────────────────────────────
+# ─── 5. Benchmark Execution ────────────────────────────────────────
 
 @celery_app.task(
     bind=True,
@@ -461,39 +373,28 @@ def retrain_models(self, repo: str, force: bool = False) -> Dict[str, Any]:
     time_limit=600,
 )
 def run_benchmark(self, repo: str, commit_sha: str) -> Dict[str, Any]:
-    """Run graph benchmarks and store results."""
+    """Measure building the real graph of ``repo`` at ``commit_sha`` (source tree + each workflow) from the git
+    mirror: wall-clock of the build, memory estimate and snapshot size of the largest fused graph.  ``blocked`` if the
+    commit is unavailable; never benchmarks an empty placeholder graph."""
     cid = str(uuid.uuid4())[:8]
     _log("run_benchmark", cid, "Benchmarking %s@%s", repo, commit_sha[:8])
 
     try:
         from gha_optimizer.graph.benchmark import GraphBenchmarker
-        from gha_optimizer.graph.builder import GraphBuilder
-
-        repo_root = Path(".gha_optimizer/repos") / repo.replace("/", "_")
-        repo_root.mkdir(parents=True, exist_ok=True)
 
         benchmarker = GraphBenchmarker()
-        builder = GraphBuilder(repo_root)
+        built = benchmarker.time_operation("build", _graphs_at, repo, commit_sha)
+        if built is None:
+            return {"status": "blocked", "reason": "commit_not_in_mirror", "repo": repo, "commit_sha": commit_sha}
+        source, fused = built
+        graph = max(fused.values(), key=lambda g: g.number_of_nodes()) if fused else source
 
-        # Time the graph build
-        def _build():
-            builder.build_from_source([])
-            return builder.get_graph()
-        graph = benchmarker.time_operation("build", _build)
-
-        # Measure memory and snapshot size
         benchmarker.measure_memory(graph)
         benchmarker.measure_snapshot_size(graph)
+        report_dict = benchmarker.generate_report(graph).model_dump()
 
-        # Generate consolidated report
-        report = benchmarker.generate_report(graph)
-        report_dict = report.model_dump()
-
-        _log("run_benchmark", cid,
-             "Benchmark: build=%.1fms, nodes=%d, edges=%d",
-             report_dict.get("graph_build_time_ms", 0),
-             report_dict.get("node_count", 0),
-             report_dict.get("edge_count", 0))
+        _log("run_benchmark", cid, "Benchmark: build=%.1fms, nodes=%d, edges=%d",
+             report_dict.get("graph_build_time_ms") or 0.0, report_dict.get("node_count", 0), report_dict.get("edge_count", 0))
 
         return {
             "status": "complete",
@@ -506,4 +407,3 @@ def run_benchmark(self, repo: str, commit_sha: str) -> Dict[str, Any]:
     except Exception as exc:
         _err("run_benchmark", cid, "Failed: %s", exc)
         raise self.retry(exc=exc)
-

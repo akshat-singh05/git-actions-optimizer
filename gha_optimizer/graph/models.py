@@ -231,14 +231,15 @@ class GraphQualityReport(BaseModel):
 # ─────────────────────────────────────────────────────────────────────
 
 class GraphBenchmarkReport(BaseModel):
-    """Performance measurements for graph operations."""
-    graph_build_time_ms: float = 0.0
-    incremental_update_time_ms: float = 0.0
-    traversal_time_ms: float = 0.0
-    query_performance_ms: float = 0.0
-    memory_usage_bytes: int = 0
-    parser_throughput_files_per_sec: float = 0.0
-    snapshot_storage_bytes: int = 0
+    """Performance measurements for graph operations.  A field that was not measured is ``None`` (never 0, which
+    would read as a measurement)."""
+    graph_build_time_ms: Optional[float] = None
+    incremental_update_time_ms: Optional[float] = None
+    traversal_time_ms: Optional[float] = None
+    query_performance_ms: Optional[float] = None
+    memory_usage_bytes: Optional[int] = None      # size of the serialised graph (a proxy), see GraphBenchmarker
+    parser_throughput_files_per_sec: Optional[float] = None
+    snapshot_storage_bytes: Optional[int] = None
     node_count: int = 0
     edge_count: int = 0
     timestamp: datetime = Field(default_factory=datetime.utcnow)

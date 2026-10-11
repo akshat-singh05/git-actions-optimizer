@@ -40,9 +40,9 @@ class GraphBenchmarker:
         return result
 
     def measure_memory(self, g: nx.MultiDiGraph) -> int:
-        """Approximate memory footprint of the graph via JSON serialization."""
+        """Proxy for the graph's memory footprint: size of its JSON serialisation (not a process-memory measurement)."""
         try:
-            blob = json.dumps(nx.node_link_data(g))
+            blob = json.dumps(nx.node_link_data(g), default=str)
             size = sys.getsizeof(blob)
             self._timings["memory_usage_bytes"] = size
             return size
@@ -62,13 +62,13 @@ class GraphBenchmarker:
     def generate_report(self, g: nx.MultiDiGraph) -> GraphBenchmarkReport:
         """Produce a consolidated benchmark report."""
         return GraphBenchmarkReport(
-            graph_build_time_ms=self._timings.get("build", 0.0),
-            incremental_update_time_ms=self._timings.get("incremental_update", 0.0),
-            traversal_time_ms=self._timings.get("traversal", 0.0),
-            query_performance_ms=self._timings.get("query", 0.0),
-            memory_usage_bytes=self._timings.get("memory_usage_bytes", 0),
-            parser_throughput_files_per_sec=self._timings.get("parser_throughput", 0.0),
-            snapshot_storage_bytes=self._timings.get("snapshot_storage_bytes", 0),
+            graph_build_time_ms=self._timings.get("build"),
+            incremental_update_time_ms=self._timings.get("incremental_update"),
+            traversal_time_ms=self._timings.get("traversal"),
+            query_performance_ms=self._timings.get("query"),
+            memory_usage_bytes=self._timings.get("memory_usage_bytes"),
+            parser_throughput_files_per_sec=self._timings.get("parser_throughput"),
+            snapshot_storage_bytes=self._timings.get("snapshot_storage_bytes"),
             node_count=g.number_of_nodes(),
             edge_count=g.number_of_edges(),
         )
