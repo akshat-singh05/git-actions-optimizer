@@ -1,0 +1,21 @@
+# Keep the build context small and free of local data / secrets
+.git
+.github
+.venv
+.claude
+.gha_optimizer
+.env
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.ruff_cache
+build
+dist
+tests
+docs
+examples
