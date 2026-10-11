@@ -1,0 +1,85 @@
+{
+ "n_measured_runs": 12,
+ "all_success": true,
+ "critical_path_s": {
+  "A_original": {
+   "n": 6,
+   "median": 172.5,
+   "mean": 162.8,
+   "min": 131.0,
+   "max": 177.0,
+   "sd": 19.0
+  },
+  "B_proposed": {
+   "n": 6,
+   "median": 173.0,
+   "mean": 165.3,
+   "min": 120.0,
+   "max": 182.0,
+   "sd": 22.9
+  },
+  "median_diff_B_minus_A_s": 0.5,
+  "median_diff_pct": 0.29,
+  "permutation_p": 0.922
+ },
+ "run_s": {
+  "A_original": {
+   "n": 6,
+   "median": 176.5,
+   "mean": 166.5,
+   "min": 134.0,
+   "max": 180.0,
+   "sd": 19.2
+  },
+  "B_proposed": {
+   "n": 6,
+   "median": 177.0,
+   "mean": 169.3,
+   "min": 124.0,
+   "max": 186.0,
+   "sd": 22.8
+  },
+  "median_diff_B_minus_A_s": 0.5,
+  "median_diff_pct": 0.28,
+  "permutation_p": 1.0
+ },
+ "billable_job_s": {
+  "A_original": {
+   "n": 6,
+   "median": 211.0,
+   "mean": 204.3,
+   "min": 172.0,
+   "max": 222.0,
+   "sd": 19.8
+  },
+  "B_proposed": {
+   "n": 6,
+   "median": 215.5,
+   "mean": 204.8,
+   "min": 150.0,
+   "max": 228.0,
+   "sd": 28.2
+  },
+  "median_diff_B_minus_A_s": 4.5,
+  "median_diff_pct": 2.13,
+  "permutation_p": 0.805
+ },
+ "per_job_median_s": {
+  "lint": {
+   "A": 35.0,
+   "B": 36.0
+  },
+  "typecheck": {
+   "A": 45.0,
+   "B": 44.5
+  },
+  "test": {
+   "A": 134.0,
+   "B": 133.0
+  }
+ },
+ "same_steps_and_conclusions_everywhere": true,
+ "jobs_all_success": true,
+ "needs_respected_every_run": true,
+ "step_count_per_run": 30
+}
