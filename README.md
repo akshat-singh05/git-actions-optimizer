@@ -1,144 +1,128 @@
-# gha-optimizer
+# GitHub Actions Performance Optimizer
 
-An ML-based **prescriptive scheduler** for GitHub Actions CI/CD pipelines.
-Unlike analytics-only tools (GitHub Insights, CircleCI Insights), this
-system **predicts** cache invalidation, job failures, and runtime duration,
-then **autonomously re-orders and re-schedules** pipeline jobs to minimize
-wall-clock time, compute cost, and energy consumption.
+A machine-learning-based, dependency-graph-aware scheduler for GitHub Actions CI/CD pipelines.
 
-> **Patent-ready architecture:** The core novel mechanism — a dependency-
-> graph-aware cache invalidation predictor combined with dynamic job
-> reordering — is implemented as a separable, defensible technical
-> contribution distinct from prior art.
+B.Tech CSE capstone (BCSE497J), VIT. Akshat Singh (23BKT0005), Aditya Choubey (23BCE2274). Supervisor: Prof. Pushpa Lakshmi R, SCOPE.
 
-## Architecture
+> **Status: research prototype.** It ingests real GitHub Actions history, builds a dependency graph, predicts job
+> failure / duration / cache misses, and proposes a re-scheduled workflow with a reviewable diff. It does **not**
+> show a measured speed-up: no optimized workflow has been run, and every improvement figure it prints is labelled
+> ESTIMATED. The evaluation (`docs/RESULTS.md`) is deliberately critical; read it before relying on any claim.
 
+## The idea
+
+**Repository -> Graph -> Features -> Predictions -> Scheduler -> Optimized workflow.**
+
+1. A heterogeneous graph links source files, workflow jobs, steps, cache keys and `needs` edges (five static rules, each
+   with a provenance and a confidence).
+2. Features per (run, job) combine graph structure with history from earlier runs only: whether the diff reaches the job,
+   cache-key touch, prior failure rate, prior duration, author / temporal signals.
+3. Three models predict job failure, duration and cache misses.
+4. A scheduler respects `needs`, orders jobs fail-fast, and selects runners by `alpha*time + beta*cost + gamma*energy`.
+5. A generator writes a **proposed** workflow file and a diff; the original file is never modified.
+
+## What the evaluation found (details and caveats: [`docs/RESULTS.md`](docs/RESULTS.md))
+
+* Training data is real: seven repositories, about 4,200 runs and 62,700 (run, job) rows, collected with
+  `gha-optimizer ingest`. Two repositories (pydantic, cli/cli) were ingested under a written plan
+  ([`docs/HELDOUT_PLAN.md`](docs/HELDOUT_PLAN.md)) so the graph rules could be tested on workflows they were not built on.
+* **The models beat naive baselines only in some repositories.** The default failure model (regularised logistic
+  regression) beats the "job's prior failure rate" baseline significantly in fastapi (+0.085 PR-AUC) and in the held-out
+  pydantic (+0.110), is indistinguishable elsewhere, and is never significantly worse. The raw-seconds duration model is
+  worse than the baseline everywhere; the log-ratio duration target beats it in some repositories and loses in others.
+* **The graph describes the workflow only where the workflow states file-to-job relationships** (poetry, fastapi). On
+  held-out workflows without file-based gating it is uninformative.
+* **The scheduler's default plan equals the baseline** (0.0% estimated saving on real poetry). Its two levers are opt-in
+  and unmeasured: skip guards cannot save time under GitHub's `needs` rules, and runner upsizing rests on an assumed
+  speed-up law.
+* **Skipping jobs the graph says a diff cannot reach** saves 12-17% of billable time in two repositories but would hide
+  3-10% of failing runs, and did not generalise to the held-out repository. It is therefore reported as an advisory
+  section only; deferring those jobs on pull requests was evaluated under a pre-registered plan and is not supported.
+* A GNN and a matrix-reduction engine were built, verified against the data and **removed** (see `docs/RESULTS.md` 6).
+
+## Component status
+
+| component | status | notes |
+|---|---|---|
+| Ingestion of real history (runs, jobs, logs, git mirror, diffs) | IMPLEMENTED | resumable; log retention limits cache labels |
+| Dependency graph and fusion rules | IMPLEMENTED | static approximation; modest predictive value |
+| Feature extraction (history strictly from earlier runs) | IMPLEMENTED | |
+| Failure / duration / cache-miss models | IMPLEMENTED | mixed results vs baselines; fresh-data check interim |
+| Persisted models (fingerprint-checked) | IMPLEMENTED | never loads a stale artifact |
+| Scheduler | IMPLEMENTED | default plan = baseline; levers opt-in; figures ESTIMATED |
+| Workflow generator (proposed file + diff + explanation) | IMPLEMENTED | never edits the original; never changes build matrices |
+| Advisory report (graph-unreached jobs, with measured rates) | IMPLEMENTED | not applied automatically |
+| Evaluation tooling (`eval-models`, `replay-impact`, `dataset-report`) | IMPLEMENTED | rolling-origin folds, paired bootstrap |
+| LLM explanation layer (opt-in wording only) | IMPLEMENTED, **not verified against the live API** | cannot influence the result |
+| FastAPI server and dashboard | PARTIALLY IMPLEMENTED | `/api/v1/optimize` is tested; webhook / Celery / Postgres / Redis paths were not run end to end here |
+| Feedback loop (drift detection, retraining task) | PARTIALLY IMPLEMENTED | retrained artifacts are not consumed by the pipeline |
+| Measured end-to-end speed-up | **NOT DONE** | would need real runs of both workflows |
+
+## Quick start
+
+Python 3.10+. A GitHub token is needed to ingest history (job logs require authentication).
+
+```bash
+pip install -e ".[dev]"              # core pipeline, CLI and tests
+pip install -e ".[server]"           # optional: API server, Celery worker, Postgres driver
+
+export GITHUB_TOKEN=...              # or put it in .env (see .env.example)
+
+# 1. collect real history for a repository (bounded; resumable)
+gha-optimizer ingest --repo owner/repo --workflow ci.yml --since 40d --max-runs 300
+gha-optimizer build-dataset --repo owner/repo        # per-commit graph features
+
+# 2. analyze a workflow in a checkout of that repository
+gha-optimizer analyze path/to/checkout/.github/workflows/ci.yml --repo owner/repo --changed src/a.py,src/b.py
+#    writes ci.optimized.yml next to it and prints the explanation, the diff, the advisory section and ESTIMATED figures;
+#    declines (exit 2) when the history is too thin - it never substitutes synthetic data
+
+# 3. judge the claims on your own data
+gha-optimizer eval-models   --repo owner/repo --out docs/MODEL_EVAL.md
+gha-optimizer replay-impact --repo owner/repo --out docs/IMPACT_REPLAY.md
+gha-optimizer dataset-report --repo owner/repo --out docs/DATASET_REPORT.md
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                     DATA INGESTION LAYER                         │
-│  GitHub API/Webhooks → Workflow YAML parser → Execution history  │
-│  Git commit graph → File change diffs → Job logs & timings       │
-└──────────────────────────┬───────────────────────────────────────┘
-                            ↓
-┌──────────────────────────────────────────────────────────────────┐
-│                  FEATURE EXTRACTION LAYER                        │
-│  Dependency graph builder (files ↔ jobs ↔ packages ↔ cache keys) │
-│  Historical execution embeddings · Cache key fingerprinting      │
-│  Commit diff features · Author/streak/temporal features          │
-└──────────────────────────┬───────────────────────────────────────┘
-                            ↓
-┌──────────────────────────────────────────────────────────────────┐
-│                   PREDICTION ENGINE (ML CORE)                    │
-│  Model A: Cache-Miss Predictor (GBT/XGBoost classifier)         │
-│  Model B: Job Failure Predictor (GBT + threshold calibration)    │
-│  Model C: Duration Estimator (regression + quantile bands)       │
-│  Model D: GNN Cache Predictor (HeteroConv — patent core)        │
-└──────────────────────────┬───────────────────────────────────────┘
-                            ↓
-┌──────────────────────────────────────────────────────────────────┐
-│                OPTIMIZATION / SCHEDULER LAYER                    │
-│  Job DAG re-orderer (fail-fast topological scheduling)           │
-│  Cost-aware runner allocator (α·time + β·cost + γ·energy)        │
-│  Matrix reduction engine (cluster redundant cells)               │
-│  Probabilistic early-exit propagation through DAG                │
-└──────────────────────────┬───────────────────────────────────────┘
-                            ↓
-┌──────────────────────────────────────────────────────────────────┐
-│                 WORKFLOW GENERATION LAYER                         │
-│  Auto-generates optimized .github/workflows/*.yml                │
-│  Produces diff + explanation ("why this change")                 │
-│  Human-in-the-loop approval / auto-apply mode                    │
-└──────────────────────────┬───────────────────────────────────────┘
-                            ↓
-┌──────────────────────────────────────────────────────────────────┐
-│               FEEDBACK / CONTINUOUS LEARNING LOOP                │
-│  Actual outcomes → drift detection → retrain models              │
-└──────────────────────────────────────────────────────────────────┘
-```
 
-## What's here
+Useful flags for `analyze`: `--enable-skips`, `--larger-runners`, `--speedup-exponent`, `--llm-summary` (needs
+`GEMINI_API_KEY` and `GHA_LLM_MODEL`; sends only job ids and computed numbers), `--no-model-store`.
+
+Server: `gha-optimizer serve` (FastAPI on :8000; `POST /api/v1/optimize` returns 422 when history is missing).
+Full stack: `docker-compose up --build` (Postgres, Redis, API, Celery worker).
+Standalone demo UI on real ingested data: `python demo_server.py --repo owner/repo`.
+
+## Repository layout
 
 ```
 gha_optimizer/
-  config.py              Central configuration (env-driven)
-  cli.py                 CLI: analyze, serve, train, evaluate
-  pipeline.py            Wires all layers together end to end
-
-  ingestion/             Layer 1 — workflow YAML parsing, GitHub API client
-  graph/                 Layer 2 — dependency graph builder
-  features/              Layer 2 — ML-ready feature extraction
-  models/                Layer 3 — ML models (tabular + GNN)
-    cache_miss_predictor.py    Model A — GBT cache-miss classifier
-    failure_predictor.py       Model B — GBT failure classifier
-    duration_estimator.py      Model C — GBT duration regressor
-    gnn_cache_predictor.py     Model D — HeteroConv GNN (patent core)
-    matrix_reducer.py          Matrix cell clustering engine
-    graph_utils.py             networkx → torch_geometric conversion
-  scheduler/             Layer 4 — optimization & scheduling
-  generator/             Layer 5 — workflow YAML rewriting
-  server/                Layer 6 — FastAPI backend
-  feedback/              Layer 6 — drift detection & retraining
-
-dashboard/               React-free SPA dashboard (vanilla JS + Chart.js)
-
-examples/
-  sample_workflow.yml    5-job GitHub Actions workflow
-  sample_repo/           Toy source tree for the graph builder
-  synthetic_history.py   Generates training data (no GitHub token needed)
-  demo.py                Runs the full pipeline end to end
-
-tests/                   25+ tests covering all modules
+  cli.py, pipeline.py, config.py     entry points and orchestration
+  ingestion/                         GitHub client, log parsing, git mirror, history loading
+  graph/                             graph builder, fusion rules, CI semantics, workflow expansion
+  features/                          feature extraction, per-commit graph features, dataset + reports
+  models/                            failure / duration / cache models, evaluation, rolling-origin eval, model store
+  scheduler/                         fail-fast DAG scheduler and runner selection
+  generator/                         proposed workflow + diff + explanation
+  advisory.py, replay.py             advisory report; counterfactual replay and deferral evaluation
+  llm_summary.py                     optional explanation layer
+  server/, worker/, feedback/        FastAPI app + DB, Celery tasks, drift detection and retraining
+dashboard/                           static page that shows only what the API returns
+docs/                                design notes, generated reports, pre-registered plans, results
+tests/                               315 tests (fixtures are data, not tests)
 ```
 
-## Quickstart
+## Documentation
 
-```bash
-# Install
-pip install -e .
+* [`docs/RESULTS.md`](docs/RESULTS.md) - consolidated results and threats to validity
+* [`docs/REAL_DATA_FOUNDATION.md`](docs/REAL_DATA_FOUNDATION.md) - how the real dataset is collected and what it contains
+* [`docs/GRAPH_FEATURES.md`](docs/GRAPH_FEATURES.md) - graph rules and the structural features
+* [`docs/MODEL_EVAL.md`](docs/MODEL_EVAL.md), [`docs/FROZEN_CHOICE.md`](docs/FROZEN_CHOICE.md), [`docs/MODEL_EVAL_FRESH.md`](docs/MODEL_EVAL_FRESH.md) - model comparison, the frozen default and its fresh-data test
+* [`docs/SCHEDULER_ASSUMPTIONS.md`](docs/SCHEDULER_ASSUMPTIONS.md) - what the scheduler's estimate rests on
+* [`docs/IMPACT_REPLAY.md`](docs/IMPACT_REPLAY.md), [`docs/HELDOUT_PLAN.md`](docs/HELDOUT_PLAN.md), [`docs/HELDOUT_RESULTS.md`](docs/HELDOUT_RESULTS.md), [`docs/DEFERRAL_PLAN.md`](docs/DEFERRAL_PLAN.md) - the skip policy, its held-out test and the deferral evaluation
+* [`docs/LLM_EXPLANATION.md`](docs/LLM_EXPLANATION.md) - the optional explanation layer and its guarantees
 
-# Run the full pipeline on synthetic data
-python examples/demo.py
+## Principles the code follows
 
-# Run tests
-pytest tests/ -v
-
-# Start the API server (requires: pip install fastapi uvicorn)
-gha-optimizer serve
-
-# Open the dashboard
-# Open dashboard/index.html in your browser
-
-# Run an ablation study
-gha-optimizer evaluate
-
-# Train on real GitHub data
-export GITHUB_TOKEN=ghp_...
-gha-optimizer train --repo owner/repo
-```
-
-## Novel Features by Patent Strength
-
-| Feature | Patent Strength | Implementation |
-|---------|----------------|----------------|
-| Graph-based cache-miss prediction (GNN) | **High** | `models/gnn_cache_predictor.py` |
-| Dynamic DAG re-scheduling from ML predictions | **High** | `scheduler/optimizer.py` |
-| Probabilistic skip propagation | **High** | `scheduler/optimizer.py` |
-| Cost-aware runner allocation | Medium | `scheduler/optimizer.py` |
-| Matrix reduction (redundant cell elimination) | Medium | `models/matrix_reducer.py` |
-| Energy/CO₂-aware scheduling | Medium | `scheduler/optimizer.py` |
-| Failure prediction with threshold calibration | Medium | `models/failure_predictor.py` |
-
-## Tech Stack
-
-- **Core:** Python 3.10+, networkx, scikit-learn, pandas
-- **ML Upgrade:** XGBoost (optional), PyTorch + torch_geometric (GNN)
-- **Server:** FastAPI + uvicorn
-- **Dashboard:** Vanilla JS + Chart.js (no build step)
-- **Data:** SQLite (upgradeable to PostgreSQL)
-- **Integration:** GitHub REST API via `requests`
-
-## Evaluation
-
-The system supports a built-in ablation study (`gha-optimizer evaluate`)
-comparing multiple scheduler weight configurations to demonstrate the
-incremental value of each component.
+* No synthetic or default values are presented as results; the only synthetic generator lives in the tests.
+* ESTIMATED (from predicted durations) and MEASURED (on recorded runs) are never mixed.
+* A generated workflow never violates a `needs` relationship and never overwrites the original file.
+* Machine learning and scheduling do not depend on any LLM; the optional LLM layer only words the facts.
+* Claims are pre-registered where they could be tuned, and negative results are kept.
