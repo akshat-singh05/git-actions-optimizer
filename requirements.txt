@@ -39,3 +39,4 @@ tree-sitter-go>=0.21
 # validation history marker 8
 # validation history marker 11
 # validation history marker 14
+# validation history marker 17
