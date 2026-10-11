@@ -1,5 +1,6 @@
 # Generated data: ingested GitHub history, git mirrors, caches, saved models
 .gha_optimizer/
+.env
 *.db
 
 # Python build artifacts
