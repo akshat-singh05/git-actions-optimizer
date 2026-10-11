@@ -234,9 +234,14 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
             except Exception as exc:  # optional context for the advisory section only
                 logger.warning("Advisory replay figures unavailable: %s", exc)
                 replay_stats = None
+            llm_client = None
+            if request.llm_summary:
+                from gha_optimizer.llm_summary import client_from_env
+                llm_client = client_from_env()     # None when not configured: the response is then unchanged
             plan, explanation = run_pipeline(
                 workflow_path=workflow_path,
                 replay_stats=replay_stats,
+                llm_client=llm_client,
                 repo_root=repo_root,
                 tracked_files=tracked_files(repo_root) or request.changed_files,
                 history=history,
