@@ -22,7 +22,7 @@ psycopg2-binary>=2.9
 redis>=5.0
 celery>=5.3
 pydantic-settings>=2.2
-structlog>=24.1
+python-dotenv>=1.0
 
 # Phase 2B: Graph Engine & AST Parsing
 tree-sitter>=0.21

@@ -392,6 +392,8 @@ def cmd_train(args: argparse.Namespace) -> None:
         model.save(model_dir / fname)
         print(f"{name}: {metrics}")
     print(f"\nModels saved to: {model_dir}")
+    print("Note: these are standalone artifacts fitted on the per-commit-graph dataset. `analyze` and the API do not "
+          "read them; they keep their own fingerprint-checked models under <model-dir>/<workflow>/ (models/store.py).")
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
