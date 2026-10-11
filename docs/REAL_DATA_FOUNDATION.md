@@ -34,7 +34,7 @@ GitHub REST API ──► GithubClient ──► RepoIngestor ──► DB (runs
 | `features/feature_extraction.py` — strictly-prior historical features, NaN for unknown | IMPLEMENTED | `tests/test_feature_leakage.py` (13): perturbing a run's own/future outcomes does not change its features; the original code failed the same perturbation in all six historical features |
 | Dataset, temporal split, `dataset-report` | IMPLEMENTED | `docs/DATASET_REPORT.md` is produced by `gha-optimizer dataset-report` |
 | Alembic `002_real_ingestion` | IMPLEMENTED | upgrade → downgrade → upgrade verified; zero ORM/DB drift after upgrade |
-| Models (cache-miss, failure, duration) | PARTIALLY IMPLEMENTED | NaN-capable GBT, temporal-holdout metrics with base rates and a naive baseline. `fit` still happens on every `run_pipeline()`; `gha-optimizer train` persists joblib artifacts (verified to reload) but the pipeline does not load them. **On the real data the models show little or no skill over naive baselines** (see `docs/DATASET_REPORT.md` and the metrics block printed by `train` / `analyze`) |
+| Models (cache-miss, failure, duration) | PARTIALLY IMPLEMENTED | NaN-capable GBT, temporal-holdout metrics with base rates and a naive baseline. `fit` still happens on every `run_pipeline()`; the pipeline now loads fingerprint-matched artifacts from `models/store.py` and refits otherwise (the old `train` command and its unused loose artifacts were removed 2026-10-12). **On the real data the models show little or no skill over naive baselines** (see `docs/DATASET_REPORT.md` and the metrics block printed by `analyze` and `demo.py`) |
 | GNN cache predictor | REMOVED (2026-10-08) | never ran (torch not installed) and could not work on the current graph schema; see CLAUDE.md. Recoverable from git history |
 | Scheduler | IMPLEMENTED, **assumption-driven** | see §5: the estimated gain is dominated by an assumed runner speed-up law |
 | Demos (`demo.py`, `demo_server.py`, `examples/demo.py`) | IMPLEMENTED | re-pointed to real ingested repositories; their own synthetic generators were deleted |
@@ -117,7 +117,6 @@ gha-optimizer ingest --repo python-poetry/poetry --workflow tests.yaml --since 4
 gha-optimizer ingest-status --repo python-poetry/poetry
 gha-optimizer build-dataset --repo python-poetry/poetry
 gha-optimizer dataset-report --repo python-poetry/poetry --out docs/DATASET_REPORT.md
-gha-optimizer train --repo python-poetry/poetry
 gha-optimizer analyze <checkout>/.github/workflows/tests.yaml --repo python-poetry/poetry --changed a.py,b.py
 python demo.py --repo python-poetry/poetry
 pytest tests/ -v && ruff check gha_optimizer/ --select E,F,W --ignore E501

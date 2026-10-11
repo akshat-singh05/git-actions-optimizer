@@ -30,8 +30,9 @@ B.Tech CSE capstone (BCSE497J), VIT. Akshat Singh (23BKT0005), Aditya Choubey (2
   regression) beats the "job's prior failure rate" baseline significantly in fastapi (+0.085 PR-AUC) and in the held-out
   pydantic (+0.110), is indistinguishable elsewhere, and is never significantly worse. The raw-seconds duration model is
   worse than the baseline everywhere; the log-ratio duration target beats it in some repositories and loses in others.
-* **The graph describes the workflow only where the workflow states file-to-job relationships** (poetry, fastapi). On
-  held-out workflows without file-based gating it is uninformative.
+* **The graph describes the workflow only where the workflow declares file-to-job relationships** (poetry, fastapi). On
+  held-out workflows without file-based gating it is uninformative, and where gating is computed in shell scripts (ruff,
+  uv) it points the right way only weakly.
 * **The scheduler's default plan equals the baseline** (0.0% estimated saving on real poetry). Its two levers are opt-in
   and unmeasured: skip guards cannot save time under GitHub's `needs` rules, and runner upsizing rests on an assumed
   speed-up law.
@@ -54,8 +55,8 @@ B.Tech CSE capstone (BCSE497J), VIT. Akshat Singh (23BKT0005), Aditya Choubey (2
 | Advisory report (graph-unreached jobs, with measured rates) | IMPLEMENTED | not applied automatically |
 | Evaluation tooling (`eval-models`, `replay-impact`, `dataset-report`) | IMPLEMENTED | rolling-origin folds, paired bootstrap |
 | LLM explanation layer (opt-in wording only) | IMPLEMENTED, **not verified against the live API** | cannot influence the result |
-| FastAPI server and dashboard | PARTIALLY IMPLEMENTED | `/api/v1/optimize` is tested; webhook / Celery / Postgres / Redis paths were not run end to end here |
-| Feedback loop (drift detection, retraining task) | PARTIALLY IMPLEMENTED | retrained artifacts are not consumed by the pipeline |
+| FastAPI server, Celery worker and dashboard | IMPLEMENTED (run once end to end) | `docker compose up` was exercised with a signed webhook, a private repo and Postgres (`docs/FULL_STACK_RUN.md`); without `GITHUB_WEBHOOK_SECRET` the webhook accepts unsigned requests |
+| Feedback loop (drift detection, retraining) | REMOVED | nothing recorded predictions, so it could never run; see `docs/FULL_STACK_RUN.md` |
 | Measured end-to-end speed-up | **NOT DONE** | would need real runs of both workflows |
 
 ## Quick start
@@ -103,10 +104,10 @@ gha_optimizer/
   generator/                         proposed workflow + diff + explanation
   advisory.py, replay.py             advisory report; counterfactual replay and deferral evaluation
   llm_summary.py                     optional explanation layer
-  server/, worker/, feedback/        FastAPI app + DB, Celery tasks, drift detection and retraining
+  server/, worker/                   FastAPI app + DB, Celery tasks (ingest, per-commit graph, benchmark)
 dashboard/                           static page that shows only what the API returns
 docs/                                design notes, generated reports, pre-registered plans, results
-tests/                               315 tests (fixtures are data, not tests)
+tests/                               330 tests (fixtures are data, not tests)
 ```
 
 ## Documentation

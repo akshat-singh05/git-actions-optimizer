@@ -114,8 +114,9 @@ never in a URL. [LLM_EXPLANATION, FULL_STACK_RUN]
 
 **20. Is the server production ready?**
 No. The full stack was run once end to end (webhook -> Redis -> worker -> authenticated clone -> Postgres), which exposed five
-defects that are now fixed; but without `GITHUB_WEBHOOK_SECRET` the webhook accepts unsigned requests, and several tasks were
-not exercised. [FULL_STACK_RUN]
+defects that are now fixed, and the remaining Celery tasks were then run on real data. Caveats: without
+`GITHUB_WEBHOOK_SECRET` the webhook accepts unsigned requests, and the feedback / drift loop was removed because nothing ever fed
+it. [FULL_STACK_RUN]
 
 ## Hard questions - honest answers
 

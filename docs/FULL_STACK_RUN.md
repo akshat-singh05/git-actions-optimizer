@@ -41,6 +41,30 @@ Also changed: `docker-compose.yml` passes `GITHUB_WEBHOOK_SECRET` to the API.
   `workflow_run` event then makes the worker ingest an arbitrary repository / run id with the configured token. Set the
   secret in any deployment that is reachable from outside.
 * The database tables are created lazily by the worker's `init_db()`; the compose flow does not run `alembic upgrade head`.
-* Not exercised: the `sync_repository` task, `generate_dependency_graph`, `extract_features`, `retrain_models`,
-  `run_benchmark`, GitHub's real signature header from github.com, and a run with at least 30 ingested runs through
-  `/api/v1/optimize` inside the containers (the endpoint is covered by `tests/test_server.py` outside Docker).
+* Not exercised inside Docker: a run with at least 30 ingested runs through `/api/v1/optimize` (the endpoint is covered
+  by `tests/test_server.py` outside Docker) and a delivery sent by github.com itself (the signature check is tested against
+  GitHub's published test vector, `test_signature_check_matches_githubs_published_test_vector`).
+
+## Follow-up the next day (2026-10-12): the remaining tasks, run for real
+
+Run in eager mode (no broker) on real data, outside Docker:
+
+| task | result |
+|---|---|
+| `sync_repository` (private repo, scratch database) | complete: 2 runs, 6 jobs, 60 steps, 12 cache events |
+| `generate_dependency_graph` (poetry @ latest ingested commit) | complete: 5,178 source nodes / 7,147 edges; 6 workflow graphs fused (e.g. `tests.yaml` 5,278 nodes) in 12.5 s |
+| `run_benchmark` (same commit) | complete: build 10.5 s, snapshot 9.9 MB, 5,278 nodes / 8,702 edges |
+| `extract_features` (poetry) | complete: 602 runs, 3,612 rows, 28 columns |
+| unknown commit | `blocked: commit_not_in_mirror` |
+
+Defects found and fixed: `generate_dependency_graph` and `run_benchmark` built from a directory nothing populated and
+returned `complete` on an empty graph (they now read the real graph of the commit from the git mirror, or return `blocked`);
+the benchmark reported unmeasured quantities as `0` and silently failed to measure memory (`None` for unmeasured, serialised
+size as a documented proxy).
+
+**The feedback loop was retired.** Nothing ever wrote the `predictions` table, so drift detection always saw 0 samples and
+`retrain_models` could only run with `force`; its artifacts were never read by the pipeline and `feedback/retrainer.py` was
+unreferenced. Removed: the `feedback/` package, the `retrain_models` task, the `train` CLI command and the unused model-version
+helpers. The `predictions` / `model_versions` tables remain in the schema (alembic history) and `/api/v1/metrics` reports
+`sample_count: 0` truthfully. A real loop would need predictions logged at `optimize` time and matched to the later run of
+the same commit: future work.
