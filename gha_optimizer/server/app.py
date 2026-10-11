@@ -101,12 +101,23 @@ def _db_ok() -> bool:
         return False
 
 
+def _celery_ok() -> bool:
+    """True if at least one Celery worker answers a broadcast ping within one second."""
+    try:
+        from gha_optimizer.worker.celery_app import celery_app
+
+        return bool(celery_app.control.inspect(timeout=1.0).ping())
+    except Exception:
+        return False
+
+
 @app.get("/health", response_model=HealthStatus, tags=["system"])
 async def health_check():
     """Basic health check — always returns 200 if the server is up."""
     status = HealthStatus(status="healthy")
 
     status.db_connected = _db_ok()
+    status.celery_connected = _celery_ok()
 
     # Check Redis
     try:
@@ -156,7 +167,7 @@ async def github_webhook(
     body = await request.body()
 
     # Validate signature if secret is configured
-    webhook_secret = config.github.webhook_secret
+    webhook_secret = config.server.webhook_secret
     if webhook_secret:
         sig = x_hub_signature_256 or ""
         if not _verify_webhook_signature(body, sig, webhook_secret):

@@ -214,7 +214,7 @@ class RepoIngestor:
         repo_row.language = meta.get("language")
         repo_row.license_spdx = (meta.get("license") or {}).get("spdx_id")
         if self.opts.use_mirror and self.mirror is None:
-            self.mirror = RepoMirror(self.repo, self.opts.mirror_root)
+            self.mirror = RepoMirror(self.repo, self.opts.mirror_root, token=getattr(self.client, "token", None))
         if self.mirror is not None:
             self.mirror.ensure(refresh=self.opts.mirror_refresh)
             repo_row.mirror_path = str(self.mirror.path)

@@ -121,3 +121,73 @@ def test_skip_recommendations_are_opt_in_through_the_api(client, monkeypatch):
     on = client.post("/api/v1/optimize", json={"repo": "o/r", "workflow_path": str(WORKFLOW),
                                                "allow_skip_recommendations": True})
     assert on.status_code == 200 and on.json()["plan_summary"]["skip_recommendations_applied"] is True
+
+
+# ---- webhook: HMAC validation and dispatch -------------------------------------------------------------
+
+def _signed(secret: str, body: bytes) -> dict:
+    import hashlib
+    import hmac
+
+    return {"X-Hub-Signature-256": "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest(),
+            "X-GitHub-Event": "workflow_job", "Content-Type": "application/json"}
+
+
+class _FakeTask:
+    id = "task-123"
+
+
+def _capture_dispatch(monkeypatch):
+    import gha_optimizer.worker.tasks as tasks_module
+
+    sent = []
+    monkeypatch.setattr(tasks_module.process_webhook, "delay", lambda event, payload: sent.append((event, payload)) or _FakeTask())
+    return sent
+
+
+def test_webhook_rejects_a_missing_or_wrong_signature_when_a_secret_is_configured(client, monkeypatch):
+    monkeypatch.setattr(app_module.config.server, "webhook_secret", "s3cret")
+    sent = _capture_dispatch(monkeypatch)
+    body = b'{"action": "completed"}'
+    assert client.post("/webhook/github", content=body, headers={"X-GitHub-Event": "workflow_job"}).status_code == 401
+    assert client.post("/webhook/github", content=body, headers=_signed("wrong", body)).status_code == 401
+    assert sent == []                                                 # nothing was dispatched
+
+
+def test_webhook_with_a_valid_signature_is_dispatched_to_the_worker(client, monkeypatch):
+    monkeypatch.setattr(app_module.config.server, "webhook_secret", "s3cret")
+    sent = _capture_dispatch(monkeypatch)
+    body = b'{"action": "completed", "repository": {"full_name": "o/r"}}'
+    r = client.post("/webhook/github", content=body, headers=_signed("s3cret", body))
+    assert r.status_code == 200 and r.json()["status"] == "accepted" and r.json()["task_id"] == "task-123"
+    assert sent == [("workflow_job", {"action": "completed", "repository": {"full_name": "o/r"}})]
+
+
+def test_webhook_without_a_configured_secret_accepts_unsigned_requests(client, monkeypatch):
+    monkeypatch.setattr(app_module.config.server, "webhook_secret", None)
+    sent = _capture_dispatch(monkeypatch)
+    r = client.post("/webhook/github", json={"action": "completed"}, headers={"X-GitHub-Event": "workflow_job"})
+    assert r.status_code == 200 and len(sent) == 1
+
+
+def test_webhook_rejects_invalid_json(client, monkeypatch):
+    monkeypatch.setattr(app_module.config.server, "webhook_secret", None)
+    assert client.post("/webhook/github", content=b"not json", headers={"X-GitHub-Event": "push"}).status_code == 400
+
+
+def test_health_reports_whether_a_celery_worker_answers(client, monkeypatch):
+    monkeypatch.setattr(app_module, "_celery_ok", lambda: True)
+    assert client.get("/health").json()["celery_connected"] is True
+    monkeypatch.setattr(app_module, "_celery_ok", lambda: False)
+    assert client.get("/health").json()["celery_connected"] is False
+
+
+def test_celery_ok_is_false_when_the_broker_is_unreachable(monkeypatch):
+    import gha_optimizer.worker.celery_app as celery_module
+
+    class Broken:
+        def inspect(self, timeout=1.0):
+            raise ConnectionError("broker down")
+
+    monkeypatch.setattr(celery_module.celery_app, "control", Broken())
+    assert app_module._celery_ok() is False

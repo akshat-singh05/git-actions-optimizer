@@ -1,10 +1,15 @@
+from pathlib import Path
+
 from setuptools import find_packages, setup
+
+# The Docker images copy only setup.py and the package, so the README may be absent at install time.
+_readme = Path(__file__).with_name("README.md")
 
 setup(
     name="gha-optimizer",
     version="0.2.0",
     description="ML-based predictive scheduler for GitHub Actions CI/CD pipelines",
-    long_description=open("README.md", encoding="utf-8").read(),
+    long_description=_readme.read_text(encoding="utf-8") if _readme.exists() else "",
     long_description_content_type="text/markdown",
     author="Akshat Singh",
     python_requires=">=3.10",

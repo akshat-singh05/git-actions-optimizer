@@ -12,6 +12,7 @@ any branch of the clone (fork pull-request heads) are fetched on demand by sha.
 """
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import subprocess
@@ -67,15 +68,33 @@ class BlobReader:
 _GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}  # never block on a credentials prompt
 
 
+def git_env(token: str | None = None) -> dict[str, str]:
+    """Environment for git subprocesses.  With a token, github.com requests carry an ``Authorization`` header supplied
+    through git's environment-based config, so the token appears in neither the URL, the command line nor the clone's
+    stored remote URL (needed to mirror private repositories)."""
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    if token:
+        cred = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        env.update({
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {cred}",
+        })
+    return env
+
+
 class RepoMirror:
-    def __init__(self, repo: str, root: str | Path = DEFAULT_MIRROR_ROOT, git: str = "git", offline: bool = False):
-        """``offline=True`` never touches the network (tests, air-gapped use): no clone, fetch or sha-fetch."""
+    def __init__(self, repo: str, root: str | Path = DEFAULT_MIRROR_ROOT, git: str = "git", offline: bool = False,
+                 token: str | None = None):
+        """``offline=True`` never touches the network (tests, air-gapped use): no clone, fetch or sha-fetch.
+        ``token`` authenticates clone / fetch (private repositories); without it requests are anonymous."""
         if "/" not in repo:
             raise ValueError("repo must be 'owner/name'")
         owner, name = repo.split("/", 1)
         self.repo = repo
         self.git = git
         self.offline = offline
+        self._env = git_env(token)
         self.path = Path(root).resolve() / f"{owner}__{name}.git"
 
     # ------------------------------------------------------------------
@@ -84,7 +103,7 @@ class RepoMirror:
             [self.git, "--git-dir", str(self.path), *args],
             capture_output=True,
             timeout=timeout,
-            env=_GIT_ENV,
+            env=self._env,
         )
         if check and proc.returncode != 0:
             raise MirrorError(f"git {' '.join(args)} failed: {proc.stderr.decode('utf-8', 'replace')[:400]}")
@@ -106,7 +125,7 @@ class RepoMirror:
             proc = subprocess.run(
                 [self.git, "clone", "--bare", "--no-tags", "--quiet", url, str(self.path)],
                 capture_output=True,
-                env=_GIT_ENV,
+                env=self._env,
             )
             if proc.returncode != 0:
                 raise MirrorError(f"git clone failed: {proc.stderr.decode('utf-8', 'replace')[:400]}")
