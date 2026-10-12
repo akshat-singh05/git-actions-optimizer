@@ -92,6 +92,21 @@ def _llm_client(requested: bool):
     return client
 
 
+def _triage_profile(repo: str, workflow_repo_path: str):
+    """Per-job profile of the repository's real past failures for the explanation, or None if it cannot be computed."""
+    from gha_optimizer.server.db.session import SessionLocal
+    from gha_optimizer.triage import job_failure_profile, triage_repo
+
+    db = SessionLocal()
+    try:
+        return job_failure_profile(triage_repo(db, repo, workflow_repo_path))
+    except Exception as exc:  # optional context; never block the analysis on it
+        logger.warning("Failure triage unavailable: %s", exc)
+        return None
+    finally:
+        db.close()
+
+
 def _decline(exc: Exception) -> None:
     print(f"\nDeclining to predict: {exc}")
     print("No synthetic or default values are substituted. Ingest real history first, e.g.:\n"
@@ -149,6 +164,8 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             model_dir=None if args.no_model_store else args.model_dir,
             replay_stats=_replay_stats(args.repo, wf_repo_path),
             llm_client=_llm_client(args.llm_summary),
+            relax_gates=args.relax_gates or None,
+            triage_profile=_triage_profile(args.repo, wf_repo_path),
         )
     except InsufficientHistoryError as exc:
         _decline(exc)
@@ -322,12 +339,16 @@ def cmd_eval_models(args: argparse.Namespace) -> None:
     from gha_optimizer.models.rolling_eval import TARGETS, evaluate_frame, render_markdown
     from gha_optimizer.server.db.session import SessionLocal, init_db
 
+    unknown = [t for t in (args.target or []) if t not in TARGETS]
+    if unknown:
+        print(f"unknown target(s) {unknown}; choose from {sorted(TARGETS)}")
+        sys.exit(2)
     init_db()
     db = SessionLocal()
     results: dict[str, dict] = {}
     try:
         for repo in args.repo:
-            df, info = build_dataset(db, repo, args.workflow_path)
+            df, info = build_dataset(db, repo, args.workflow_path, completion_aware=args.protocol == "v2")
             logger.info("%s: %d rows, %d runs", repo, len(df), df["run_id"].nunique() if not df.empty else 0)
             if df.empty:
                 continue
@@ -341,6 +362,150 @@ def cmd_eval_models(args: argparse.Namespace) -> None:
         _decline(RuntimeError("no ingested data for the requested repositories"))
     text = render_markdown(results, args.folds, args.bootstrap, cutoff=args.after)
     out = Path(args.out or ("docs/MODEL_EVAL_FRESH.md" if args.after else "docs/MODEL_EVAL.md"))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"wrote {out} ({len(text.splitlines())} lines)")
+
+
+def _github_client(repo: str):
+    from gha_optimizer.config import config
+    from gha_optimizer.ingestion.github_client import GithubClient
+
+    if not config.github.token:
+        print("GITHUB_TOKEN is required (set it or put it in .env).")
+        sys.exit(2)
+    return GithubClient(token=config.github.token, repo=repo)
+
+
+def cmd_live_score(args: argparse.Namespace) -> None:
+    """Score newly queued runs of one workflow into a hash-chained ledger BEFORE their jobs complete (prospective test)."""
+    _use_db(args)
+    from gha_optimizer.config import config
+    from gha_optimizer.ingestion.mirror import DEFAULT_MIRROR_ROOT, RepoMirror
+    from gha_optimizer.live import LiveScorer, run_live
+
+    client = _github_client(args.repo)
+    wf = next((w for w in client.list_workflows() if w.get("path") == args.workflow_path), None)
+    if wf is None:
+        print(f"workflow {args.workflow_path} not found in {args.repo}")
+        sys.exit(2)
+    history = _load_real_history(args.repo, args.workflow_path)
+    mirror = RepoMirror(args.repo, DEFAULT_MIRROR_ROOT, token=config.github.token)
+    mirror.ensure(refresh=True)
+    ledger = Path(args.ledger or f".gha_optimizer/live/{args.repo.replace('/', '__')}.jsonl")
+    scorer = LiveScorer(args.repo, args.workflow_path, history, client, mirror, ledger)
+    print(f"models fitted on {len(history)} job rows up to {scorer.history_until}; model hash {scorer.model_hash}; "
+          f"ledger {ledger}; polling every {args.poll_seconds:.0f}s for {args.minutes:.0f} min")
+    print(run_live(scorer, wf["id"], args.minutes, args.poll_seconds))
+
+
+def cmd_live_evaluate(args: argparse.Namespace) -> None:
+    """Read the real outcomes of the ledger's runs and score the predictions -> docs/LIVE_TEST.md."""
+    _use_db(args)
+    from datetime import datetime, timezone
+
+    from gha_optimizer.ingestion.history import load_history
+    from gha_optimizer.ingestion.ingest import IngestOptions, RepoIngestor
+    from gha_optimizer.live import evaluate_ledger, read_ledger, render_live
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    ledger = Path(args.ledger)
+    rows = read_ledger(ledger)                      # raises if the ledger was edited after it was written
+    scored = [r for r in rows if r.get("kind") == "scored"]
+    client = _github_client(args.repo)
+    init_db()
+    db = SessionLocal()
+    try:
+        opts = IngestOptions(since=datetime.now(timezone.utc).replace(tzinfo=None), workflows=[args.workflow_path],
+                             fetch_logs=False, use_mirror=True)
+        pending = 0
+        for r in scored:
+            if client.get_run(r["run_id"]).get("status") != "completed":
+                pending += 1
+                continue
+            RepoIngestor(args.repo, client, db, opts).ingest_single_run(r["run_id"])
+        history = load_history(db, args.repo, args.workflow_path)
+    finally:
+        db.close()
+    outcomes = {(r.run_id, r.job_id): (1 if r.conclusion in ("failure", "timed_out") else 0 if r.conclusion == "success" else None)
+                for r in history}
+    result = evaluate_ledger(rows, outcomes)
+    result["runs_not_completed_yet"] = pending
+    text = render_live(result, str(ledger), scored[0]["scored_at"] if scored else None, scored[-1]["scored_at"] if scored else None)
+    if pending:
+        text += f"\n{pending} scored run(s) had not completed when this was evaluated and are not included.\n"
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(text)
+    print(f"wrote {out}")
+
+
+def cmd_eval_pooled(args: argparse.Namespace) -> None:
+    """EXPLORATORY leave-one-repository-out evaluation of the v2 failure model -> docs/POOLED_EVAL.md."""
+    _use_db(args)
+    from gha_optimizer.features.dataset import build_dataset
+    from gha_optimizer.models.pooled_eval import evaluate_pooled_repo, render_pooled
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    frames = {}
+    try:
+        for repo in args.repo:
+            df, _ = build_dataset(db, repo, None)
+            logger.info("%s: %d rows", repo, len(df))
+            if not df.empty:
+                frames[repo] = df
+    finally:
+        db.close()
+    if len(frames) < 2:
+        _decline(RuntimeError("need at least two repositories with ingested data"))
+    results = [evaluate_pooled_repo(frames, repo, n_folds=args.folds, n_boot=args.bootstrap, cutoff=args.after) for repo in frames]
+    text = render_pooled(results, args.bootstrap, args.after)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"wrote {out} ({len(text.splitlines())} lines)")
+
+
+def cmd_replay_gates(args: argparse.Namespace) -> None:
+    """Replay relaxing safe `needs` gates on real history -> docs/GATE_REPLAY.md."""
+    _use_db(args)
+    from gha_optimizer.gate_replay import gate_replay_repo, render_gate_replay
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    try:
+        results = [gate_replay_repo(db, repo, args.workflow_path) for repo in args.repo]
+    finally:
+        db.close()
+    if not any("scored_runs" in r for r in results):
+        _decline(RuntimeError("no repository with enough ingested runs"))
+    text = render_gate_replay(results)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"wrote {out} ({len(text.splitlines())} lines)")
+
+
+def cmd_triage(args: argparse.Namespace) -> None:
+    """Classify the real failures in the ingested history and recommend actions -> docs/FAILURE_TRIAGE.md."""
+    _use_db(args)
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+    from gha_optimizer.triage import render_triage, triage_repo
+
+    init_db()
+    db = SessionLocal()
+    try:
+        results = [triage_repo(db, repo, args.workflow_path) for repo in args.repo]
+    finally:
+        db.close()
+    if not any("classes" in r for r in results):
+        _decline(RuntimeError("no ingested runs with jobs for the requested repositories"))
+    text = render_triage(results)
+    out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(f"wrote {out} ({len(text.splitlines())} lines)")
@@ -446,6 +611,9 @@ def main() -> None:
     p_analyze.add_argument("--no-model-store", action="store_true", help="always refit; never read or write saved models")
     p_analyze.add_argument("--enable-skips", action="store_true",
                            help="apply skip recommendations (`if: ${{ false }}` guards); off by default - see docs/SCHEDULER_ASSUMPTIONS.md")
+    p_analyze.add_argument("--relax-gates", action="store_true",
+                           help="opt-in: drop `needs` gates proven safe (no data dependency, no secrets/deploy) that shorten the "
+                                "estimated critical path; the job then also runs when its former upstream fails (see docs/IMPROVEMENT_PLAN.md C)")
     p_analyze.add_argument("--llm-summary", action="store_true",
                            help="append a plain-language summary written by an LLM (needs GEMINI_API_KEY and GHA_LLM_MODEL). "
                                 "Sends only job ids, runner labels and computed numbers to the provider; never affects the plan")
@@ -503,9 +671,13 @@ def main() -> None:
         "eval-models", help="Rolling-origin evaluation, feature-set ablation and bootstrap intervals -> docs/MODEL_EVAL.md")
     p_ev.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
     p_ev.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
-    p_ev.add_argument("--target", action="append", choices=["failure", "failure_tree", "failure_regularized_tree", "cache_any_miss", "cache_exact_miss",
-                               "duration", "duration_ratio"],
-                      help="target to evaluate (repeatable; default: all)")
+    p_ev.add_argument("--target", action="append",
+                      help="target to evaluate (repeatable; default: all): failure, failure_tree, failure_regularized_tree, "
+                           "failure_v2_logistic, failure_v2_hgb, failure_v2_blend, cache_any_miss, cache_exact_miss, "
+                           "duration, duration_ratio")
+    p_ev.add_argument("--protocol", choices=["v1", "v2"], default="v2",
+                      help="v2 (default): a run's outcome is visible to later runs only once it has finished; "
+                           "v1: every earlier-started run is visible (the original behaviour)")
     p_ev.add_argument("--folds", type=int, default=5)
     p_ev.add_argument("--initial-fraction", type=float, default=0.5, help="share of runs used only as the first training prefix")
     p_ev.add_argument("--min-train-runs", type=int, default=20)
@@ -515,6 +687,41 @@ def main() -> None:
                            "test once on every later run; writes docs/MODEL_EVAL_FRESH.md unless --out is given")
     p_ev.add_argument("--out", default=None, help="default: docs/MODEL_EVAL.md (docs/MODEL_EVAL_FRESH.md with --after)")
     _add_db(p_ev)
+
+    p_ls = subparsers.add_parser("live-score", help="Prospective test: score newly queued runs into a hash-chained ledger before they finish")
+    p_ls.add_argument("--repo", required=True, help="owner/repo")
+    p_ls.add_argument("--workflow-path", required=True, help="repo-relative workflow path, e.g. .github/workflows/ci.yml")
+    p_ls.add_argument("--ledger", help="default: .gha_optimizer/live/<owner>__<repo>.jsonl")
+    p_ls.add_argument("--minutes", type=float, default=120.0, help="how long to watch for new runs")
+    p_ls.add_argument("--poll-seconds", type=float, default=120.0)
+    _add_db(p_ls)
+
+    p_le = subparsers.add_parser("live-evaluate", help="Score a live ledger against the real outcomes -> docs/LIVE_TEST.md")
+    p_le.add_argument("--repo", required=True, help="owner/repo")
+    p_le.add_argument("--workflow-path", required=True)
+    p_le.add_argument("--ledger", required=True)
+    p_le.add_argument("--out", default="docs/LIVE_TEST.md")
+    _add_db(p_le)
+
+    p_ep = subparsers.add_parser("eval-pooled", help="EXPLORATORY: leave-one-repository-out failure model -> docs/POOLED_EVAL.md")
+    p_ep.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable; all are pooled)")
+    p_ep.add_argument("--folds", type=int, default=5)
+    p_ep.add_argument("--bootstrap", type=int, default=1000)
+    p_ep.add_argument("--after", metavar="ISO_TIMESTAMP", help="fresh-data check: one split at this timestamp")
+    p_ep.add_argument("--out", default="docs/POOLED_EVAL.md")
+    _add_db(p_ep)
+
+    p_rg = subparsers.add_parser("replay-gates", help="Replay relaxing safe `needs` gates on real history -> docs/GATE_REPLAY.md")
+    p_rg.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
+    p_rg.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
+    p_rg.add_argument("--out", default="docs/GATE_REPLAY.md")
+    _add_db(p_rg)
+
+    p_tr = subparsers.add_parser("triage", help="Classify real failures (flaky / pre-existing / persistent ...) -> docs/FAILURE_TRIAGE.md")
+    p_tr.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
+    p_tr.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
+    p_tr.add_argument("--out", default="docs/FAILURE_TRIAGE.md")
+    _add_db(p_tr)
 
     p_ri = subparsers.add_parser(
         "replay-impact", help="Replay 'skip jobs the graph says the diff cannot reach' on real history -> docs/IMPACT_REPLAY.md")
@@ -543,6 +750,11 @@ def main() -> None:
         "dataset-report": cmd_dataset_report,
         "eval-models": cmd_eval_models,
         "replay-impact": cmd_replay_impact,
+        "triage": cmd_triage,
+        "replay-gates": cmd_replay_gates,
+        "eval-pooled": cmd_eval_pooled,
+        "live-score": cmd_live_score,
+        "live-evaluate": cmd_live_evaluate,
     }
     commands[args.command](args)
 
