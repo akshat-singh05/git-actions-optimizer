@@ -21,7 +21,7 @@ def frame(n_runs: int = 80):
 
 def test_logistic_is_the_default_variant():
     assert FailurePredictor().variant == "logistic"
-    assert set(VARIANTS) == {"logistic", "tree", "regularized_tree"}
+    assert set(VARIANTS) == {"logistic", "tree", "regularized_tree", "v2_logistic", "v2_hgb", "v2_blend"}
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
@@ -73,3 +73,39 @@ def test_evaluator_targets_are_built_from_the_model_class_not_duplicated_setting
     assert repr(TARGETS["failure_tree"].estimator()) == repr(FailurePredictor(variant="tree").model)
     assert repr(TARGETS["failure_regularized_tree"].estimator()) == repr(
         FailurePredictor(variant="regularized_tree").model)
+
+
+def test_v2_variants_use_the_extended_feature_list_and_the_old_ones_do_not():
+    from gha_optimizer.features.feature_extraction import FAILURE_V2_COLUMNS, FEATURE_COLUMNS
+
+    df = frame()
+    for variant in ("v2_logistic", "v2_hgb", "v2_blend"):
+        m = FailurePredictor(variant=variant)
+        m.fit(df)
+        assert m._feature_list == list(FAILURE_V2_COLUMNS)
+        assert set(m._features) <= set(FAILURE_V2_COLUMNS)
+    assert FailurePredictor(variant="logistic")._feature_list == list(FEATURE_COLUMNS)
+
+
+def test_blend_is_the_mean_of_its_members_and_survives_save_load(tmp_path):
+    df = frame()
+    blend, lo, hg = (FailurePredictor(variant=v) for v in ("v2_blend", "v2_logistic", "v2_hgb"))
+    for m in (blend, lo, hg):
+        m.fit(df)
+    tail = df.tail(15)
+    expected = (lo.predict_proba(tail) + hg.predict_proba(tail)) / 2
+    assert np.allclose(blend.predict_proba(tail), expected, atol=1e-9)
+    blend.save(tmp_path / "b.joblib")
+    loaded = FailurePredictor()
+    loaded.load(tmp_path / "b.joblib")
+    assert loaded.variant == "v2_blend" and np.allclose(loaded.predict_proba(tail), blend.predict_proba(tail))
+
+
+def test_v2_targets_are_registered_with_their_own_feature_sets():
+    from gha_optimizer.features.feature_extraction import FAILURE_V2_COLUMNS
+    from gha_optimizer.models.rolling_eval import feature_sets_for
+
+    for name in ("failure_v2_logistic", "failure_v2_hgb", "failure_v2_blend"):
+        sets = feature_sets_for(TARGETS[name])
+        assert sets["all"] == list(FAILURE_V2_COLUMNS)
+        assert "job_structurally_impacted" not in sets["no_structural"]

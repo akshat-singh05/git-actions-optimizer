@@ -29,7 +29,7 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.metrics import average_precision_score, brier_score_loss, mean_absolute_error, roc_auc_score
 
-from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
+from gha_optimizer.features.feature_extraction import FAILURE_V2_COLUMNS, FEATURE_COLUMNS
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, miss_target
 from gha_optimizer.models.duration_estimator import DurationEstimator
 from gha_optimizer.models.evaluation import chronological, from_log_ratio, log_ratio, usable_features
@@ -53,6 +53,7 @@ class TargetSpec:
     estimator: Callable[[], Any]
     baseline_description: str
     log_ratio: bool = False  # regression on log((y+1)/(prior+1)) with prior = the baseline score (see DurationEstimator)
+    features: list[str] | None = None  # replaces FEATURE_COLUMNS as the 'all' feature set (the v2 failure candidates)
 
 
 TARGETS: dict[str, TargetSpec] = {
@@ -67,6 +68,19 @@ TARGETS: dict[str, TargetSpec] = {
     "failure_regularized_tree": TargetSpec(
         "failure_regularized_tree", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
         lambda: FailurePredictor(variant="regularized_tree").model, "the job's prior decayed failure rate"),
+    # Protocol-v2 candidates (docs/IMPROVEMENT_PLAN.md): extra run-context / lineage / change-content features
+    "failure_v2_logistic": TargetSpec(
+        "failure_v2_logistic", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
+        lambda: FailurePredictor(variant="v2_logistic").model, "the job's prior decayed failure rate",
+        features=FAILURE_V2_COLUMNS),
+    "failure_v2_hgb": TargetSpec(
+        "failure_v2_hgb", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
+        lambda: FailurePredictor(variant="v2_hgb").model, "the job's prior decayed failure rate",
+        features=FAILURE_V2_COLUMNS),
+    "failure_v2_blend": TargetSpec(
+        "failure_v2_blend", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
+        lambda: FailurePredictor(variant="v2_blend").model, "the job's prior decayed failure rate",
+        features=FAILURE_V2_COLUMNS),
     "cache_any_miss": TargetSpec(
         "cache_any_miss", "binary",
         lambda d: miss_target(d, "any_miss").where(d["label_cache_hit"].notna()),
@@ -85,6 +99,15 @@ TARGETS: dict[str, TargetSpec] = {
         lambda: DurationEstimator(target="log_ratio").model, "the job's prior decayed mean duration",
         log_ratio=True),
 }
+
+
+def feature_sets_for(spec: TargetSpec) -> dict[str, list[str]]:
+    """The feature sets compared for ``spec``: its own ``features`` (default: the shared contract) as ``all``."""
+    if spec.features is None:
+        return FEATURE_SETS
+    return {"all": list(spec.features),
+            "no_structural": [c for c in spec.features if c not in STRUCTURAL_FEATURES],
+            "structural_only": list(STRUCTURAL_FEATURES)}
 
 
 def rolling_origin_folds(
@@ -149,8 +172,9 @@ def evaluate_target(
                               "n_labelled_rows": int(len(lab)), "baseline": spec.baseline_description}
     # a feature set with no observed value anywhere (e.g. structural_only when graph features were never
     # computed) is reported as unavailable; it must not cost the other sets their folds
-    sets = {k: v for k, v in FEATURE_SETS.items() if usable_features(lab, v)}
-    result["feature_sets_unavailable"] = [k for k in FEATURE_SETS if k not in sets]
+    all_sets = feature_sets_for(spec)
+    sets = {k: v for k, v in all_sets.items() if usable_features(lab, v)}
+    result["feature_sets_unavailable"] = [k for k in all_sets if k not in sets]
     pooled: dict[str, list[np.ndarray]] = {k: [] for k in [*sets, "baseline"]}
     ys, run_ids, used, skipped = [], [], 0, []
     for i, (train_runs, test_runs) in enumerate(folds):
@@ -259,6 +283,25 @@ def evaluate_frame(df: pd.DataFrame, targets: list[str] | None = None, **kw: Any
 # Markdown rendering (every figure comes from the dicts above)
 # ---------------------------------------------------------------------------
 
+MIN_POSITIVES_TO_JUDGE = 20
+
+
+def win_loss(results: dict[str, dict[str, dict[str, Any]]], target: str,
+             comparison: str = "all - baseline") -> dict[str, list[str]]:
+    """Per repository: did ``target`` beat (``wins``) or lose to (``losses``) the baseline by a paired-bootstrap interval
+    that excludes 0?  ``not_judged``: fewer than ``MIN_POSITIVES_TO_JUDGE`` positives (or no usable fold)."""
+    out: dict[str, list[str]] = {"wins": [], "losses": [], "inconclusive": [], "not_judged": []}
+    for repo, per in results.items():
+        r = per.get(target, {})
+        ci = r.get("bootstrap", {}).get("comparisons", {}).get(comparison, {})
+        if "scores" not in r or r.get("positives", 0) < MIN_POSITIVES_TO_JUDGE or "ci95" not in ci:
+            out["not_judged"].append(repo)
+            continue
+        lo, hi = ci["ci95"]
+        out["wins" if lo > 0 else "losses" if hi < 0 else "inconclusive"].append(repo)
+    return out
+
+
 def _fmt_ci(c: dict[str, Any]) -> str:
     if "ci95" not in c:
         return c.get("note", "n/a")
@@ -309,6 +352,13 @@ def render_markdown(results: dict[str, dict[str, dict[str, Any]]], n_folds: int,
         sign = "higher is better" if spec.kind == "binary" else "negative is better (lower MAE)"
         out.append(f"Paired difference ({'PR-AUC' if spec.kind == 'binary' else 'MAE'}; {sign}), mean and 95% interval:\n")
         out.append(_md_table(["repo", "all - no_structural", "all - baseline", "no_structural - baseline"], brows))
+        if spec.kind == "binary":
+            wl = win_loss(results, target)
+            out.append(f"Versus the baseline (`all - baseline`, interval excludes 0; repositories with fewer than "
+                       f"{MIN_POSITIVES_TO_JUDGE} positives are not judged): **{len(wl['wins'])} won**, "
+                       f"{len(wl['losses'])} lost, {len(wl['inconclusive'])} inconclusive, "
+                       f"{len(wl['not_judged'])} not judged. Won: {', '.join(wl['wins']) or 'none'}; "
+                       f"lost: {', '.join(wl['losses']) or 'none'}.\n")
     return "\n".join(out)
 
 

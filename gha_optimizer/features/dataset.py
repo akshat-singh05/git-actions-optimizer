@@ -30,11 +30,13 @@ def build_dataset(
     since: datetime | None = None,
     events: Iterable[str] | None = None,
     test_fraction: float | None = None,
+    completion_aware: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """``(frame, info)``; ``frame['split']`` is ``'train'`` / ``'test'``; ``info`` has the boundary."""
     history = load_history(db, repo, workflow_path, since, events)
-    df = build_training_frame(nx.DiGraph(), history)
-    info: dict[str, Any] = {"repo": repo, "workflow_path": workflow_path, "rows": int(len(df))}
+    df = build_training_frame(nx.DiGraph(), history, completion_aware=completion_aware)
+    info: dict[str, Any] = {"repo": repo, "workflow_path": workflow_path, "rows": int(len(df)),
+                            "protocol": "v2" if completion_aware else "v1"}
     if df.empty:
         df["split"] = []
         return df, info

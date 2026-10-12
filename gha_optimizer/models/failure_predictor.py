@@ -33,15 +33,16 @@ from pathlib import Path
 from typing import Any
 
 import joblib
+import numpy as np
 import pandas as pd
-from sklearn.base import clone
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from gha_optimizer.features.feature_extraction import FEATURE_COLUMNS
+from gha_optimizer.features.feature_extraction import FAILURE_V2_COLUMNS, FEATURE_COLUMNS
 from gha_optimizer.models.evaluation import (
     binary_report,
     chronological,
@@ -58,7 +59,33 @@ except ImportError:
     _HAS_XGBOOST = False
 
 
-VARIANTS = ("logistic", "tree", "regularized_tree")
+VARIANTS = ("logistic", "tree", "regularized_tree", "v2_logistic", "v2_hgb", "v2_blend")
+
+
+class BlendClassifier(BaseEstimator, ClassifierMixin):
+    """Mean of the members' P(failure).  A plain, clone-able sklearn estimator (no stacking, nothing to tune)."""
+
+    def __init__(self, members: list | None = None):
+        self.members = members
+
+    def fit(self, X, y):
+        self.members_ = [clone(m).fit(X, y) for m in (self.members or [])]
+        self.classes_ = np.array([0, 1])
+        return self
+
+    def predict_proba(self, X):
+        p = np.mean([m.predict_proba(X)[:, 1] for m in self.members_], axis=0)
+        return np.column_stack([1.0 - p, p])
+
+
+def _logistic() -> Any:
+    return make_pipeline(SimpleImputer(strategy="median", add_indicator=True), StandardScaler(),
+                         LogisticRegression(C=0.3, max_iter=2000))
+
+
+def _regularized_hgb(random_state: int) -> Any:
+    return HistGradientBoostingClassifier(max_iter=100, max_depth=3, learning_rate=0.05, min_samples_leaf=40,
+                                          l2_regularization=5.0, random_state=random_state)
 
 
 class FailurePredictor:
@@ -84,8 +111,16 @@ class FailurePredictor:
         self.random_state = random_state
         self.test_fraction = test_fraction if test_fraction is not None else config.model.temporal_test_fraction
 
+        self._feature_list = list(FAILURE_V2_COLUMNS if variant.startswith("v2_") else FEATURE_COLUMNS)
         self.model: Any
-        if variant == "logistic":
+        if variant == "v2_logistic":
+            self.model, self._backend_name = _logistic(), "sklearn-logistic-v2"
+        elif variant == "v2_hgb":
+            self.model, self._backend_name = _regularized_hgb(random_state), "sklearn-hist-regularized-v2"
+        elif variant == "v2_blend":
+            self.model = BlendClassifier([_logistic(), _regularized_hgb(random_state)])
+            self._backend_name = "blend-v2"
+        elif variant == "logistic":
             self.model = make_pipeline(
                 SimpleImputer(strategy="median", add_indicator=True), StandardScaler(),
                 LogisticRegression(C=0.3, max_iter=2000),
@@ -136,8 +171,8 @@ class FailurePredictor:
                 f"(labelled={len(d)}, positives={int(y_all.sum()) if len(d) else 0})"
             )
         metrics["failure_rate_all_labelled"] = round(float(y_all.mean()), 4)
-        features = usable_features(d, FEATURE_COLUMNS)
-        metrics["features_dropped_all_nan"] = [c for c in FEATURE_COLUMNS if c not in features]
+        features = usable_features(d, self._feature_list)
+        metrics["features_dropped_all_nan"] = [c for c in self._feature_list if c not in features]
 
         train, test, info = temporal_split(d, self.test_fraction)
         y_train = train["label_failed"].astype(int)
@@ -147,13 +182,13 @@ class FailurePredictor:
             inner_train, inner_val, _ = temporal_split(train, 0.25)
             threshold, how = 0.5, "default 0.5 (training period too short for a validation tail)"
             if len(inner_val) and inner_train["label_failed"].nunique() == 2:
-                inner_feats = usable_features(inner_train, FEATURE_COLUMNS)
+                inner_feats = usable_features(inner_train, self._feature_list)
                 m_val = clone(self.model).fit(inner_train[inner_feats].astype(float), inner_train["label_failed"].astype(int))
                 p_val = m_val.predict_proba(inner_val[inner_feats].astype(float))[:, 1]
                 threshold, how = pick_threshold(inner_val["label_failed"].astype(int), p_val)
             self._optimal_threshold = threshold
 
-            train_feats = usable_features(train, FEATURE_COLUMNS)
+            train_feats = usable_features(train, self._feature_list)
             holdout_model = clone(self.model).fit(train[train_feats].astype(float), y_train)
             X_test = test[train_feats].astype(float)
             y_test = test["label_failed"].astype(int)
@@ -210,4 +245,5 @@ class FailurePredictor:
         self._optimal_threshold = data.get("threshold", 0.5)
         self._feature_importance = data.get("feature_importance", {})
         self._features = data.get("features", list(FEATURE_COLUMNS))
+        self._feature_list = list(FAILURE_V2_COLUMNS if self.variant.startswith("v2_") else FEATURE_COLUMNS)
         self._fitted = True

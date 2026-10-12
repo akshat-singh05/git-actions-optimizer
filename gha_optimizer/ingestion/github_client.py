@@ -71,6 +71,10 @@ class WorkflowRunRecord:
     # Graph features computed on the repo tree at ``commit_sha`` (see
     # features/graph_features.py).  None => derive from the supplied static graph.
     graph_features: dict[str, float] | None = None
+    # Run context known at queue time / when the run finished (None = unknown; never defaulted)
+    pr_number: int | None = None
+    run_attempt: int | None = None
+    finished_at: str | None = None     # when the run last updated, i.e. when its outcome became known
 
 
 # ---------------------------------------------------------------------------
