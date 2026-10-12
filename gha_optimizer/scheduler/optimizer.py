@@ -16,6 +16,7 @@ Responsibilities:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import networkx as nx
 
@@ -99,6 +100,8 @@ class SchedulePlan:
     runner_only_cost_usd: float = 0.0
     both_wall_clock_seconds: float = 0.0          # larger runners AND skipping (depends on the ASSUMED law)
     both_cost_usd: float = 0.0
+    # opt-in: safe `needs` gates relaxed in the proposed workflow (gha_optimizer/gates.py::GateRelaxation) or None
+    gate_relaxation: Any = None
 
     @staticmethod
     def _pct(base: float, value: float) -> float:

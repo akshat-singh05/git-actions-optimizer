@@ -152,6 +152,7 @@ class OptimizationRequest(BaseModel):
     allow_runner_upsizing: Optional[bool] = None   # default off; the larger-runner labels must exist in the org
     speedup_exponent: Optional[float] = None       # ASSUMED runner speed-up law exponent
     allow_skip_recommendations: Optional[bool] = None  # default off; see docs/SCHEDULER_ASSUMPTIONS.md
+    relax_gates: Optional[bool] = None             # default off; drops only provably safe `needs` gates (gates.py)
     llm_summary: Optional[bool] = None             # default off; needs GEMINI_API_KEY + GHA_LLM_MODEL; wording only
 
 

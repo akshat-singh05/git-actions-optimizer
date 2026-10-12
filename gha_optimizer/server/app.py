@@ -206,6 +206,16 @@ async def github_webhook(
         }
 
 
+def _triage_profile_for(db: Session, repo: str, workflow_repo_path: str | None):
+    """Per-job profile of past failures for the explanation; None if it cannot be computed (it is optional context)."""
+    try:
+        from gha_optimizer.triage import job_failure_profile, triage_repo
+        return job_failure_profile(triage_repo(db, repo, workflow_repo_path))
+    except Exception as exc:
+        logger.warning("Failure triage unavailable: %s", exc)
+        return None
+
+
 # ─── Optimization ──────────────────────────────────────────────────
 
 @app.post("/api/v1/optimize", tags=["optimization"])
@@ -253,6 +263,8 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
                 workflow_path=workflow_path,
                 replay_stats=replay_stats,
                 llm_client=llm_client,
+                relax_gates=request.relax_gates,
+                triage_profile=_triage_profile_for(db, request.repo, wf_repo_path),
                 repo_root=repo_root,
                 tracked_files=tracked_files(repo_root) or request.changed_files,
                 history=history,
