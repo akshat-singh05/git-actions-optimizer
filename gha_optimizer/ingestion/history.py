@@ -157,6 +157,9 @@ def load_history(
                 workflow_path=run.workflow_path,
                 event=run.event,
                 cache_outcome=agg.cache_outcome,
+                pr_number=run.pr_number,
+                run_attempt=run.run_attempt,
+                finished_at=(run.gh_updated_at.strftime("%Y-%m-%dT%H:%M:%SZ") if run.gh_updated_at else None),
                 graph_features=(
                     {
                         "job_structurally_impacted": feat.job_structurally_impacted,
