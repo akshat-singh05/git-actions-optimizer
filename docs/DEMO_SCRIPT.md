@@ -70,6 +70,11 @@ Show `docs/IMPACT_REPLAY.md`, then `docs/HELDOUT_RESULTS.md` and `docs/HELDOUT_R
 * `gha-optimizer analyze <checkout>/.github/workflows/ci.yml --repo owner/repo --changed a.py` on a real checkout shows
   the Advisory section; needs a git checkout of the repo (not available for the mirrors alone).
 * `python demo_server.py --repo python-poetry/poetry` serves a UI at http://localhost:8501 (not re-run when this was written).
+* Triage of real failures: `gha-optimizer triage --repo prometheus/prometheus --out docs/FAILURE_TRIAGE.md` (or show the
+  generated file).
+* Gate relaxation: `gha-optimizer analyze <checkout>/.github/workflows/ci.yml --repo owner/repo --relax-gates` prints the removed
+  edges with the trade-off; real-run evidence in `docs/relax_run/` (-15.1% critical path, one simple pipeline).
+* Live scoring: `gha-optimizer live-score ...` then `live-evaluate ...` (`docs/LIVE_TEST.md`); a demonstration, not a significance test.
 * The full stack (`docker compose up --build`) was run once end to end: `docs/FULL_STACK_RUN.md`.
 * The generated workflow was executed on real GitHub Actions: `docs/VALIDITY_RUN.md` (12 runs, identical behaviour, no speed-up).
 * The LLM summary needs `GEMINI_API_KEY` and `GHA_LLM_MODEL`. Check them with `gha-optimizer llm-check`, then

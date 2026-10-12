@@ -1,0 +1,2508 @@
+[
+ {
+  "arm": "A",
+  "round": 0,
+  "warmup": true,
+  "run_id": 38265501705,
+  "conclusion": "success",
+  "critical_path_s": 178.0,
+  "run_s": 183.0,
+  "billable_job_s": 229.0,
+  "queue_s": {
+   "lint": 3.0,
+   "test": 2.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "lint": 39.0,
+   "test": 136.0,
+   "typecheck": 54.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "test": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": false
+ },
+ {
+  "arm": "B",
+  "round": 0,
+  "warmup": true,
+  "run_id": 38265516763,
+  "conclusion": "success",
+  "critical_path_s": 131.0,
+  "run_s": 134.0,
+  "billable_job_s": 220.0,
+  "queue_s": {
+   "lint": 3.0,
+   "test": 3.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "lint": 41.0,
+   "test": 131.0,
+   "typecheck": 48.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "test": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": true
+ },
+ {
+  "arm": "A",
+  "round": 1,
+  "warmup": false,
+  "run_id": 38265896512,
+  "conclusion": "success",
+  "critical_path_s": 155.0,
+  "run_s": 160.0,
+  "billable_job_s": 204.0,
+  "queue_s": {
+   "lint": 3.0,
+   "typecheck": 3.0,
+   "test": 3.0
+  },
+  "job_s": {
+   "lint": 34.0,
+   "typecheck": 53.0,
+   "test": 117.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "typecheck": "success",
+   "test": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": false
+ },
+ {
+  "arm": "B",
+  "round": 1,
+  "warmup": false,
+  "run_id": 38266240291,
+  "conclusion": "success",
+  "critical_path_s": 143.0,
+  "run_s": 147.0,
+  "billable_job_s": 232.0,
+  "queue_s": {
+   "lint": 2.0,
+   "test": 3.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "lint": 32.0,
+   "test": 142.0,
+   "typecheck": 58.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "test": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": true
+ },
+ {
+  "arm": "B",
+  "round": 2,
+  "warmup": false,
+  "run_id": 38266582030,
+  "conclusion": "success",
+  "critical_path_s": 138.0,
+  "run_s": 143.0,
+  "billable_job_s": 212.0,
+  "queue_s": {
+   "lint": 4.0,
+   "test": 3.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "lint": 38.0,
+   "test": 138.0,
+   "typecheck": 36.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "test": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": true
+ },
+ {
+  "arm": "A",
+  "round": 2,
+  "warmup": false,
+  "run_id": 38266921777,
+  "conclusion": "success",
+  "critical_path_s": 143.0,
+  "run_s": 147.0,
+  "billable_job_s": 186.0,
+  "queue_s": {
+   "lint": 3.0,
+   "test": 3.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "lint": 38.0,
+   "test": 101.0,
+   "typecheck": 47.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "test": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": false
+ },
+ {
+  "arm": "A",
+  "round": 3,
+  "warmup": false,
+  "run_id": 38267272060,
+  "conclusion": "success",
+  "critical_path_s": 159.0,
+  "run_s": 164.0,
+  "billable_job_s": 193.0,
+  "queue_s": {
+   "lint": 3.0,
+   "test": 3.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "lint": 38.0,
+   "test": 117.0,
+   "typecheck": 38.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "test": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": false
+ },
+ {
+  "arm": "B",
+  "round": 3,
+  "warmup": false,
+  "run_id": 38267665543,
+  "conclusion": "success",
+  "critical_path_s": 116.0,
+  "run_s": 120.0,
+  "billable_job_s": 202.0,
+  "queue_s": {
+   "lint": 3.0,
+   "test": 4.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "lint": 39.0,
+   "test": 115.0,
+   "typecheck": 48.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "test": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": true
+ },
+ {
+  "arm": "B",
+  "round": 4,
+  "warmup": false,
+  "run_id": 38267950717,
+  "conclusion": "success",
+  "critical_path_s": 133.0,
+  "run_s": 138.0,
+  "billable_job_s": 217.0,
+  "queue_s": {
+   "test": 2.0,
+   "lint": 3.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "test": 133.0,
+   "lint": 40.0,
+   "typecheck": 44.0
+  },
+  "job_conclusion": {
+   "test": "success",
+   "lint": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": true
+ },
+ {
+  "arm": "A",
+  "round": 4,
+  "warmup": false,
+  "run_id": 38268261558,
+  "conclusion": "success",
+  "critical_path_s": 176.0,
+  "run_s": 181.0,
+  "billable_job_s": 221.0,
+  "queue_s": {
+   "lint": 3.0,
+   "typecheck": 3.0,
+   "test": 3.0
+  },
+  "job_s": {
+   "lint": 41.0,
+   "typecheck": 48.0,
+   "test": 132.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "typecheck": "success",
+   "test": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": false
+ },
+ {
+  "arm": "A",
+  "round": 5,
+  "warmup": false,
+  "run_id": 38268663458,
+  "conclusion": "success",
+  "critical_path_s": 177.0,
+  "run_s": 182.0,
+  "billable_job_s": 225.0,
+  "queue_s": {
+   "lint": 3.0,
+   "typecheck": 2.0,
+   "test": 2.0
+  },
+  "job_s": {
+   "lint": 41.0,
+   "typecheck": 50.0,
+   "test": 134.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "typecheck": "success",
+   "test": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": false
+ },
+ {
+  "arm": "B",
+  "round": 5,
+  "warmup": false,
+  "run_id": 38269080232,
+  "conclusion": "success",
+  "critical_path_s": 125.0,
+  "run_s": 129.0,
+  "billable_job_s": 210.0,
+  "queue_s": {
+   "test": 3.0,
+   "lint": 4.0,
+   "typecheck": 3.0
+  },
+  "job_s": {
+   "test": 125.0,
+   "lint": 38.0,
+   "typecheck": 47.0
+  },
+  "job_conclusion": {
+   "test": "success",
+   "lint": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": true
+ },
+ {
+  "arm": "B",
+  "round": 6,
+  "warmup": false,
+  "run_id": 38269382887,
+  "conclusion": "success",
+  "critical_path_s": 146.0,
+  "run_s": 151.0,
+  "billable_job_s": 229.0,
+  "queue_s": {
+   "test": 3.0,
+   "lint": 3.0,
+   "typecheck": 2.0
+  },
+  "job_s": {
+   "test": 146.0,
+   "lint": 41.0,
+   "typecheck": 42.0
+  },
+  "job_conclusion": {
+   "test": "success",
+   "lint": "success",
+   "typecheck": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": true
+ },
+ {
+  "arm": "A",
+  "round": 6,
+  "warmup": false,
+  "run_id": 38269734253,
+  "conclusion": "success",
+  "critical_path_s": 160.0,
+  "run_s": 165.0,
+  "billable_job_s": 208.0,
+  "queue_s": {
+   "lint": 3.0,
+   "typecheck": 3.0,
+   "test": 3.0
+  },
+  "job_s": {
+   "lint": 31.0,
+   "typecheck": 51.0,
+   "test": 126.0
+  },
+  "job_conclusion": {
+   "lint": "success",
+   "typecheck": "success",
+   "test": "success"
+  },
+  "steps": [
+   [
+    "lint",
+    "Complete job",
+    "success"
+   ],
+   [
+    "lint",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "lint",
+    "Lint with ruff",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "lint",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "lint",
+    "Set up job",
+    "success"
+   ],
+   [
+    "test",
+    "Complete job",
+    "success"
+   ],
+   [
+    "test",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "test",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "test",
+    "Run tests",
+    "success"
+   ],
+   [
+    "test",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Complete job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Install dependencies",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Post Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/cache@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/checkout@v4",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Run actions/setup-python@v5",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Set up job",
+    "success"
+   ],
+   [
+    "typecheck",
+    "Type check (non-blocking)",
+    "success"
+   ]
+  ],
+  "needs_ok": true,
+  "test_overlaps_lint": false
+ }
+]

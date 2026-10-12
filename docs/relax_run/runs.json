@@ -1,0 +1,114 @@
+[
+  {
+    "arm": "A",
+    "round": 0,
+    "sha": "686a877cfeff4403d57849964db300f18fa512de",
+    "warmup": true,
+    "run_id": 38265501705,
+    "conclusion": "success"
+  },
+  {
+    "arm": "B",
+    "round": 0,
+    "sha": "8a9208244348e1ec20c4de2ae29d17382d62322e",
+    "warmup": true,
+    "run_id": 38265516763,
+    "conclusion": "success"
+  },
+  {
+    "arm": "A",
+    "round": 1,
+    "sha": "2aefa8e23c21838f7ce250c90bac4924cbefdb26",
+    "warmup": false,
+    "run_id": 38265896512,
+    "conclusion": "success"
+  },
+  {
+    "arm": "B",
+    "round": 1,
+    "sha": "9b02a550676f4cbc5c8fef0ce72ca19f71d5dbe7",
+    "warmup": false,
+    "run_id": 38266240291,
+    "conclusion": "success"
+  },
+  {
+    "arm": "B",
+    "round": 2,
+    "sha": "9799174bd71708dc2df28e12fd90cbcba1790034",
+    "warmup": false,
+    "run_id": 38266582030,
+    "conclusion": "success"
+  },
+  {
+    "arm": "A",
+    "round": 2,
+    "sha": "5692dddbaec267e411f6beae89f2e4827f0ac8fb",
+    "warmup": false,
+    "run_id": 38266921777,
+    "conclusion": "success"
+  },
+  {
+    "arm": "A",
+    "round": 3,
+    "sha": "ccd0ed20ce2aa7a13e85d98556b660906eba12b8",
+    "warmup": false,
+    "run_id": 38267272060,
+    "conclusion": "success"
+  },
+  {
+    "arm": "B",
+    "round": 3,
+    "sha": "f8956e5115b3228a02f8c9a2ca2ef6010ba118ac",
+    "warmup": false,
+    "run_id": 38267665543,
+    "conclusion": "success"
+  },
+  {
+    "arm": "B",
+    "round": 4,
+    "sha": "9c74db1643dc436b549e7a7a9fcfb5f67f817d02",
+    "warmup": false,
+    "run_id": 38267950717,
+    "conclusion": "success"
+  },
+  {
+    "arm": "A",
+    "round": 4,
+    "sha": "b25773953fea800c891fab60e7b5d666279c1695",
+    "warmup": false,
+    "run_id": 38268261558,
+    "conclusion": "success"
+  },
+  {
+    "arm": "A",
+    "round": 5,
+    "sha": "722b10b01338286a7bb64b2eef617fb834e0c74a",
+    "warmup": false,
+    "run_id": 38268663458,
+    "conclusion": "success"
+  },
+  {
+    "arm": "B",
+    "round": 5,
+    "sha": "e1da9dd0f86c6778dc1babc6274034ba34fc167c",
+    "warmup": false,
+    "run_id": 38269080232,
+    "conclusion": "success"
+  },
+  {
+    "arm": "B",
+    "round": 6,
+    "sha": "a380ad647da52f0b6c365f64f066623df5b7dd9f",
+    "warmup": false,
+    "run_id": 38269382887,
+    "conclusion": "success"
+  },
+  {
+    "arm": "A",
+    "round": 6,
+    "sha": "2ff561d342ffc3b8d4c6310f6147a75ab8b1820a",
+    "warmup": false,
+    "run_id": 38269734253,
+    "conclusion": "success"
+  }
+]

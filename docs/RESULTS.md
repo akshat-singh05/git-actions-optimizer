@@ -112,6 +112,19 @@ pre-registered plan and is not supported: the readable policy defers 0.0-1.5% of
 with at least 20 failing PR runs (`docs/DEFERRAL_PLAN.md`, `docs/DEFERRAL_REPLAY.md`; ruff 1.9% and uv 0.0% in `docs/HELDOUT2_DEFERRAL_REPLAY.md`); recurrence after merge could not
 be measured.
 
+## 5b. Improvement programme, 2026-10-12 (`docs/IMPROVEMENT_RESULTS.md`)
+
+* **Failure predictor v2** (completion-aware protocol, 15 extra features): pre-registered criterion NOT met - beats the
+  prior-failure-rate baseline in 2 of 9 repositories (prometheus, ruff), loses in none; needed at least 3. A pooled
+  leave-one-repository-out model reaches 3 of 9 (prometheus, pydantic, ruff) but was designed after seeing results; it is
+  frozen for a fresh-data test (`docs/POOLED_FROZEN.md`).
+* **Failure triage** (`docs/FAILURE_TRIAGE.md`): classes from recorded outcomes; about half of the failed jobs in poetry and
+  fastapi are aggregator jobs; 10-25% of red runs in four repositories need no code fix. Flakiness is under-detected.
+* **Safe gate relaxation** (opt-in): replay on nine repositories saves ~0% (`docs/GATE_REPLAY.md`); on the project's own
+  lint -> test pipeline a real run measured the critical path 159.5 s -> 135.5 s (-15.1%, 6 vs 6 runs, permutation p = 0.013),
+  billable time +4.1% (not significant) (`docs/relax_run/`). One repository; no failing run measured.
+* **Live prospective scoring** (`docs/LIVE_TEST.md` when complete): a few hours of data; a demonstration, not a significance test.
+
 ## 6. Removed after verification
 
 * **GNN cache predictor** - never ran (torch was never installed), schema-incompatible with the current graph, no
@@ -127,5 +140,5 @@ be measured.
 * The failure-model default was selected on the same folds it is evaluated on; the fresh-data check is interim.
 * The graph rules were written after reading the first five workflows; pydantic, cli/cli, ruff and uv are held out.
 * Replay results are counterfactual: they assume skipping a job changes no other job's outcome.
-* All improvement numbers are ESTIMATED. The one real execution (`docs/VALIDITY_RUN.md`: original vs proposed, 12 runs on the
+* All improvement numbers are ESTIMATED except the one relaxed-gates run (`docs/relax_run/`, MEASURED, one repository). The one real execution (`docs/VALIDITY_RUN.md`: original vs proposed, 12 runs on the
   project's own CI) confirmed identical behaviour and the 0.0% estimate within a noisy +-20 s; it shows no speed-up.

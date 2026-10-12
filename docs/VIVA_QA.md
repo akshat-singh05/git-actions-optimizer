@@ -131,3 +131,29 @@ legitimate research outcome; the failure mode we avoided is claiming a speed-up 
 Parse script-computed gates (the ruff/uv case); a measured experiment running original vs proposed workflows on a controlled
 repository (needs paid larger runners for the runner lever); more held-out repositories chosen by a written rule; wider cache
 labels. [README, RESULTS.md 7]
+
+**23. "Did you improve the failure predictor?"**
+Not by the standard we set in advance. We pre-registered (`docs/IMPROVEMENT_PLAN.md`) that a candidate must beat the
+prior-failure-rate baseline in at least 3 of 9 repositories with none significantly worse. The chosen v2 model beat it in 2
+(prometheus, ruff) and lost in none, so the criterion is reported as not met. A pooled model reached 3 but was designed after
+looking at results, so it is only a lead; it is frozen and will be judged on runs after 2026-10-12T14:58:29Z.
+[IMPROVEMENT_RESULTS.md A, POOLED_FROZEN.md]
+
+**24. "What do you do about real failures?"**
+`gha-optimizer triage` classifies each failed job from recorded outcomes (aggregator, flaky on the same commit, pre-existing,
+fixed by a later commit, persistent, unrelated to the change) with the failing step and an action. They are heuristics, not root
+causes; flakiness is under-detected because a re-run overwrites the earlier attempt; the recommendations have not been compared
+with what developers did. [FAILURE_TRIAGE.md, IMPROVEMENT_RESULTS.md B]
+
+**25. "You said DAG correctness is sacred. Why does --relax-gates remove `needs`?"**
+The owner amended the rule on 2026-10-12 for one opt-in case: only gate-only edges that code can prove carry no data and guard
+no side effect (no `needs.x` reference, no secrets, no deploy/publish, no status-function condition). Every removal is listed,
+the output is validated against the original, and the trade-off is printed: the job now also runs when its upstream fails.
+Anything not provably safe is kept. [CLAUDE.md rule 7, gates.py]
+
+**26. "Did relaxing gates make CI faster?"**
+Only in the case we ran for real: on our own lint -> test pipeline the critical path went from 159.5 s to 135.5 s (-15.1%,
+6 vs 6 runs, p = 0.013, MEASURED) while billable time rose 4.1% (not significant). On nine mature repositories' history the
+replay finds about 0%: their slow path is the test/build jobs themselves. One repository; failing runs were not measured.
+[IMPROVEMENT_RESULTS.md C, relax_run/, GATE_REPLAY.md]
+
