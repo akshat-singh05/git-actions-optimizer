@@ -79,7 +79,11 @@ only on history up to the start; the structural graph features are blanked becau
 baseline. It is a demonstration that predictions can be made and judged prospectively, **not a significance test**: the window is a
 few hours.
 
-*Section D result: filled in below when the scoring window closes (see `docs/LIVE_TEST.md`).*
+**Interim result (`docs/LIVE_TEST.md`, evaluated 2026-10-12 about 16:46 UTC, scorers still running):** only uv has scoreable
+outcomes - 13 completed runs, 190 job predictions, 21 failures. PR-AUC: baseline 0.510, old logistic 0.453, v2 boosted trees 0.429;
+neither difference from the baseline is distinguishable from 0 (-0.039 [-0.128, +0.059], -0.071 [-0.183, +0.069]). ruff had no
+failures among its scored runs and prometheus had none scored. So the live test shows the mechanism works and gives no evidence
+that the v2 model beats the baseline; it does not contradict the offline results either, since 13 runs cannot.
 
 ## What remains open
 
