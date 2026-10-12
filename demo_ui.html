@@ -12,63 +12,61 @@
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-            --bg: #0a0e1a;
-            --surface: #111827;
-            --surface2: #1a2236;
-            --border: #1e293b;
-            --text: #e2e8f0;
-            --text-dim: #94a3b8;
-            --accent: #6366f1;
-            --accent2: #8b5cf6;
-            --green: #10b981;
-            --green-dim: #065f46;
-            --red: #ef4444;
-            --amber: #f59e0b;
-            --cyan: #06b6d4;
-            --pink: #ec4899;
-            --radius: 12px;
-            --mono: 'JetBrains Mono', monospace;
+            --bg: #f4f6fa;
+            --surface: #ffffff;
+            --surface2: #f1f4f9;
+            --border: #dbe1ea;
+            --text: #1a2333;
+            --text-dim: #5a6578;
+            --accent: #1f4fb4;
+            --accent2: #1f4fb4;
+            --accent-dim: #e4ecfb;
+            --green: #15803d;
+            --green-dim: #dcfce7;
+            --red: #b42318;
+            --red-dim: #fee4e2;
+            --amber: #b45309;
+            --amber-dim: #fef0c7;
+            --cyan: #0e7490;
+            --pink: #9d174d;
+            --radius: 8px;
+            --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+            --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
         }
 
         body {
-            font-family: 'Inter', system-ui, sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
             background: var(--bg);
             color: var(--text);
             min-height: 100vh;
-            line-height: 1.6;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
         }
 
         /* Header */
         .header {
-            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+            background: var(--surface);
             border-bottom: 1px solid var(--border);
-            padding: 24px 32px;
+            border-top: 3px solid var(--accent);
+            padding: 14px 32px;
             position: sticky;
             top: 0;
             z-index: 100;
-            backdrop-filter: blur(20px);
         }
         .header-inner {
-            max-width: 1400px;
+            max-width: 1280px;
             margin: 0 auto;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 24px;
         }
-        .header h1 {
-            font-size: 20px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #818cf8, #c084fc);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            display: flex; align-items: center; gap: 10px;
-        }
-        .header h1 .icon { font-size: 24px; -webkit-text-fill-color: initial; }
-        .team {
-            font-size: 13px;
-            color: var(--text-dim);
-        }
-        .team strong { color: var(--text); font-weight: 500; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand svg { flex-shrink: 0; }
+        .brand h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); line-height: 1.2; }
+        .brand .tagline { font-size: 12px; color: var(--text-dim); }
+        .team { font-size: 12px; color: var(--text-dim); text-align: right; line-height: 1.5; }
+        .team strong { color: var(--text); font-weight: 600; }
 
         /* Loading */
         .loading-screen {
@@ -77,54 +75,60 @@
             align-items: center;
             justify-content: center;
             min-height: 60vh;
-            gap: 20px;
+            gap: 18px;
         }
         .spinner {
-            width: 48px; height: 48px;
+            width: 36px; height: 36px;
             border: 3px solid var(--border);
             border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .loading-text { color: var(--text-dim); font-size: 14px; }
+        .loading-text { color: var(--text-dim); font-size: 13px; }
 
         /* Main */
-        .main { max-width: 1400px; margin: 0 auto; padding: 24px 32px 80px; }
+        .main { max-width: 1280px; margin: 0 auto; padding: 24px 32px 64px; }
+
+        .context-bar {
+            display: flex; flex-wrap: wrap; gap: 8px 28px;
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 12px 18px; margin-bottom: 20px; box-shadow: var(--shadow);
+            font-size: 12px; color: var(--text-dim);
+        }
+        .context-bar b { color: var(--text); font-weight: 600; font-family: var(--mono); font-size: 12px; }
 
         /* Summary cards */
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 32px;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 14px;
+            margin-bottom: 24px;
         }
         .summary-card {
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 20px;
-            transition: transform 0.2s, border-color 0.2s;
-        }
-        .summary-card:hover {
-            transform: translateY(-2px);
-            border-color: var(--accent);
+            padding: 16px 18px;
+            box-shadow: var(--shadow);
         }
         .summary-card .label {
             font-size: 11px;
+            font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.6px;
             color: var(--text-dim);
             margin-bottom: 6px;
         }
         .summary-card .value {
-            font-size: 28px;
+            font-size: 26px;
             font-weight: 700;
             font-family: var(--mono);
+            letter-spacing: -0.02em;
         }
         .summary-card .sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
         .val-green { color: var(--green); }
-        .val-accent { color: var(--accent2); }
+        .val-accent { color: var(--accent); }
         .val-cyan { color: var(--cyan); }
         .val-amber { color: var(--amber); }
         .val-pink { color: var(--pink); }
@@ -134,44 +138,47 @@
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            margin-bottom: 20px;
+            margin-bottom: 14px;
             overflow: hidden;
+            box-shadow: var(--shadow);
         }
         .step-header {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 16px 20px;
+            padding: 13px 18px;
             cursor: pointer;
             user-select: none;
             transition: background 0.15s;
         }
         .step-header:hover { background: var(--surface2); }
         .step-num {
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            color: white;
-            font-size: 11px;
+            background: var(--accent);
+            color: #fff;
+            font-size: 12px;
             font-weight: 700;
-            width: 28px; height: 28px;
-            border-radius: 8px;
+            width: 26px; height: 26px;
+            border-radius: 6px;
             display: flex; align-items: center; justify-content: center;
             flex-shrink: 0;
         }
         .step-title { font-weight: 600; font-size: 14px; flex: 1; }
         .step-badge {
-            font-size: 11px; padding: 3px 10px; border-radius: 20px;
+            font-size: 11px; padding: 3px 10px; border-radius: 999px;
             font-family: var(--mono); font-weight: 500;
         }
         .badge-pass { background: var(--green-dim); color: var(--green); }
-        .badge-info { background: rgba(99,102,241,0.15); color: var(--accent); }
+        .badge-info { background: var(--accent-dim); color: var(--accent); }
+        .badge-red { background: var(--red-dim); color: var(--red); }
         .chevron {
             transition: transform 0.2s;
             color: var(--text-dim);
+            font-size: 10px;
         }
         .step.open .chevron { transform: rotate(90deg); }
         .step-body {
             display: none;
-            padding: 0 20px 20px;
+            padding: 4px 18px 18px;
             border-top: 1px solid var(--border);
         }
         .step.open .step-body { display: block; }
@@ -182,13 +189,14 @@
             border-collapse: collapse;
             font-size: 13px;
             margin-top: 12px;
+            border: 1px solid var(--border);
         }
         th {
             text-align: left;
             padding: 8px 12px;
             background: var(--surface2);
             color: var(--text-dim);
-            font-weight: 500;
+            font-weight: 600;
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -199,21 +207,21 @@
             font-family: var(--mono);
             font-size: 12px;
         }
-        tr:hover td { background: rgba(99,102,241,0.04); }
+        tr:hover td { background: #f8fafc; }
 
         /* Misc */
         .tag {
             display: inline-block;
             padding: 2px 8px;
-            border-radius: 6px;
+            border-radius: 4px;
             font-size: 11px;
             font-family: var(--mono);
             font-weight: 500;
         }
         .tag-green { background: var(--green-dim); color: var(--green); }
-        .tag-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
-        .tag-red { background: rgba(239,68,68,0.15); color: var(--red); }
-        .tag-blue { background: rgba(99,102,241,0.15); color: var(--accent); }
+        .tag-amber { background: var(--amber-dim); color: var(--amber); }
+        .tag-red { background: var(--red-dim); color: var(--red); }
+        .tag-blue { background: var(--accent-dim); color: var(--accent); }
 
         .edge-list {
             display: grid;
@@ -226,6 +234,7 @@
             font-size: 12px;
             padding: 6px 10px;
             background: var(--surface2);
+            border: 1px solid var(--border);
             border-radius: 6px;
             color: var(--text-dim);
         }
@@ -249,15 +258,15 @@
         }
         .bar-track {
             flex: 1;
-            height: 20px;
+            height: 14px;
             background: var(--surface2);
-            border-radius: 4px;
+            border-radius: 3px;
             overflow: hidden;
         }
         .bar-fill {
             height: 100%;
-            background: linear-gradient(90deg, var(--accent), var(--accent2));
-            border-radius: 4px;
+            background: var(--accent);
+            border-radius: 3px;
             transition: width 0.6s ease;
         }
         .bar-value {
@@ -270,9 +279,10 @@
         .dag-visual {
             font-family: var(--mono);
             font-size: 13px;
-            padding: 16px;
-            background: var(--surface2);
-            border-radius: 8px;
+            padding: 14px 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
             line-height: 1.8;
             margin-top: 10px;
         }
@@ -282,9 +292,11 @@
         .diff-block {
             font-family: var(--mono);
             font-size: 12px;
-            background: #0d1117;
-            padding: 16px;
-            border-radius: 8px;
+            background: #f8fafc;
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 14px 16px;
+            border-radius: 6px;
             overflow-x: auto;
             white-space: pre;
             line-height: 1.6;
@@ -292,33 +304,38 @@
             max-height: 400px;
             overflow-y: auto;
         }
-        .diff-add { color: #3fb950; }
-        .diff-del { color: #f85149; }
-        .diff-hdr { color: #79c0ff; }
+        .diff-add { color: #116329; background: #e6f4ea; }
+        .diff-del { color: #a4161a; background: #fdecea; }
+        .diff-hdr { color: #1f4fb4; }
 
         .section-label {
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             color: var(--text-dim);
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 16px;
+            letter-spacing: 0.6px;
+            margin-top: 18px;
             margin-bottom: 6px;
         }
 
         .two-col {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 16px;
+            gap: 14px;
+            margin-top: 14px;
         }
         @media (max-width: 800px) {
             .two-col { grid-template-columns: 1fr; }
             .summary-grid { grid-template-columns: repeat(2, 1fr); }
+            .header-inner { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .team { text-align: left; }
+            .main { padding: 16px; }
         }
 
         .compact-card {
             background: var(--surface2);
-            border-radius: 8px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
             padding: 14px;
         }
         .compact-card h4 {
@@ -327,27 +344,54 @@
             margin-bottom: 8px;
             color: var(--text);
         }
-        .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
+        .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 3px 0; }
         .kv .k { color: var(--text-dim); }
-        .kv .v { font-family: var(--mono); color: var(--text); }
+        .kv .v { font-family: var(--mono); color: var(--text); text-align: right; word-break: break-all; }
+
+        .check {
+            display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+            background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
+        }
+        .check .mark {
+            width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 700; color: #fff;
+        }
+        .check .mark.ok { background: var(--green); }
+        .check .mark.bad { background: var(--red); }
+
+        .note {
+            margin-top: 16px; padding: 12px 14px; background: var(--amber-dim); border: 1px solid #f5d98a;
+            border-radius: 6px; font-size: 12px; color: #5c3b06; line-height: 1.7;
+        }
 
         .footer {
             text-align: center;
-            padding: 32px;
+            padding: 24px;
             color: var(--text-dim);
             font-size: 12px;
             border-top: 1px solid var(--border);
-            margin-top: 40px;
+            margin-top: 32px;
         }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="header-inner">
-            <h1><span class="icon">⚡</span> GitHub Actions Performance Optimizer</h1>
+            <div class="brand">
+                <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
+                    <rect width="32" height="32" rx="7" fill="#1f4fb4"/>
+                    <circle cx="9" cy="16" r="2.6" fill="#fff"/><circle cx="23" cy="9" r="2.6" fill="#fff"/><circle cx="23" cy="23" r="2.6" fill="#fff"/>
+                    <path d="M11.4 15.2 20.6 10M11.4 16.8 20.6 22" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+                </svg>
+                <div>
+                    <h1>GitHub Actions Performance Optimizer</h1>
+                    <div class="tagline">Dependency-aware, prediction-driven CI/CD scheduling</div>
+                </div>
+            </div>
             <div class="team">
-                <strong>Akshat Singh</strong> — 23BKT0005 &nbsp;|&nbsp;
-                <strong>Aditya Choubey</strong> — 23BCE2274
+                <strong>Akshat Singh</strong> 23BKT0005 &nbsp;&middot;&nbsp; <strong>Aditya Choubey</strong> 23BCE2274<br>
+                B.Tech CSE capstone (BCSE497J), VIT
             </div>
         </div>
     </div>
@@ -390,7 +434,12 @@
         const s = d.summary;
 
         content.innerHTML = `
-            <!-- Summary Cards -->
+            <div class="context-bar">
+                <span>Repository <b>${escapeHtml(d.data_source.repo)}</b></span>
+                <span>Workflow <b>${escapeHtml(d.data_source.workflow)}</b></span>
+                <span>Commit <b>${escapeHtml(d.data_source.commit)}</b></span>
+                <span>History <b>${d.data_source.history_runs} runs / ${d.data_source.history_rows} job rows</b> (real, ingested)</span>
+            </div>
             <div class="summary-grid">
                 <div class="summary-card">
                     <div class="label">Files Analyzed</div>
@@ -408,9 +457,9 @@
                     <div class="sub">Cache · Failure · Duration</div>
                 </div>
                 <div class="summary-card">
-                    <div class="label">Wall-Clock Saved</div>
+                    <div class="label">Wall-clock saved (estimated)</div>
                     <div class="value val-green">${s.time_saved_pct > 0 ? '+' : ''}${s.time_saved_pct}%</div>
-                    <div class="sub">${s.baseline_wall_clock}s → ${s.optimized_wall_clock}s</div>
+                    <div class="sub">${s.baseline_wall_clock}s → ${s.optimized_wall_clock}s, from predicted durations</div>
                 </div>
                 <div class="summary-card">
                     <div class="label">Pipeline Time</div>
@@ -423,11 +472,11 @@
             ${renderStep(1, 'Repository Analysis', `${d.step1_repository.file_count} files, ${d.step1_repository.job_count} jobs`, 'badge-info', true, `
                 <div class="two-col">
                     <div class="compact-card">
-                        <h4>📁 Files Discovered</h4>
-                        ${d.step1_repository.files_discovered.map(f => `<div class="kv"><span class="k">✓</span><span class="v">${f}</span></div>`).join('')}
+                        <h4>Files discovered</h4>
+                        ${d.step1_repository.files_discovered.map(f => `<div class="kv"><span class="k">&#10003;</span><span class="v">${f}</span></div>`).join('')}
                     </div>
                     <div class="compact-card">
-                        <h4>🔧 Workflow: ${d.step1_repository.workflow_name}</h4>
+                        <h4>Workflow: ${d.step1_repository.workflow_name}</h4>
                         <div class="kv"><span class="k">Triggers</span><span class="v">${d.step1_repository.triggers.join(', ')}</span></div>
                         <div class="kv"><span class="k">Jobs</span><span class="v">${d.step1_repository.job_count}</span></div>
                         <div class="kv"><span class="k">DAG edges</span><span class="v">${d.step1_repository.dag_edge_count}</span></div>
@@ -587,7 +636,7 @@
 
             <!-- Step 10: Output -->
             ${renderStep(10, 'Optimized Workflow Generation', d.step10_output.yaml_valid ? 'VALID YAML' : 'INVALID', d.step10_output.yaml_valid ? 'badge-pass' : 'badge-red', true, `
-                <div class="kv"><span class="k">YAML Valid</span><span class="v" style="color:var(--green)">✓ PASS</span></div>
+                <div class="kv"><span class="k">YAML Valid</span><span class="v" style="color:var(--green)">&#10003; PASS</span></div>
                 <div class="section-label">Workflow Diff (Original → Optimized)</div>
                 <div class="diff-block">${formatDiff(d.step10_output.diff_preview)}</div>
             `)}
@@ -596,32 +645,32 @@
             ${renderStep(11, 'Final Summary', `${s.elapsed}s`, 'badge-pass', true, `
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:14px;">
                     <div class="compact-card">
-                        <h4>⏱ Wall-Clock</h4>
+                        <h4>Wall-clock (estimated)</h4>
                         <div class="kv"><span class="k">Baseline</span><span class="v">${s.baseline_wall_clock}s</span></div>
                         <div class="kv"><span class="k">Optimized</span><span class="v" style="color:var(--green)">${s.optimized_wall_clock}s</span></div>
                         <div class="kv"><span class="k">Saved</span><span class="v" style="color:var(--green)">${s.time_saved_pct > 0 ? '+' : ''}${s.time_saved_pct}%</span></div>
                     </div>
                     <div class="compact-card">
-                        <h4>💰 Cost</h4>
+                        <h4>Cost (estimated)</h4>
                         <div class="kv"><span class="k">Baseline</span><span class="v">$${s.baseline_cost}</span></div>
                         <div class="kv"><span class="k">Optimized</span><span class="v">${s.cost_saved_pct > 0 ? '<span style="color:var(--green)">' : '<span style="color:var(--amber)">'}$${s.optimized_cost}</span></span></div>
                         <div class="kv"><span class="k">Change</span><span class="v">${s.cost_saved_pct > 0 ? '+' : ''}${s.cost_saved_pct}%</span></div>
                     </div>
                     <div class="compact-card">
-                        <h4>⚡ Energy</h4>
+                        <h4>Energy (estimated)</h4>
                         <div class="kv"><span class="k">Baseline</span><span class="v">${s.baseline_energy} Wh</span></div>
                         <div class="kv"><span class="k">Optimized</span><span class="v">${s.optimized_energy} Wh</span></div>
                         <div class="kv"><span class="k">Change</span><span class="v">${s.energy_saved_pct > 0 ? '+' : ''}${s.energy_saved_pct}%</span></div>
                     </div>
                     <div class="compact-card">
-                        <h4>🌿 CO₂</h4>
+                        <h4>CO₂ (estimated)</h4>
                         <div class="kv"><span class="k">Baseline</span><span class="v">${s.baseline_co2}g</span></div>
                         <div class="kv"><span class="k">Optimized</span><span class="v">${s.optimized_co2}g</span></div>
                         <div class="kv"><span class="k">Change</span><span class="v">${s.co2_saved_pct > 0 ? '+' : ''}${s.co2_saved_pct}%</span></div>
                     </div>
                 </div>
-                <div style="margin-top:16px; padding:14px; background:var(--surface2); border-radius:8px; font-size:12px; color:var(--text-dim); line-height:1.7">
-                    <strong style="color:var(--amber)">NOTE:</strong> Cost/energy may increase when the scheduler selects
+                <div class="note">
+                    <strong>Note.</strong> Cost/energy may increase when the scheduler selects
                     faster (more expensive) runners to reduce wall-clock time.
                     This is the expected behavior of the α/β/γ weighted objective function.
                     Predictions come from models trained on ${d.data_source.history_rows} real ingested (run, job) rows from
@@ -675,9 +724,9 @@
     }
 
     function renderCheck(label, ok) {
-        return `<div style="display:flex; align-items:center; gap:8px; padding:10px; background:var(--surface2); border-radius:8px;">
-            <span style="font-size:18px">${ok ? '✅' : '❌'}</span>
-            <span style="font-size:13px">${label}</span>
+        return `<div class="check">
+            <span class="mark ${ok ? 'ok' : 'bad'}">${ok ? '&#10003;' : '&times;'}</span>
+            <span>${label}</span>
         </div>`;
     }
 
