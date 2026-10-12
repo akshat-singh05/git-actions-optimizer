@@ -365,6 +365,55 @@
             border-radius: 6px; font-size: 12px; color: #5c3b06; line-height: 1.7;
         }
 
+        /* Sidebar + pages */
+        .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 24px; align-items: start; }
+        .sidebar {
+            position: sticky; top: 92px;
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 10px;
+            max-height: calc(100vh - 116px); overflow-y: auto;
+        }
+        .nav-heading {
+            font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
+            color: var(--text-dim); padding: 6px 10px 8px;
+        }
+        .nav-link {
+            display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px;
+            font-size: 13px; color: var(--text); text-decoration: none; border-left: 3px solid transparent;
+        }
+        .nav-link:hover { background: var(--surface2); }
+        .nav-link.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; border-left-color: var(--accent); }
+        .nav-num {
+            width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0; background: var(--surface2); color: var(--text-dim);
+            font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+        }
+        .nav-link.active .nav-num { background: var(--accent); color: #fff; }
+
+        .page { min-width: 0; }
+        .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+        .page-head h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; flex: 1; }
+        .page > .two-col:first-of-type, .page > table:first-of-type { margin-top: 0; }
+        .page-body-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+
+        .index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-top: 8px; }
+        .index-card {
+            display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-decoration: none; color: var(--text);
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+        }
+        .index-card:hover { border-color: var(--accent); }
+        .index-text { display: flex; flex-direction: column; min-width: 0; font-size: 13px; }
+        .index-text span { font-size: 11px; color: var(--text-dim); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .pager { display: flex; justify-content: space-between; margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border); }
+        .pager a { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+        .pager a:hover { border-color: var(--accent); }
+
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .sidebar { position: static; max-height: none; display: flex; flex-wrap: wrap; gap: 4px; }
+            .nav-heading { width: 100%; }
+        }
+
         .footer {
             text-align: center;
             padding: 24px;
@@ -433,7 +482,8 @@
         }
         const s = d.summary;
 
-        content.innerHTML = `
+        pages = [];
+        const overview = `
             <div class="context-bar">
                 <span>Repository <b>${escapeHtml(d.data_source.repo)}</b></span>
                 <span>Workflow <b>${escapeHtml(d.data_source.workflow)}</b></span>
@@ -680,33 +730,62 @@
                 </div>
             `)}
 
+        `;
+
+        // Overview page = summary cards + an index of the feature pages
+        const index = `
+            <div class="section-label">Pipeline stages</div>
+            <div class="index-grid">
+                ${pages.map(pg => `<a class="index-card" href="#${pg.id}">
+                    <span class="step-num">${pg.num}</span>
+                    <span class="index-text"><b>${pg.title}</b><span>${pg.badge}</span></span>
+                </a>`).join('')}
+            </div>`;
+        const all = [{id: 'overview', num: null, title: 'Overview', badge: '', badgeClass: '', body: overview + index}, ...pages];
+
+        content.innerHTML = `
+            <div class="layout">
+                <nav class="sidebar" aria-label="Pipeline stages">
+                    <div class="nav-heading">Pipeline</div>
+                    ${all.map(pg => `<a class="nav-link" id="nav-${pg.id}" href="#${pg.id}">
+                        <span class="nav-num">${pg.num === null ? '&#9776;' : pg.num}</span><span>${pg.title}</span></a>`).join('')}
+                </nav>
+                <section class="page" id="page"></section>
+            </div>
             <div class="footer">
                 GitHub Actions Performance Optimizer — Live Local Demo<br>
                 Akshat Singh (23BKT0005) · Aditya Choubey (23BCE2274)
-            </div>
-        `;
+            </div>`;
 
-        // Open first few steps by default
-        document.querySelectorAll('.step').forEach((el, i) => {
-            if ([0, 6, 7, 8, 10].includes(i)) el.classList.add('open');
-        });
-
-        // Toggle on click
-        document.querySelectorAll('.step-header').forEach(hdr => {
-            hdr.addEventListener('click', () => hdr.closest('.step').classList.toggle('open'));
-        });
+        function show() {
+            const id = (location.hash || '#overview').slice(1);
+            const i = Math.max(0, all.findIndex(pg => pg.id === id));
+            const pg = all[i];
+            document.querySelectorAll('.nav-link').forEach(a => a.classList.toggle('active', a.id === 'nav-' + pg.id));
+            const prev = all[i - 1], next = all[i + 1];
+            document.getElementById('page').innerHTML = `
+                <div class="page-head">
+                    ${pg.num === null ? '' : `<div class="step-num">${pg.num}</div>`}
+                    <h2>${pg.title}</h2>
+                    ${pg.badge ? `<span class="step-badge ${pg.badgeClass}">${pg.badge}</span>` : ''}
+                </div>
+                ${pg.num === null ? pg.body : `<div class="page-body-card">${pg.body}</div>`}
+                <div class="pager">
+                    ${prev ? `<a href="#${prev.id}">&larr; ${prev.title}</a>` : '<span></span>'}
+                    ${next ? `<a href="#${next.id}">${next.title} &rarr;</a>` : '<span></span>'}
+                </div>`;
+            document.title = pg.title + ' — GitHub Actions Optimizer';
+            window.scrollTo(0, 0);
+        }
+        window.onhashchange = show;
+        show();
     }
 
+    // Each feature becomes its own page (sidebar entry + #step-N route); renderStep only registers it.
+    let pages = [];
     function renderStep(num, title, badge, badgeClass, open, body) {
-        return `<div class="step${open ? ' open' : ''}">
-            <div class="step-header">
-                <div class="step-num">${num}</div>
-                <div class="step-title">${title}</div>
-                <span class="step-badge ${badgeClass}">${badge}</span>
-                <span class="chevron">▶</span>
-            </div>
-            <div class="step-body">${body}</div>
-        </div>`;
+        pages.push({id: 'step-' + num, num, title, badge, badgeClass, body});
+        return '';
     }
 
     function renderModelCard(name, m) {
