@@ -84,7 +84,7 @@ gha-optimizer analyze <checkout>/.github/workflows/ci.yml --repo owner/repo [--c
 gha-optimizer evaluate <workflow.yml> --repo owner/repo   # scheduler alpha/beta/gamma ablation (ESTIMATED figures)
 python examples/demo.py --repo owner/repo         # full pipeline on a real ingested repo
 python demo.py --repo owner/repo                  # verbose stage-by-stage walkthrough on real data
-python demo_server.py --repo owner/repo           # standalone UI at http://localhost:8501 (no Postgres/Redis/Celery)
+python demo_server.py --repo owner/repo [--warm] [--snapshot-root D:/ghas]   # standalone dashboard at http://localhost:8501 (no Postgres/Redis/Celery); repository drop-down switches between ingested repos; see docs/PRESENTING.md
 gha-optimizer serve [--reload]                    # FastAPI on :8000 (/api/v1/optimize returns 422 on cold start)
 
 # Full stack (Postgres + Redis + API + Celery worker)
