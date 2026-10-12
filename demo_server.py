@@ -4,7 +4,7 @@ Lightweight Demo Server — serves the real pipeline results to a browser UI.
 No Redis, Postgres, or Celery required. Runs entirely locally on REAL ingested data:
 
     gha-optimizer ingest --repo owner/repo --since 40d     # once
-    python demo_server.py --repo owner/repo [--workflow .github/workflows/ci.yml]
+    python demo_server.py --repo owner/repo [--workflow .github/workflows/ci.yml] [--warm]
 
 Then open http://localhost:8501 in Chrome.  With too little ingested history the API
 returns an explicit "declined" payload — there is no synthetic fallback.  Improvement
@@ -16,6 +16,7 @@ import argparse
 import logging
 import os
 import sys
+import threading
 import time
 from collections import Counter
 from pathlib import Path
@@ -62,8 +63,8 @@ from gha_optimizer.pipeline import job_only_dag  # noqa: E402
 from gha_optimizer.scheduler.optimizer import build_schedule  # noqa: E402
 from gha_optimizer.server.db.session import SessionLocal, init_db  # noqa: E402
 
-# Selected on the command line (see __main__)
-TARGET: dict = {"repo": None, "workflow": None}
+# Default repository, selected on the command line (see __main__); the UI can switch to any ingested repository
+TARGET: dict = {"repo": None, "workflow": None, "snapshot_root": None}
 
 
 def _num(v):
@@ -71,15 +72,18 @@ def _num(v):
 
 
 # ─── Run the full pipeline on real data and return structured results ───
-def run_demo_pipeline():
+def run_demo_pipeline(repo: str | None = None, workflow: str | None = None):
+    repo = repo or TARGET["repo"]
+    workflow = workflow or (TARGET["workflow"] if repo == TARGET["repo"] else None)
     t0 = time.time()
     init_db()
     db = SessionLocal()
     try:
-        snap = prepare_repo_snapshot(db, TARGET["repo"], TARGET["workflow"])
+        extra = {"snapshot_root": Path(TARGET["snapshot_root"])} if TARGET["snapshot_root"] else {}
+        snap = prepare_repo_snapshot(db, repo, workflow, **extra)
     except (InsufficientHistoryError, LookupError) as exc:
         return {"declined": True, "reason": str(exc),
-                "hint": f"gha-optimizer ingest --repo {TARGET['repo']}  (no synthetic data is substituted)"}
+                "hint": f"gha-optimizer ingest --repo {repo}  (no synthetic data is substituted)"}
     finally:
         db.close()
 
@@ -267,22 +271,66 @@ def run_demo_pipeline():
 demo_app = FastAPI(title="GHA Optimizer Demo")
 demo_app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-_cached_results = None
+_cache: dict[str, dict] = {}            # repo -> pipeline result (a repo's result is computed once, on first request)
+_pipeline_lock = threading.Lock()       # the pipeline writes a snapshot directory per repo: one run at a time
+_computing: set[str] = set()
+
+
+def list_ingested() -> list[dict]:
+    """Every ingested repository with its most-ingested workflow (real SQL counts)."""
+    from sqlalchemy import func
+
+    from gha_optimizer.server.db import models as m
+
+    init_db()
+    db = SessionLocal()
+    try:
+        rows = (db.query(m.WorkflowRun.repo, m.WorkflowRun.workflow_path, func.count(m.WorkflowRun.id))
+                .group_by(m.WorkflowRun.repo, m.WorkflowRun.workflow_path).all())
+    finally:
+        db.close()
+    best: dict[str, tuple[str, int]] = {}
+    for repo, wf, n in rows:
+        if repo not in best or n > best[repo][1]:
+            best[repo] = (wf, n)
+    return [{"repo": r, "workflow": wf, "runs": n, "ready": r in _cache,
+             "computing": r in _computing,
+             "declined": bool(_cache.get(r, {}).get("declined"))} for r, (wf, n) in sorted(best.items())]
+
+
+def result_for(repo: str, refresh: bool = False) -> dict:
+    if refresh or repo not in _cache:
+        with _pipeline_lock:
+            if refresh or repo not in _cache:
+                _computing.add(repo)
+                try:
+                    _cache[repo] = run_demo_pipeline(repo)
+                finally:
+                    _computing.discard(repo)
+    return _cache[repo]
+
+
+def _warm(repos: list[str]) -> None:
+    for r in repos:
+        try:
+            result_for(r)
+        except Exception as exc:  # a failing repository must not stop the others
+            logging.getLogger("demo").warning("warm-up of %s failed: %s", r, exc)
+
+
+@demo_app.get("/api/repos")
+def get_repos():
+    return JSONResponse(content={"default": TARGET["repo"], "repos": list_ingested()})
 
 
 @demo_app.get("/api/demo")
-def get_demo_results():
-    global _cached_results
-    if _cached_results is None:
-        _cached_results = run_demo_pipeline()
-    return JSONResponse(content=_cached_results)
+def get_demo_results(repo: str | None = None):
+    return JSONResponse(content=result_for(repo or TARGET["repo"]))
 
 
 @demo_app.get("/api/demo/refresh")
-def refresh_demo():
-    global _cached_results
-    _cached_results = run_demo_pipeline()
-    return JSONResponse(content=_cached_results)
+def refresh_demo(repo: str | None = None):
+    return JSONResponse(content=result_for(repo or TARGET["repo"], refresh=True))
 
 
 @demo_app.get("/", response_class=HTMLResponse)
@@ -295,13 +343,18 @@ if __name__ == "__main__":
     parser.add_argument("--repo", required=True, help="owner/repo (must have been ingested)")
     parser.add_argument("--workflow", help="repo-relative workflow path (default: the most-ingested workflow)")
     parser.add_argument("--db", help="database URL")
+    parser.add_argument("--snapshot-root", help="short directory for the exported repository snapshots (Windows: paths over ~260 characters fail, e.g. apache/dubbo; try D:/ghas)")
+    parser.add_argument("--warm", action="store_true",
+                        help="compute every ingested repository in the background at start-up, so switching repositories in the UI is instant")
     cli_args = parser.parse_args()
     if cli_args.db:
         os.environ["DATABASE_URL"] = cli_args.db
-    TARGET.update(repo=cli_args.repo, workflow=cli_args.workflow)
+    TARGET.update(repo=cli_args.repo, workflow=cli_args.workflow, snapshot_root=cli_args.snapshot_root)
     print("=" * 60)
     print("  GHA Optimizer — Demo UI Server (real ingested data)")
     print(f"  Repository: {cli_args.repo}")
-    print("  Open http://localhost:8501 in Chrome")
+    print("  Open http://localhost:8501 in Chrome (repository selector in the header)")
     print("=" * 60)
+    first = [TARGET["repo"]] + ([x["repo"] for x in list_ingested() if x["repo"] != TARGET["repo"]] if cli_args.warm else [])
+    threading.Thread(target=_warm, args=(first,), daemon=True).start()
     uvicorn.run(demo_app, host="127.0.0.1", port=8501, log_level="warning")
