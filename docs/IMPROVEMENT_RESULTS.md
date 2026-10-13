@@ -85,6 +85,32 @@ neither difference from the baseline is distinguishable from 0 (-0.039 [-0.128, 
 failures among its scored runs and prometheus had none scored. So the live test shows the mechanism works and gives no evidence
 that the v2 model beats the baseline; it does not contradict the offline results either, since 13 runs cannot.
 
+## E. Reproducibility (2026-10-14)
+
+Symptom: the same repository gave different estimates at different times (poetry's estimated baseline wall-clock 307.4 s, later 303.8 s).
+The models were already seeded (`random_state = 13` everywhere). The cause was an input, not a seed: the hour of day, the weekday and
+`hours_since_last_failure` of the scored run defaulted to the wall clock when the inference frame was built, and the hour and weekday are
+model features. Fix: the scoring time is an explicit parameter (`as_of`). In the dashboard and the demos it is the creation time of the
+run whose diff is scored (`RepoSnapshot.as_of`); `analyze --as-of` and the API field `as_of` set it explicitly; without them `analyze`
+still uses the current time and prints it. Verified by running the complete dashboard pipeline twice in separate processes with different
+`PYTHONHASHSEED` values: the two result files were byte-identical (62,641 bytes); `tests/test_reproducibility.py` pins the time features
+and the end-to-end pipeline. Limit: determinism was verified on poetry; other repositories use the same code path.
+
+## F. Calibration of the failure probabilities (2026-10-14, `docs/CALIBRATION.md`)
+
+Question: is "P(failure) = 0.91" a probability? Measured with the rolling-origin folds on poetry, fastapi, prometheus and dubbo:
+
+* The raw logistic score is mildly over-confident at the top (top-decile predicted vs observed: poetry 0.35 vs 0.28, fastapi 0.49 vs 0.37,
+  prometheus 0.20 vs 0.11, dubbo 0.21 vs 0.17) and its Brier score is **not** better than the job's prior failure rate's in poetry,
+  fastapi and dubbo (marginally worse in prometheus too).
+* Two recalibrations were tried: a Platt sigmoid fitted on the newest 25% of the training rows, and an increasing map learned from the earlier
+  folds' out-of-sample predictions. Neither improved the Brier score in 3 of 4 repositories (significantly worse in fastapi; the out-of-sample map
+  also in poetry and dubbo); both helped slightly in prometheus (4.0% base rate, 15k rows).
+* Decision: no recalibration is applied. The dashboard instead shows the score next to the job's own base rate and the observed failure rate of
+  unseen rows that scored alike (with their count), flags a score above the highest one the model ever produced on unseen rows (poetry's 0.91 for
+  `tests-matrix` is above its highest unseen score of 0.58, so it is an extrapolation) and states the model-vs-baseline PR-AUC and Brier for the
+  repository (poetry: the baseline is better on both).
+
 ## What remains open
 
 * Pooled model verdict (frozen test, about 2026-10-26) and the logistic-default verdict (`docs/FROZEN_CHOICE.md`, about 2026-10-21).

@@ -1,22 +1,24 @@
 # Presenting with different repositories
 
-The demo UI (`demo_server.py` + `demo_ui.html`) can show any repository that has been ingested into the local database.
+The dashboard (`gha-optimizer dashboard`; `python demo_server.py ...` is the same command) can show any repository that has been ingested into the local database.
 A repository is chosen in the **Repository** drop-down in the header; the choice is kept in the address (`?repo=owner/name`),
 so a repository can also be opened directly, for example `http://localhost:8501/?repo=fastapi/fastapi#step-8`.
 
 ## Before the panel (about 6 minutes, once)
 
 ```bash
-.venv\Scripts\python.exe demo_server.py --repo python-poetry/poetry --warm --snapshot-root D:/ghas
+gha-optimizer dashboard --repo python-poetry/poetry --warm --snapshot-root D:/ghas
 ```
 
 * `--warm` computes every ingested repository in the background, one at a time, so switching in front of the panel is
-  instant instead of taking 40-110 s. The drop-down marks finished repositories with a tick; wait until the ones you plan to
+  instant instead of taking 40-110 s. Finished results are also kept on disk (`.gha_optimizer/dashboard_cache/`) and reused after a
+  restart while the ingested runs, the tip commit and the library versions are unchanged, so the second start needs no warm-up. The drop-down marks finished repositories with a tick; wait until the ones you plan to
   show have it (poetry first, then the others in alphabetical order; dubbo takes the longest, about 2 minutes).
 * `--snapshot-root D:/ghas` keeps the exported file paths short. Without it `apache/dubbo` fails on Windows (paths over about
   260 characters). Any short folder works.
 * Open http://localhost:8501 and click through the repositories once to confirm.
-* Figures can differ in the last digit between runs (the models are refitted), so do not quote a number you did not see on screen.
+* Numbers are reproducible: the scoring time is the scored run's own creation time, so the same repository shows the same figures every time
+  (this was not true before 2026-10-14, when the hour of the day leaked in).
 
 ## Which repositories work (as ingested on 2026-10-12)
 
@@ -32,15 +34,18 @@ Declines are a feature, not a bug: say so before the panel asks.
 
 ## Suggested 10-minute flow
 
-1. **Dashboard of poetry (2 min).** Real history size, jobs, graph size, per-job predicted duration and failure probability,
-   the estimated timeline that respects `needs`. Point at the three pills: REAL history, ESTIMATED savings.
-2. **Pages 1-6 (2 min).** Workflow and DAG, source graph, CI graph, fusion edges, impact analysis of the real diff, the 15 features.
-3. **Pages 7-10 (3 min).** Models and their validation, the schedule and its safety checks (all `needs` preserved), the proposed
-   YAML and its diff. Be explicit: the default plan changes nothing (0% estimated saving); the levers that could change the time
-   are opt-in.
-4. **Switch to fastapi, then dubbo (1 min).** Same pipeline, different workflow; dubbo shows scale.
-5. **Switch to uv or prometheus (1 min).** The decline page: honesty rule in action.
-6. **Close (1 min).** What was measured and what was not: `docs/RESULTS.md`, `docs/IMPROVEMENT_RESULTS.md`.
+1. **Dashboard of poetry (2 min).** Real history size, the job graph coloured by predicted failure risk, per-job duration and failure bars,
+   the estimated timeline that respects `needs`. Point at the pills: REAL history, ESTIMATED savings.
+2. **Pipeline pages (2 min).** Repository (job DAG), graph fusion, impact analysis of the real diff, the features.
+3. **Models and probabilities (2 min).** Each failure score next to the job's own base rate and the failure rate seen on unseen rows that
+   scored alike; the red "above anything seen" tag; model vs baseline on this repository. Say it plainly: on poetry the baseline is at
+   least as good, which is why the score is not presented as a probability.
+4. **What-if (2 min) - the live moment.** Click "A dependency file", then "Docs only", then search a path of the audience's choice. Impacted
+   jobs, scores and the estimated timeline update; say what does and does not react (only the structural features react to the files).
+5. **Workflow page (30 s).** Original and proposed side by side, the download button; the original file is never modified.
+6. **Switch repository (1 min).** fastapi or dubbo for scale; then a declining repository (see the table above) to show the honesty rule.
+7. **Evidence and close (30 s).** The Evidence page lists the generated report rows for the repository; `docs/RESULTS.md` and
+   `docs/IMPROVEMENT_RESULTS.md` state what was measured and what was not.
 
 ## Likely questions from this screen
 

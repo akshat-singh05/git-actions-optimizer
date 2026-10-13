@@ -125,6 +125,14 @@ be measured.
   billable time +4.1% (not significant) (`docs/relax_run/`). One repository; no failing run measured.
 * **Live prospective scoring** (`docs/LIVE_TEST.md` when complete): a few hours of data; a demonstration, not a significance test.
 
+## 5c. Reproducibility, calibration and dashboard (2026-10-14; `docs/IMPROVEMENT_RESULTS.md` E-G)
+
+* **Reproducibility:** the scored run's time is an explicit input (`as_of`); two full dashboard runs gave byte-identical results.
+* **Calibration (`docs/CALIBRATION.md`):** the raw failure score is mildly over-confident at the top and is not better calibrated than the job's prior failure rate;
+  Platt scaling and an out-of-sample isotonic map did not improve the Brier score in 3 of 4 repositories (significantly worse in fastapi). No recalibration is applied;
+  the dashboard reports observed rates next to the score.
+* **One dashboard:** stage pages, what-if scoring of chosen files, evidence rows from the generated reports, original-vs-proposed workflow, progress and a fingerprint-checked disk cache.
+
 ## 6. Removed after verification
 
 * **GNN cache predictor** - never ran (torch was never installed), schema-incompatible with the current graph, no

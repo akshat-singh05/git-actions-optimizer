@@ -157,3 +157,23 @@ Only in the case we ran for real: on our own lint -> test pipeline the critical 
 replay finds about 0%: their slow path is the test/build jobs themselves. One repository; failing runs were not measured.
 [IMPROVEMENT_RESULTS.md C, relax_run/, GATE_REPLAY.md]
 
+**27. "The same repository gave two different numbers. Is your system deterministic?"**
+It was not, and the cause was an input, not a seed. The models are seeded; but the hour of day, weekday and time-since-last-failure of the scored run
+defaulted to the wall clock, and the hour and weekday are model features. The scoring time is now an explicit parameter (`as_of`; the scored run's
+own creation time in the dashboard). Two full runs under different hash seeds produced byte-identical output, and a test pins it. [IMPROVEMENT_RESULTS.md E]
+
+**28. "Is a failure probability of 0.91 a probability?"**
+No, and we measured it rather than assuming. On four repositories the raw score is mildly over-confident at the top, its Brier score is not better than the job's
+prior failure rate's, and two recalibrations (Platt, out-of-sample isotonic) did not improve it in 3 of 4 repositories. So the dashboard does not call it a
+probability: it shows the score beside the job's base rate and the observed failure rate of unseen rows that scored alike, and flags scores above anything seen out of sample.
+[CALIBRATION.md, IMPROVEMENT_RESULTS.md F]
+
+**29. "Why do some repositories decline in the dashboard?"**
+Because a model needs enough real, labelled history, and we never fill the gap: quarkus has 24 runs, prometheus has a job in its current workflow that never ran in the
+ingested window, and uv / ruff / pydantic lacked cache-miss labels (they come from job logs, which are only kept for a limited time). Ingestion now back-fills logs for runs
+that were first ingested without them. [IMPROVEMENT_RESULTS.md G]
+
+**30. "What is automated, and what is not?"**
+The live scorers run for days under a twice-daily watchdog, and three dated tasks run the pending verdicts and tell the owner; none of them pushes, edits the README
+or changes a pre-registered rule. They run only while the machine is on and the Claude app is open. [BACKGROUND_RUNBOOK.md]
+
