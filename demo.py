@@ -193,8 +193,8 @@ def main() -> int:
     kv("Rows with failure label", f"{int(train_df['label_failed'].notna().sum())} "
        f"({int(train_df['label_failed'].fillna(0).sum())} failures)")
     kv("Missing values per feature", {c: int(train_df[c].isna().sum()) for c in FEATURE_COLUMNS if train_df[c].isna().any()})
-    stats, _ = compute_history_stats(snap.history, workflow_path=snap.workflow_repo_path)
-    infer_df = build_inference_frame(simple_graph, list(workflow.jobs.keys()), changed, stats)
+    stats, _ = compute_history_stats(snap.history, workflow_path=snap.workflow_repo_path, as_of=snap.as_of)
+    infer_df = build_inference_frame(simple_graph, list(workflow.jobs.keys()), changed, stats, as_of=snap.as_of)
     section("Inference frame for the current diff (NaN = no prior evidence)")
     print(infer_df.set_index("job_id")[FEATURE_COLUMNS].round(3).to_string())
 

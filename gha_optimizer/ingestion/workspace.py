@@ -58,6 +58,7 @@ class RepoSnapshot:
     changed_from_run: str
     alt_changed_files: list[str]        # the real diff of the previous, different run (for comparison)
     history: list[Any]
+    as_of: Any = None                   # creation time (UTC) of the run whose diff is scored: the reproducible "now" of the demos
 
     @property
     def source_files(self) -> list[str]:
@@ -133,7 +134,7 @@ def prepare_repo_snapshot(
         repo=repo, sha=sha, root=dest, workflow_path=wf_local, workflow_repo_path=workflow_repo_path,
         tracked_files=sorted(p for p, _ in tree if not any(f"/{d}" in "/" + p for d in NO_NODE_DIRS)),
         changed_files=changed, changed_from_run=runs[0].run_id, alt_changed_files=alt,
-        history=load_history(db, repo, workflow_repo_path),
+        history=load_history(db, repo, workflow_repo_path), as_of=runs[0].gh_created_at,
     )
 
 

@@ -62,6 +62,7 @@ def main() -> int:
             changed_files=snap.changed_files,
             out_path=out_path,
             workflow_repo_path=snap.workflow_repo_path,
+            as_of=snap.as_of,       # the scored run's own creation time: the same inputs always give the same numbers
         )
     except InsufficientHistoryError as exc:
         print(f"Declining to predict: {exc}")
