@@ -16,7 +16,9 @@ Guarantees
   step in flight.  Finished runs are recorded in ``ingestion_progress``
   (stage ``run_done``) and skipped on restart.
 * **Logs are downloaded at most once**: ``job_log_fetches`` is a ledger.  Terminal
-  statuses are never retried; ``error`` / ``skipped_budget`` are.
+  statuses are never retried; ``error`` / ``skipped_budget`` are.  A run finished by an
+  earlier ``--no-logs`` ingest is revisited (its logs back-filled, newest runs first,
+  within ``--log-budget``) when ingestion is repeated with logs enabled.
 * **Missing is NULL**: no log / no cache line / unmapped job leaves the cache
   label NULL and records *why* in ``cache_label_status``.
 """
@@ -436,8 +438,22 @@ class RepoIngestor:
             is not None
         )
 
+    def _logs_incomplete(self, run: m.WorkflowRun) -> bool:
+        """True if a job whose log could give a cache label has no terminal ledger entry.
+
+        A run finished by an earlier ``--no-logs`` ingest (or one whose logs were ``skipped_budget`` /
+        ``error``) is therefore revisited when logs are requested, and only then.
+        """
+        for job in self.db.query(m.WorkflowJob).filter_by(run_id=run.run_id).all():
+            if job.conclusion not in LOG_CONCLUSIONS:
+                continue
+            ledger = self.db.get(m.JobLogFetch, job.github_job_id)
+            if ledger is None or ledger.status in LOG_RETRY:
+                return True
+        return False
+
     def _process_run(self, run: m.WorkflowRun) -> None:
-        if self._is_done(run.run_id):
+        if self._is_done(run.run_id) and not (self.opts.fetch_logs and self._logs_incomplete(run)):
             return
         if run.status != "completed":
             if run.gh_created_at and run.gh_created_at < utcnow() - timedelta(hours=2):
@@ -883,8 +899,9 @@ class RepoIngestor:
                 ledger = self.db.get(m.JobLogFetch, job.github_job_id)
                 if ledger is None or ledger.status in LOG_RETRY:
                     return False
-        self.db.add(m.IngestionProgress(repo=self.repo, stage="run_done", key=run.run_id, status="done"))
-        self.db.commit()
+        if not self._is_done(run.run_id):
+            self.db.add(m.IngestionProgress(repo=self.repo, stage="run_done", key=run.run_id, status="done"))
+            self.db.commit()
         return True
 
     def _report(self) -> None:

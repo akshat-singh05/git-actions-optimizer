@@ -351,6 +351,25 @@ def test_no_logs_option_leaves_every_cache_label_null(session_factory):
     assert s.query(m.JobLogFetch).count() == 0
 
 
+def test_runs_finished_without_logs_are_backfilled_when_logs_are_requested(session_factory):
+    ing, client, s = make(session_factory, fetch_logs=False)
+    ing.run()
+    done_before = snapshot(s)["done"]
+    assert done_before == 6 and s.query(m.JobLogFetch).count() == 0 and client.calls["open_job_log"] == 0
+    ing2, _, _ = make(session_factory, client)               # same database, logs now requested
+    ing2.db = s
+    ing2.run()
+    after = snapshot(s)
+    assert client.calls["open_job_log"] > 0 and after["ledger"] > 0
+    assert after["done"] == done_before                      # no second 'run_done' row for the same run
+    assert s.query(m.WorkflowJob).filter(m.WorkflowJob.cache_hit.isnot(None)).count() > 0
+    before_calls = client.calls["open_job_log"]
+    ing3, _, _ = make(session_factory, client)               # a third pass has nothing left to fetch
+    ing3.db = s
+    ing3.run()
+    assert client.calls["open_job_log"] == before_calls
+
+
 def test_single_run_ingestion_for_webhooks(session_factory):
     ing, client, s = make(session_factory)
     counters = ing.ingest_single_run(1002)

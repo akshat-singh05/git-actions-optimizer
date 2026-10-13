@@ -262,6 +262,13 @@ def _none_to_nan(value: Any) -> float:
     return NAN if value is None else float(value)
 
 
+def _as_utc(moment: datetime | None) -> datetime:
+    """``moment`` as an aware UTC datetime; ``None`` means the current time (naive values are taken as UTC)."""
+    if moment is None:
+        return datetime.now(timezone.utc)
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment.astimezone(timezone.utc)
+
+
 def _epoch(timestamp: str | None) -> float | None:
     """Seconds since the epoch of an ISO timestamp (UTC), or None."""
     if not timestamp:
@@ -500,18 +507,22 @@ def _structural(
 # ---------------------------------------------------------------------------
 
 def compute_history_stats(
-    history: list[WorkflowRunRecord], decay: float = 0.95, workflow_path: str | None = None
+    history: list[WorkflowRunRecord], decay: float = 0.95, workflow_path: str | None = None,
+    as_of: datetime | None = None,
 ) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]]]:
     """``(job_stats, author_stats)`` over the full history, for scoring a *new* run.
 
     ``job_stats[job_id]`` keys: failure_rate, mean_duration, recent_failure_streak,
     recent_success_streak, cache_key_stability (NaN where there is no prior evidence).
+
+    ``as_of`` is the moment the new run is scored (default: the current UTC time).  Pass it explicitly whenever the result
+    must be reproducible: ``hours_since_last_failure`` is measured up to this instant.
     """
     recs = [r for r in history if workflow_path is None or r.workflow_path in (None, workflow_path)]
     state = HistoryState(decay)
     for run_recs in _group_runs(recs):
         state.update_run(run_recs, _epoch(run_recs[0].finished_at) or _epoch(run_recs[0].timestamp))
-    now_epoch = datetime.now(timezone.utc).timestamp()
+    now_epoch = _as_utc(as_of).timestamp()
     job_stats: dict[str, dict[str, float]] = {}
     for rec in recs:
         if rec.job_id in job_stats:
@@ -550,6 +561,7 @@ def build_inference_frame(
     loc_deleted: float | None = None,
     context: dict[str, float] | None = None,
     lineage_stats: dict[str, dict[str, float]] | None = None,
+    as_of: datetime | None = None,
 ) -> pd.DataFrame:
     """
     One row per job for the *current* diff.
@@ -560,10 +572,11 @@ def build_inference_frame(
 
     ``history_stats``: ``{job_id: {"failure_rate", "mean_duration", "recent_failure_streak",
     "recent_success_streak", "cache_key_stability"}}`` — see :func:`compute_history_stats`.
-    A job without an entry (or a missing key) gets NaN, not a default.  Time features
-    default to the real current UTC time.
+    A job without an entry (or a missing key) gets NaN, not a default.  The time features
+    (``hour_of_day``, ``day_of_week``) are taken from ``as_of`` (default: the real current UTC time, so two calls at different
+    hours give different rows - pass ``as_of`` for a reproducible score).
     """
-    now = datetime.now(timezone.utc)
+    now = _as_utc(as_of)
     hour = float(now.hour) if hour_of_day is None else float(hour_of_day)
     dow = float(now.weekday()) if day_of_week is None else float(day_of_week)
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import networkx as nx
@@ -80,6 +81,7 @@ def run_pipeline(
     llm_client: LLMClient | None = None,
     relax_gates: bool | None = None,
     triage_profile: dict | None = None,
+    as_of: datetime | None = None,
 ) -> tuple[SchedulePlan, str]:
     """
     Run the full optimization pipeline end to end.
@@ -195,10 +197,11 @@ def run_pipeline(
     logger.info("[%s] Duration estimator: %s", trace_id, duration_metrics)
 
     # Per-job statistics over the FULL history (== strictly prior to the run being scored)
-    history_stats, _ = compute_history_stats(history, workflow_path=workflow_repo_path)
+    scored_at = as_of if as_of is not None else datetime.now(timezone.utc)   # explicit, so the score is reproducible
+    history_stats, _ = compute_history_stats(history, workflow_path=workflow_repo_path, as_of=scored_at)
 
     infer_df = build_inference_frame(
-        simple_graph, list(workflow.jobs.keys()), changed_files, history_stats
+        simple_graph, list(workflow.jobs.keys()), changed_files, history_stats, as_of=scored_at
     )
     infer_df.index = infer_df["job_id"]
 
@@ -277,6 +280,7 @@ def run_pipeline(
         "- improvement figures in this report are ESTIMATED from predicted durations; they are not measured executions",
         "",
         f"### Models: {model_source}",
+        f"- scored at {scored_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC (the hour / weekday features use this instant; pass `as_of` / `--as-of` to reproduce a score)",
         "### Model validation metrics (temporal holdout)",
         f"- Cache-miss predictor: {cache_metrics}",
         f"- Failure predictor: {failure_metrics}",
