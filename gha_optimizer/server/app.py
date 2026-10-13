@@ -264,6 +264,7 @@ async def optimize_workflow(request: OptimizationRequest, db: Session = Depends(
                 replay_stats=replay_stats,
                 llm_client=llm_client,
                 relax_gates=request.relax_gates,
+                as_of=request.as_of,
                 triage_profile=_triage_profile_for(db, request.repo, wf_repo_path),
                 repo_root=repo_root,
                 tracked_files=tracked_files(repo_root) or request.changed_files,
@@ -361,6 +362,12 @@ async def parser_capabilities():
 
 
 # ─── Graph API Router ──────────────────────────────────────────────
+
+# ─── Dashboard (the one UI: /dashboard, API under /api/v1/dashboard) ─────────────
+
+from gha_optimizer.dashboard_app import mount_dashboard  # noqa: E402
+
+mount_dashboard(app)
 
 try:
     from gha_optimizer.server.api.v1.graph import router as graph_router

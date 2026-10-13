@@ -138,6 +138,16 @@ def _analysis_inputs(args: argparse.Namespace):
     return workflow_path, repo_root, wf_repo_path, tracked, changed
 
 
+def _parse_as_of(value: str | None):
+    """``--as-of`` ISO timestamp (UTC if no offset) -> datetime, or None for the current time."""
+    if not value:
+        return None
+    from datetime import datetime, timezone
+
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 def cmd_analyze(args: argparse.Namespace) -> None:
     """Run the optimization pipeline on a local workflow file using ingested history."""
     _use_db(args)
@@ -166,6 +176,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             llm_client=_llm_client(args.llm_summary),
             relax_gates=args.relax_gates or None,
             triage_profile=_triage_profile(args.repo, wf_repo_path),
+            as_of=_parse_as_of(args.as_of),
         )
     except InsufficientHistoryError as exc:
         _decline(exc)
@@ -441,6 +452,38 @@ def cmd_live_evaluate(args: argparse.Namespace) -> None:
     print(f"wrote {out}")
 
 
+def cmd_dashboard(args: argparse.Namespace) -> None:
+    """Serve the dashboard UI + API on the ingested repositories (no Postgres / Redis / Celery needed)."""
+    _use_db(args)
+    from gha_optimizer.dashboard_app import run_dashboard
+
+    run_dashboard(args.repo, host=args.host, port=args.port, warm=args.warm, snapshot_root=args.snapshot_root)
+
+
+def cmd_eval_calibration(args: argparse.Namespace) -> None:
+    """Rolling-origin calibration (Brier / ECE / reliability) of the failure probabilities -> docs/CALIBRATION.md."""
+    _use_db(args)
+    from gha_optimizer.features.dataset import build_dataset
+    from gha_optimizer.models.calibration import evaluate_calibration_repo, render_calibration
+    from gha_optimizer.server.db.session import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    results = {}
+    try:
+        for repo in args.repo:
+            df, _ = build_dataset(db, repo, args.workflow_path)
+            logger.info("%s: %d rows", repo, len(df))
+            results[repo] = evaluate_calibration_repo(df, n_folds=args.folds, n_boot=args.bootstrap) if not df.empty                 else {"note": "no ingested rows"}
+    finally:
+        db.close()
+    text = render_calibration(results, args.bootstrap)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"wrote {out} ({len(text.splitlines())} lines)")
+
+
 def cmd_eval_pooled(args: argparse.Namespace) -> None:
     """EXPLORATORY leave-one-repository-out evaluation of the v2 failure model -> docs/POOLED_EVAL.md."""
     _use_db(args)
@@ -608,6 +651,8 @@ def main() -> None:
     _add_analysis_args(p_analyze)
     p_analyze.add_argument("--model-dir", default=str(config.model.model_dir),
                            help="persisted models are loaded from / saved to here when their data fingerprint matches")
+    p_analyze.add_argument("--as-of", metavar="ISO_TIMESTAMP",
+                           help="the moment the run is scored (its hour / weekday are model features); default: now, so two analyses at different hours differ. Pass it for a reproducible score")
     p_analyze.add_argument("--no-model-store", action="store_true", help="always refit; never read or write saved models")
     p_analyze.add_argument("--enable-skips", action="store_true",
                            help="apply skip recommendations (`if: ${{ false }}` guards); off by default - see docs/SCHEDULER_ASSUMPTIONS.md")
@@ -703,6 +748,22 @@ def main() -> None:
     p_le.add_argument("--out", default="docs/LIVE_TEST.md")
     _add_db(p_le)
 
+    p_db = subparsers.add_parser("dashboard", help="Serve the dashboard (one page per pipeline stage, what-if, evidence) on the ingested repositories")
+    _add_db(p_db)
+    p_db.add_argument("--repo", help="repository shown first (default: the first ingested one)")
+    p_db.add_argument("--warm", action="store_true", help="compute every ingested repository in the background so switching is instant")
+    p_db.add_argument("--snapshot-root", help="short directory for exported repository snapshots (Windows: paths over ~260 characters fail, e.g. apache/dubbo; try D:/ghas)")
+    p_db.add_argument("--host", default="127.0.0.1")
+    p_db.add_argument("--port", type=int, default=8501)
+
+    p_ec = subparsers.add_parser("eval-calibration", help="Are the failure probabilities calibrated? Brier / ECE / reliability -> docs/CALIBRATION.md")
+    _add_db(p_ec)
+    p_ec.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable)")
+    p_ec.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
+    p_ec.add_argument("--folds", type=int, default=5)
+    p_ec.add_argument("--bootstrap", type=int, default=1000)
+    p_ec.add_argument("--out", default="docs/CALIBRATION.md")
+
     p_ep = subparsers.add_parser("eval-pooled", help="EXPLORATORY: leave-one-repository-out failure model -> docs/POOLED_EVAL.md")
     p_ep.add_argument("--repo", action="append", required=True, help="owner/repo (repeatable; all are pooled)")
     p_ep.add_argument("--folds", type=int, default=5)
@@ -753,6 +814,8 @@ def main() -> None:
         "triage": cmd_triage,
         "replay-gates": cmd_replay_gates,
         "eval-pooled": cmd_eval_pooled,
+        "eval-calibration": cmd_eval_calibration,
+        "dashboard": cmd_dashboard,
         "live-score": cmd_live_score,
         "live-evaluate": cmd_live_evaluate,
     }

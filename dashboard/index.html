@@ -1,245 +1,561 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GHA Optimizer — Dashboard</title>
-    <meta name="description" content="ML-based predictive scheduler for GitHub Actions CI/CD pipelines. Visualize predicted vs actual cache hits, time saved, cost saved.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GitHub Actions Performance Optimizer</title>
+<meta name="description" content="Dashboard of the GitHub Actions Performance Optimizer: pipeline stages, what-if scoring, evidence." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f4f6fa; --surface: #ffffff; --surface2: #f1f4f9; --border: #dbe1ea; --text: #1a2333; --text-dim: #5a6578;
+  --accent: #1f4fb4; --accent-dim: #e4ecfb; --green: #15803d; --green-dim: #dcfce7; --red: #b42318; --red-dim: #fee4e2;
+  --amber: #b45309; --amber-dim: #fef0c7; --cyan: #0e7490; --radius: 8px; --shadow: 0 1px 2px rgba(16,24,40,.05);
+  --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+html, body { height: 100%; }
+body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text);
+  line-height: 1.55; overflow: hidden; -webkit-font-smoothing: antialiased; }
+.app { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+code { font-family: var(--mono); font-size: .92em; background: var(--surface2); padding: 1px 5px; border-radius: 4px; }
+
+/* header */
+.header { background: var(--surface); border-bottom: 1px solid var(--border); border-top: 3px solid var(--accent); padding: 12px 28px; }
+.header-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand h1 { font-size: 16px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
+.brand .tagline { font-size: 12px; color: var(--text-dim); }
+.repo-switch { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+.repo-switch select { font: inherit; font-size: 13px; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 7px 28px 7px 10px; min-width: 280px; cursor: pointer; }
+.repo-switch select:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent); }
+.chip { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border-radius: 999px; background: var(--surface2); color: var(--text-dim); white-space: nowrap; }
+.chip.ok { background: var(--green-dim); color: var(--green); } .chip.warn { background: var(--amber-dim); color: var(--amber); } .chip.err { background: var(--red-dim); color: var(--red); }
+.team { font-size: 12px; color: var(--text-dim); text-align: right; line-height: 1.5; }
+.team strong { color: var(--text); font-weight: 600; }
+
+/* layout */
+.main { min-height: 0; overflow: hidden; }
+.layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); height: 100%; }
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 10px; overflow-y: auto; min-height: 0; }
+.nav-heading { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--text-dim); padding: 12px 10px 6px; }
+.nav-heading:first-child { padding-top: 4px; }
+.nav-link { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--text);
+  text-decoration: none; border-left: 3px solid transparent; }
+.nav-link:hover { background: var(--surface2); }
+.nav-link.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; border-left-color: var(--accent); }
+.nav-num { width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0; background: var(--surface2); color: var(--text-dim); font-size: 11px;
+  font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.nav-link.active .nav-num { background: var(--accent); color: #fff; }
+.page { min-width: 0; min-height: 0; overflow-y: auto; padding: 22px 28px 40px; }
+.page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.page-head h2 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; flex: 1; }
+.step-num { background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; width: 26px; height: 26px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.badge { font-size: 11px; padding: 3px 10px; border-radius: 999px; font-family: var(--mono); font-weight: 500; background: var(--accent-dim); color: var(--accent); }
+.badge.pass { background: var(--green-dim); color: var(--green); } .badge.fail { background: var(--red-dim); color: var(--red); }
+
+/* panels, cards, tables */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; min-width: 0; margin-bottom: 14px; overflow-x: auto; }
+.panel h3 { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.hint { font-size: 11.5px; color: var(--text-dim); margin-bottom: 10px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.grid2 > .panel { margin-bottom: 0; } .grid2 { margin-bottom: 14px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 14px; }
+@media (min-width: 1300px) { .kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+.kpi .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--text-dim); margin-bottom: 4px; }
+.kpi .value { font-size: 25px; font-weight: 700; font-family: var(--mono); letter-spacing: -.02em; }
+.kpi .sub { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+.v-accent { color: var(--accent); } .v-green { color: var(--green); } .v-cyan { color: var(--cyan); } .v-amber { color: var(--amber); } .v-red { color: var(--red); }
+.context-bar { display: flex; flex-wrap: wrap; gap: 6px 26px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 11px 16px; margin-bottom: 14px; box-shadow: var(--shadow); font-size: 12px; color: var(--text-dim); }
+.context-bar b { color: var(--text); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; border: 1px solid var(--border); }
+th { text-align: left; padding: 7px 11px; background: var(--surface2); color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+td { padding: 7px 11px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 12px; vertical-align: top; }
+tr:hover td { background: #f8fafc; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: var(--mono); font-weight: 500; }
+.tag.green { background: var(--green-dim); color: var(--green); } .tag.amber { background: var(--amber-dim); color: var(--amber); }
+.tag.red { background: var(--red-dim); color: var(--red); } .tag.blue { background: var(--accent-dim); color: var(--accent); } .tag.grey { background: var(--surface2); color: var(--text-dim); }
+.kv { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 3px 0; }
+.kv .k { color: var(--text-dim); } .kv .v { font-family: var(--mono); text-align: right; word-break: break-all; }
+.compact { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
+.compact h4 { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.note { margin: 12px 0; padding: 11px 14px; background: var(--amber-dim); border: 1px solid #f5d98a; border-radius: 6px; font-size: 12px; color: #5c3b06; line-height: 1.65; }
+.note.info { background: var(--accent-dim); border-color: #c4d4f5; color: #17336f; }
+.pill { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .4px; padding: 1px 7px; border-radius: 999px; margin-right: 6px; }
+.pill.est { background: var(--amber-dim); color: var(--amber); } .pill.meas { background: var(--green-dim); color: var(--green); }
+.list { list-style: none; font-size: 12.5px; line-height: 1.6; } .list li { padding: 5px 0; border-top: 1px solid var(--border); } .list li:first-child { border-top: 0; }
+.btn { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; } .btn.primary:hover { color: #fff; opacity: .92; }
+.btn.small { padding: 4px 10px; font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.fchip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; background: var(--accent-dim); color: var(--accent); padding: 3px 4px 3px 9px; border-radius: 999px; }
+.fchip button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 5px; }
+input[type=search], input[type=text] { font: inherit; font-size: 13px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--surface); color: var(--text); }
+input:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent); }
+.filelist { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; margin-top: 8px; }
+.filelist div { font-family: var(--mono); font-size: 12px; padding: 5px 10px; border-top: 1px solid var(--border); cursor: pointer; }
+.filelist div:first-child { border-top: 0; } .filelist div:hover { background: var(--accent-dim); }
+
+/* bars + gantt */
+.hbar { display: grid; grid-template-columns: 190px minmax(0, 1fr) 70px; align-items: center; gap: 10px; margin-bottom: 7px; font-size: 12px; }
+.hbar .name { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar .track { height: 12px; background: var(--surface2); border-radius: 3px; overflow: hidden; position: relative; }
+.hbar .fill { height: 100%; border-radius: 3px; background: var(--accent); } .hbar .fill.g { background: #22a055; } .hbar .fill.a { background: #d9831f; } .hbar .fill.r { background: #d1432f; }
+.hbar .mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #1a2333; }
+.hbar .num { font-family: var(--mono); text-align: right; color: var(--text-dim); }
+.g-row { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 10px; align-items: center; margin-bottom: 6px; font-size: 12px; }
+.g-row .name { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-lane { position: relative; height: 18px; background: var(--surface2); border-radius: 3px; }
+.g-bar { position: absolute; top: 0; height: 100%; background: var(--accent); border-radius: 3px; min-width: 2px; color: #fff; font-size: 10px; font-family: var(--mono); display: flex; align-items: center; padding-left: 5px; overflow: hidden; white-space: nowrap; }
+.g-bar.hot { background: #d9831f; }
+.g-axis { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 10px; margin-top: 4px; font-size: 10px; color: var(--text-dim); font-family: var(--mono); }
+.g-axis div:last-child { display: flex; justify-content: space-between; }
+
+/* dag svg */
+.dag { width: 100%; overflow-x: auto; }
+.dag svg { display: block; margin: 0 auto; }
+.dag .node rect { fill: var(--accent-dim); stroke: var(--accent); stroke-width: 1.2; }
+.dag .node.hot rect { fill: #ffe9c4; stroke: #d9831f; } .dag .node.cold rect { fill: var(--surface2); stroke: #aab4c5; }
+.dag .node.r rect { fill: #fbd5cf; stroke: #d1432f; } .dag .node.a rect { fill: #fde8c5; stroke: #d9831f; } .dag .node.g rect { fill: #d4f1de; stroke: #22a055; }
+.dag text { font-family: var(--mono); font-size: 11px; fill: var(--text); }
+.dag .sub { font-size: 9.5px; fill: var(--text-dim); }
+.dag path { fill: none; stroke: #8a97ad; stroke-width: 1.3; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+/* code / diff / markdown */
+pre.code { font-family: var(--mono); font-size: 12px; background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; overflow: auto; max-height: 520px; line-height: 1.55; white-space: pre; }
+.diff-add { color: #116329; background: #e6f4ea; } .diff-del { color: #a4161a; background: #fdecea; } .diff-hdr { color: #1f4fb4; }
+.md { font-size: 14px; max-width: 980px; } .md h1 { font-size: 22px; margin: 18px 0 8px; } .md h2 { font-size: 17px; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.md h3 { font-size: 15px; margin: 16px 0 6px; } .md p { margin: 8px 0; } .md ul, .md ol { margin: 8px 0 8px 22px; } .md li { margin: 3px 0; }
+.md table { display: block; overflow-x: auto; } .md blockquote { border-left: 3px solid var(--border); padding-left: 12px; color: var(--text-dim); margin: 8px 0; }
+.md pre { margin: 8px 0; } .md a { color: var(--accent); }
+.docs-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; }
+.docs-list { display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 210px); overflow-y: auto; }
+.docs-list a { font-size: 12.5px; padding: 6px 10px; border-radius: 5px; color: var(--text); text-decoration: none; font-family: var(--mono); }
+.docs-list a:hover { background: var(--surface2); } .docs-list a.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+.index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.index-card { display: flex; align-items: center; gap: 12px; padding: 11px 14px; text-decoration: none; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.index-card:hover { border-color: var(--accent); }
+.index-text { display: flex; flex-direction: column; min-width: 0; font-size: 13px; }
+.index-text span { font-size: 11px; color: var(--text-dim); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pager { display: flex; justify-content: space-between; margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--border); }
+.pager a { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.pager a:hover { border-color: var(--accent); }
+.footer { text-align: center; padding: 26px 0 0; color: var(--text-dim); font-size: 12px; }
+
+/* progress */
+.loading { max-width: 560px; margin: 8vh auto; padding: 0 20px; }
+.loading h2 { font-size: 18px; margin-bottom: 4px; } .loading .hint { margin-bottom: 18px; }
+.bar { height: 8px; background: var(--surface2); border-radius: 999px; overflow: hidden; margin: 10px 0 16px; }
+.bar > div { height: 100%; background: var(--accent); transition: width .4s ease; }
+.stages { list-style: none; font-size: 13px; }
+.stages li { display: flex; align-items: center; gap: 10px; padding: 5px 0; color: var(--text-dim); }
+.stages li.done { color: var(--text); } .stages li.now { color: var(--accent); font-weight: 600; }
+.stages .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; }
+.stages li.done .dot { background: var(--green); border-color: var(--green); } .stages li.now .dot { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
+.stages .sec { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.center-card { max-width: 820px; margin: 6vh auto; }
+
+@media (max-width: 900px) {
+  body { overflow: auto; } .app { height: auto; } .layout { grid-template-columns: 1fr; height: auto; }
+  .sidebar { display: flex; flex-wrap: wrap; gap: 4px; border-right: 0; border-bottom: 1px solid var(--border); } .nav-heading { width: 100%; }
+  .page { overflow: visible; padding: 16px; } .grid2, .docs-layout { grid-template-columns: 1fr; } .header-inner { flex-direction: column; align-items: flex-start; }
+  .team { text-align: left; } .repo-switch select { min-width: 0; width: 100%; }
+}
+</style>
 </head>
 <body>
-    <div id="app">
-        <!-- Sidebar -->
-        <nav class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="logo">
-                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                        <circle cx="14" cy="14" r="12" stroke="url(#grad)" stroke-width="2.5" fill="none"/>
-                        <path d="M9 14l3 3 7-7" stroke="url(#grad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                        <defs><linearGradient id="grad" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
-                    </svg>
-                    <span class="logo-text">GHA Optimizer</span>
-                </div>
-            </div>
-            <ul class="nav-items">
-                <li class="nav-item active" data-view="overview">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                    <span>Overview</span>
-                </li>
-                <li class="nav-item" data-view="pipeline">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m-7.07-2.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83"/></svg>
-                    <span>Pipeline</span>
-                </li>
-                <li class="nav-item" data-view="predictions">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                    <span>Predictions</span>
-                </li>
-                <li class="nav-item" data-view="schedule">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                    <span>Schedule</span>
-                </li>
-                <li class="nav-item" data-view="models">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                    <span>Models</span>
-                </li>
-            </ul>
-            <div class="sidebar-footer">
-                <div class="status-badge" id="serverStatus">
-                    <span class="status-dot"></span>
-                    <span>Connecting...</span>
-                </div>
-            </div>
-        </nav>
-
-        <!-- Main Content -->
-        <main class="main-content" id="mainContent">
-            <!-- Header -->
-            <header class="content-header">
-                <div class="header-left">
-                    <h1 id="viewTitle">Overview</h1>
-                    <p class="header-subtitle" id="viewSubtitle">Dashboard summary and key metrics</p>
-                </div>
-                <div class="header-right">
-                    <button class="btn btn-primary" id="btnOptimize" onclick="runOptimization()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Run Optimization
-                    </button>
-                </div>
-            </header>
-
-            <div class="data-banner" id="dataBanner" hidden></div>
-
-            <!-- Views -->
-            <div class="view active" id="view-overview">
-                <!-- Summary Cards -->
-                <div class="cards-grid">
-                    <div class="card metric-card">
-                        <div class="card-icon time-icon">⏱</div>
-                        <div class="card-body">
-                            <span class="metric-label">Time Saved</span>
-                            <span class="metric-value" id="metricTimeSaved">—</span>
-                            <span class="metric-detail" id="metricTimeDetail">loading...</span>
-                        </div>
-                    </div>
-                    <div class="card metric-card">
-                        <div class="card-icon cost-icon">💰</div>
-                        <div class="card-body">
-                            <span class="metric-label">Cost Saved</span>
-                            <span class="metric-value" id="metricCostSaved">—</span>
-                            <span class="metric-detail" id="metricCostDetail">loading...</span>
-                        </div>
-                    </div>
-                    <div class="card metric-card">
-                        <div class="card-icon energy-icon">⚡</div>
-                        <div class="card-body">
-                            <span class="metric-label">Energy Saved</span>
-                            <span class="metric-value" id="metricEnergySaved">—</span>
-                            <span class="metric-detail" id="metricEnergyDetail">loading...</span>
-                        </div>
-                    </div>
-                    <div class="card metric-card">
-                        <div class="card-icon accuracy-icon">🎯</div>
-                        <div class="card-body">
-                            <span class="metric-label">Model Accuracy</span>
-                            <span class="metric-value" id="metricAccuracy">—</span>
-                            <span class="metric-detail" id="metricAccuracyDetail">loading...</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Recent Results -->
-                <div class="card">
-                    <h3 class="card-title">Recent Optimizations</h3>
-                    <div class="table-container">
-                        <table class="data-table" id="recentTable">
-                            <thead>
-                                <tr>
-                                    <th>Workflow</th>
-                                    <th>Time Saved</th>
-                                    <th>Cost Saved</th>
-                                    <th>Jobs Skipped</th>
-                                    <th>Date</th>
-                                </tr>
-                            </thead>
-                            <tbody id="recentTableBody">
-                                <tr><td colspan="5" class="loading-row">No optimization result yet.</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Pipeline View -->
-            <div class="view" id="view-pipeline">
-                <div class="card">
-                    <h3 class="card-title">Job Dependency Graph</h3>
-                    <p class="card-desc">Interactive DAG visualization — colors indicate risk level</p>
-                    <div class="dag-container" id="dagContainer">
-                        <svg id="dagSvg" width="100%" height="400"></svg>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3 class="card-title">Per-Job Predictions</h3>
-                    <div class="table-container">
-                        <table class="data-table" id="jobTable">
-                            <thead>
-                                <tr>
-                                    <th>Job</th>
-                                    <th>Level</th>
-                                    <th>Runner</th>
-                                    <th>P(Fail)</th>
-                                    <th>P(Cache Miss)</th>
-                                    <th>Est. Duration</th>
-                                    <th>Est. Cost</th>
-                                    <th>CO₂</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="jobTableBody">
-                                <tr><td colspan="9" class="loading-row">Run optimization to see results</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Predictions View -->
-            <div class="view" id="view-predictions">
-                <div class="charts-row">
-                    <div class="card chart-card">
-                        <h3 class="card-title">Predicted vs Actual Cache Hits</h3>
-                        <canvas id="chartCachePredictions" height="300"></canvas>
-                    </div>
-                    <div class="card chart-card">
-                        <h3 class="card-title">Predicted vs Actual Duration</h3>
-                        <canvas id="chartDurationPredictions" height="300"></canvas>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3 class="card-title">Prediction Accuracy Over Time</h3>
-                    <canvas id="chartAccuracyTrend" height="200"></canvas>
-                </div>
-            </div>
-
-            <!-- Schedule View -->
-            <div class="view" id="view-schedule">
-                <div class="card">
-                    <h3 class="card-title">Schedule Comparison — Gantt Chart</h3>
-                    <p class="card-desc">Baseline (top) vs Optimized (bottom) timeline</p>
-                    <div class="gantt-container" id="ganttContainer">
-                        <canvas id="chartGantt" height="300"></canvas>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3 class="card-title">Optimization Explanation</h3>
-                    <pre class="explanation-text" id="explanationText">Run optimization to see the detailed explanation.</pre>
-                </div>
-            </div>
-
-            <!-- Models View -->
-            <div class="view" id="view-models">
-                <div class="cards-grid cards-3">
-                    <div class="card">
-                        <h3 class="card-title">🔮 Cache-Miss Predictor</h3>
-                        <div class="model-metrics" id="cacheModelMetrics">
-                            <div class="metric-row"><span>Backend</span><span>—</span></div>
-                            <div class="metric-row"><span>Precision</span><span>—</span></div>
-                            <div class="metric-row"><span>Recall</span><span>—</span></div>
-                            <div class="metric-row"><span>F1</span><span>—</span></div>
-                            <div class="metric-row"><span>ROC AUC</span><span>—</span></div>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <h3 class="card-title">⚠️ Failure Predictor</h3>
-                        <div class="model-metrics" id="failureModelMetrics">
-                            <div class="metric-row"><span>Backend</span><span>—</span></div>
-                            <div class="metric-row"><span>Precision</span><span>—</span></div>
-                            <div class="metric-row"><span>Recall</span><span>—</span></div>
-                            <div class="metric-row"><span>F1</span><span>—</span></div>
-                            <div class="metric-row"><span>Threshold</span><span>—</span></div>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <h3 class="card-title">⏱ Duration Estimator</h3>
-                        <div class="model-metrics" id="durationModelMetrics">
-                            <div class="metric-row"><span>Backend</span><span>—</span></div>
-                            <div class="metric-row"><span>MAE</span><span>—</span></div>
-                            <div class="metric-row"><span>MAPE</span><span>—</span></div>
-                            <div class="metric-row"><span>R²</span><span>—</span></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="card chart-card">
-                    <h3 class="card-title">Feature Importance</h3>
-                    <canvas id="chartFeatureImportance" height="300"></canvas>
-                </div>
-            </div>
-        </main>
+<div class="app">
+  <div class="header"><div class="header-inner">
+    <div class="brand">
+      <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#1f4fb4"/>
+        <circle cx="9" cy="16" r="2.6" fill="#fff"/><circle cx="23" cy="9" r="2.6" fill="#fff"/><circle cx="23" cy="23" r="2.6" fill="#fff"/>
+        <path d="M11.4 15.2 20.6 10M11.4 16.8 20.6 22" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      <div><h1>GitHub Actions Performance Optimizer</h1><div class="tagline">Dependency-aware, prediction-driven CI/CD scheduling</div></div>
     </div>
+    <div class="repo-switch"><label for="repoSelect">Repository</label><select id="repoSelect" aria-label="Repository"></select><span class="chip" id="repoState"></span></div>
+    <div class="team"><strong>Akshat Singh</strong> 23BKT0005 &middot; <strong>Aditya Choubey</strong> 23BCE2274<br>B.Tech CSE capstone (BCSE497J), VIT</div>
+  </div></div>
+  <div class="main" id="content"></div>
+</div>
 
-    <script src="app.js"></script>
+<script>
+'use strict';
+const API = '/api/v1/dashboard';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const S = { repo: new URLSearchParams(location.search).get('repo'), result: null, repos: [], whatif: { files: [], data: null }, seq: 0, loadSeq: 0 };
+
+const STEPS = [
+  [1, 'repository', 'Repository analysis'], [2, 'source', 'Source code graph'], [3, 'ci', 'CI/CD graph'], [4, 'fusion', 'Graph fusion'],
+  [5, 'impact', 'Impact analysis'], [6, 'features', 'Feature extraction'], [7, 'models', 'Models and probabilities'],
+  [8, 'schedule', 'DAG-aware scheduling'], [9, 'safety', 'DAG safety verification'], [10, 'workflow', 'Original vs proposed workflow'],
+  [11, 'summary', 'Final summary'],
+];
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  if (!r.ok) { let d = ''; try { d = (await r.json()).detail; } catch (e) { /* not JSON */ } throw new Error(d || ('HTTP ' + r.status)); }
+  return r.headers.get('content-type').includes('json') ? r.json() : r.text();
+}
+const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? 'n/a' : (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(d)) : esc(v));
+const pct = (v) => (v === null || v === undefined) ? 'n/a' : (v * 100).toFixed(1) + '%';
+const riskClass = (p) => p > 0.5 ? 'r' : p > 0.2 ? 'a' : 'g';
+const tagFor = (p) => `<span class="tag ${p > 0.5 ? 'red' : p > 0.2 ? 'amber' : 'green'}">${p.toFixed(3)}</span>`;
+
+/* ------------------------------------------------------------------ repositories + running */
+async function init() {
+  const sel = $('repoSelect');
+  try {
+    const info = await api('/repos');
+    S.repos = info.repos;
+    S.repo = S.repo || info.default || (info.repos[0] && info.repos[0].repo);
+    sel.innerHTML = info.repos.map(r => `<option value="${esc(r.repo)}"${r.repo === S.repo ? ' selected' : ''}>${esc(r.repo)} - ${r.runs} runs${r.declined ? ' (declines)' : r.ready ? ' (ready)' : ''}</option>`).join('');
+    sel.onchange = () => { S.repo = sel.value; const q = new URLSearchParams(location.search); q.set('repo', S.repo); history.replaceState(null, '', '?' + q + location.hash); S.whatif = { files: [], data: null }; load(); };
+  } catch (e) { setChip('error', 'err'); $('content').innerHTML = `<div class="center-card panel"><h3>The dashboard API is not reachable</h3><p class="hint">${esc(e.message)}. Start it with <code>gha-optimizer dashboard</code>.</p></div>`; return; }
+  load();
+}
+function setChip(text, cls) { const c = $('repoState'); c.textContent = text; c.className = 'chip ' + (cls || ''); }
+
+async function load() {
+  const my = ++S.loadSeq;
+  window.onhashchange = null;
+  S.result = null;
+  setChip('starting', 'warn');
+  let st;
+  try { st = await api(`/run?repo=${encodeURIComponent(S.repo)}`, { method: 'POST' }); } catch (e) { return showError(e.message); }
+  while (st.state === 'queued' || st.state === 'running') {
+    if (my !== S.loadSeq) return;
+    renderProgress(st);
+    await new Promise(r => setTimeout(r, 600));
+    st = await api(`/status?repo=${encodeURIComponent(S.repo)}`);
+  }
+  if (my !== S.loadSeq) return;
+  if (st.state === 'error') return showError(st.error);
+  S.result = await api(`/result?repo=${encodeURIComponent(S.repo)}`);
+  setChip(S.result.declined ? 'declined' : (st.from_disk_cache ? 'ready (disk cache)' : 'ready'), S.result.declined ? 'warn' : 'ok');
+  render();
+}
+function showError(msg) { setChip('error', 'err'); $('content').innerHTML = `<div class="center-card panel"><h3 style="color:var(--red)">The run failed</h3><p style="margin:10px 0;font-size:13px">${esc(msg)}</p><p class="hint">Nothing was substituted. Check the server console; on Windows a very long file path (for example apache/dubbo) needs <code>--snapshot-root D:/ghas</code>.</p></div>`; }
+function renderProgress(st) {
+  setChip(st.state === 'queued' ? 'queued' : `stage ${st.stage + 1} of ${st.stages.length}`, 'warn');
+  const done = Math.max(st.stage, 0), total = st.stages.length;
+  $('content').innerHTML = `<div class="loading"><h2>Running the pipeline on ${esc(st.repo)}</h2>
+    <div class="hint">${st.state === 'queued' ? 'Waiting for another repository to finish. ' : ''}Real ingested history only; a repository that has not been run yet takes 30-110 s, later visits use the disk cache. ${fmt(st.elapsed)} s elapsed.</div>
+    <div class="bar"><div style="width:${Math.round(100 * done / total)}%"></div></div>
+    <ul class="stages">${st.stages.map((n, i) => `<li class="${i < st.stage ? 'done' : i === st.stage ? 'now' : ''}"><span class="dot">${i < st.stage ? '&#10003;' : ''}</span>${esc(n)}
+      <span class="sec">${st.stage_seconds[i] !== undefined ? st.stage_seconds[i] + ' s' : (i === st.stage && st.message ? esc(st.message) : '')}</span></li>`).join('')}</ul></div>`;
+}
+
+/* ------------------------------------------------------------------ shell + routing */
+function render() {
+  const d = S.result;
+  const nav = (id, num, title) => `<a class="nav-link" id="nav-${id}" href="#${id}"><span class="nav-num">${num}</span><span>${esc(title)}</span></a>`;
+  $('content').innerHTML = `<div class="layout"><nav class="sidebar" aria-label="Sections">
+      <div class="nav-heading">Overview</div>${nav('overview', '&#9776;', d.declined ? 'Why it declined' : 'Dashboard')}${d.declined ? '' : nav('whatif', '?', 'What-if: change files')}
+      ${d.declined ? '' : `<div class="nav-heading">Pipeline stages</div>${STEPS.map(([n, id, t]) => nav(id, n, t)).join('')}`}
+      <div class="nav-heading">Evidence</div>${nav('evidence', 'E', 'This repository')}${nav('docs', 'D', 'Project reports')}${nav('live', 'L', 'Live test ledger')}
+    </nav><section class="page" id="page"></section></div>`;
+  window.onhashchange = route; route();
+}
+const PAGES = {
+  overview: ['Dashboard', pageOverview], whatif: ['What-if: change files', pageWhatIf], repository: ['Repository analysis', pageRepository],
+  source: ['Source code graph', pageSource], ci: ['CI/CD graph', pageCI], fusion: ['Graph fusion', pageFusion], impact: ['Impact analysis', pageImpact],
+  features: ['Feature extraction', pageFeatures], models: ['Models and probabilities', pageModels], schedule: ['DAG-aware scheduling', pageSchedule],
+  safety: ['DAG safety verification', pageSafety], workflow: ['Original vs proposed workflow', pageWorkflow], summary: ['Final summary', pageSummary],
+  evidence: ['Evidence for this repository', pageEvidence], docs: ['Project reports', pageDocs], live: ['Live test ledger', pageLive],
+};
+async function route() {
+  const hash = (location.hash || '#overview').slice(1);
+  const [id, arg] = hash.split('/');
+  let key = PAGES[id] ? id : 'overview';
+  if (S.result.declined && !['evidence', 'docs', 'live'].includes(key)) key = 'overview';
+  document.querySelectorAll('.nav-link').forEach(a => a.classList.toggle('active', a.id === 'nav-' + key));
+  const [title, fn] = PAGES[key];
+  const step = STEPS.find(s => s[1] === key);
+  const idx = STEPS.findIndex(s => s[1] === key);
+  const head = `<div class="page-head">${step ? `<div class="step-num">${step[0]}</div>` : ''}<h2>${esc(title)}</h2><span class="badge">${esc(S.result.repo)}</span></div>`;
+  const page = $('page');
+  const my = ++S.seq;
+  page.innerHTML = head + '<div id="body"><p class="hint">Loading...</p></div>';
+  let html;
+  try { html = await fn(S.result, arg); } catch (e) { html = `<div class="note">${esc(e.message)}</div>`; }
+  if (my !== S.seq) return;
+  const prev = idx > 0 ? STEPS[idx - 1] : null, next = idx >= 0 && idx < STEPS.length - 1 ? STEPS[idx + 1] : null;
+  $('body').innerHTML = html + (step ? `<div class="pager">${prev ? `<a href="#${prev[1]}">&larr; ${esc(prev[2])}</a>` : '<span></span>'}${next ? `<a href="#${next[1]}">${esc(next[2])} &rarr;</a>` : '<span></span>'}</div>` : '') +
+    `<div class="footer">GitHub Actions Performance Optimizer - Akshat Singh (23BKT0005) &middot; Aditya Choubey (23BCE2274)</div>`;
+  page.scrollTop = 0;
+  if (PAGES[key][2]) PAGES[key][2]();
+}
+function declinedBody(d) {
+  const ds = d.data_source ? `${esc(d.data_source.repo)} &middot; ${d.data_source.history_runs} runs / ${d.data_source.history_rows} job rows ingested` : '';
+  return `<div class="panel" style="border-left:4px solid var(--amber)"><h3 style="font-size:18px;color:var(--amber);margin-bottom:6px">The system declined to predict for this repository</h3>${ds ? `<div class="hint">${ds}</div>` : ''}
+    <p style="margin:12px 0;font-size:14px">${esc(d.reason)}</p><p class="hint">${esc(d.hint || '')}</p>
+    <div class="note"><strong>This is by design.</strong> Predicting from too little real history would be guesswork, so the pipeline refuses and substitutes no synthetic or default values.
+    A repository needs enough real, labelled runs for every model (cache-miss labels come from job logs, which GitHub keeps for a limited time). What was measured for this repository
+    before the refusal is on the <a href="#evidence">Evidence</a> page.</div></div>`;
+}
+
+/* ------------------------------------------------------------------ shared visual helpers */
+function levels(jobs) {
+  const lv = {}; const f = (j) => lv[j] !== undefined ? lv[j] : (lv[j] = Math.max(-1, ...(jobs[j].needs || []).filter(n => jobs[n]).map(f)) + 1);
+  Object.keys(jobs).forEach(f); return lv;
+}
+function dagSvg(jobs, opts = {}) {
+  const ids = Object.keys(jobs), lv = levels(jobs), cols = Math.max(...ids.map(j => lv[j])) + 1;
+  const byLevel = Array.from({ length: cols }, () => []); ids.forEach(j => byLevel[lv[j]].push(j));
+  const W = 168, H = opts.sub ? 44 : 34, GX = 64, GY = 16, rows = Math.max(...byLevel.map(l => l.length));
+  const pos = {}; byLevel.forEach((l, c) => l.forEach((j, r) => { pos[j] = { x: 12 + c * (W + GX), y: 12 + r * (H + GY) + (rows - l.length) * (H + GY) / 2 }; }));
+  const width = 24 + cols * W + (cols - 1) * GX, height = 24 + rows * H + (rows - 1) * GY;
+  const edges = ids.flatMap(j => (jobs[j].needs || []).filter(n => pos[n]).map(n => {
+    const a = pos[n], b = pos[j], x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, mx = (x1 + x2) / 2;
+    return `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 6},${y2}" marker-end="url(#arrow)"/>`; }));
+  const nodes = ids.map(j => { const cls = (opts.cls && opts.cls(j)) || ''; const p = pos[j]; const label = j.length > 22 ? j.slice(0, 21) + '...' : j;
+    return `<g class="node ${cls}"><title>${esc(j)}</title><rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="6"/><text x="${p.x + 10}" y="${p.y + (opts.sub ? 18 : 21)}">${esc(label)}</text>${opts.sub ? `<text class="sub" x="${p.x + 10}" y="${p.y + 34}">${esc(opts.sub(j))}</text>` : ''}</g>`; });
+  return `<div class="dag"><svg viewBox="0 0 ${width} ${height}" width="${Math.max(width, 320)}" height="${height}" role="img" aria-label="Job dependency graph">
+    <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8a97ad" stroke="none"/></marker></defs>${edges.join('')}${nodes.join('')}</svg></div>`;
+}
+function timeline(jobs, dur, hot) {
+  const ids = Object.keys(jobs), end = {};
+  const fin = (j) => end[j] !== undefined ? end[j] : (end[j] = Math.max(0, ...(jobs[j].needs || []).filter(n => jobs[n]).map(fin)) + (dur[j] || 0));
+  ids.forEach(fin); const total = Math.max(...ids.map(j => end[j]), 1);
+  const rows = ids.slice().sort((a, b) => (end[a] - dur[a]) - (end[b] - dur[b])).map(j => { const st = end[j] - dur[j];
+    return `<div class="g-row"><div class="name" title="${esc(j)}">${esc(j)}</div><div class="g-lane"><div class="g-bar${hot && hot.includes(j) ? ' hot' : ''}" style="left:${(st / total * 100).toFixed(2)}%;width:${(dur[j] / total * 100).toFixed(2)}%">${fmt(dur[j])}s</div></div></div>`; }).join('');
+  return { total, html: `<div>${rows}</div><div class="g-axis"><div></div><div>${[0, .25, .5, .75, 1].map(f => `<span>${Math.round(total * f)}s</span>`).join('')}</div></div>` };
+}
+const bars = (items, max, cls) => items.map(([n, v, label]) => `<div class="hbar"><div class="name" title="${esc(n)}">${esc(n)}</div><div class="track"><div class="fill ${cls ? cls(v) : ''}" style="width:${Math.max(v / max * 100, 1).toFixed(1)}%"></div></div><div class="num">${label}</div></div>`).join('');
+const kv = (rows) => rows.map(([k, v]) => `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`).join('');
+const table = (heads, rows) => `<table><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</table>`;
+function estNote() { return `<div class="note"><span class="pill est">ESTIMATED</span> Every saving, cost, energy and CO&#8322; figure is derived from predicted durations; none is a measured execution. The default plan keeps the workflow's job structure, so the estimated saving is 0% unless an opt-in lever is used (see <a href="#docs/SCHEDULER_ASSUMPTIONS.md">scheduler assumptions</a>).</div>`; }
+
+/* ------------------------------------------------------------------ pages */
+function pageOverview(d) {
+  if (d.declined) return declinedBody(d);
+  const s = d.summary, ds = d.data_source, jobs = d.step1_repository.jobs, pred = d.step7_models.predictions, ids = Object.keys(jobs);
+  const maxD = Math.max(...ids.map(j => pred[j].duration), 1);
+  const dur = bars(ids.slice().sort((a, b) => pred[b].duration - pred[a].duration).map(j => [j, pred[j].duration, pred[j].duration + 's']), maxD);
+  const fail = bars(ids.slice().sort((a, b) => pred[b].failure - pred[a].failure).map(j => [j, pred[j].failure, pred[j].failure.toFixed(3)]), 1, riskClass);
+  const dd = {}; ids.forEach(j => dd[j] = pred[j].duration); const tl = timeline(jobs, dd);
+  const oos = d.step7_models.failure_out_of_sample;
+  return `<div class="context-bar"><span>Repository <b>${esc(ds.repo)}</b></span><span>Workflow <b>${esc(ds.workflow)}</b></span><span>Commit <b>${esc(ds.commit)}</b></span>
+      <span>Scored at <b>${esc((ds.scored_at || 'n/a').replace('T', ' ').slice(0, 16))} UTC</b></span><span>History <b>${ds.history_runs} runs / ${ds.history_rows} job rows</b> (real, ingested)</span></div>
+    <div class="kpis">
+      <div class="kpi"><div class="label">Real runs</div><div class="value v-accent">${ds.history_runs}</div><div class="sub">${ds.history_rows} (run, job) rows</div></div>
+      <div class="kpi"><div class="label">Jobs</div><div class="value v-cyan">${s.jobs}</div><div class="sub">${d.step1_repository.dag_edge_count} <code>needs</code> edges</div></div>
+      <div class="kpi"><div class="label">Files analysed</div><div class="value v-accent">${s.files_analyzed}</div><div class="sub">${s.source_deps} source + ${s.ci_deps} CI deps</div></div>
+      <div class="kpi"><div class="label">Fused graph</div><div class="value v-cyan">${s.fused_nodes}</div><div class="sub">${s.fused_edges} edges, ${d.step4_fusion.cross_domain_edges} cross-domain</div></div>
+      <div class="kpi"><div class="label">Models trained</div><div class="value v-green">${s.models_trained}</div><div class="sub">cache-miss, failure, duration</div></div>
+      <div class="kpi"><div class="label">Wall-clock saved (est.)</div><div class="value ${s.time_saved_pct > 0 ? 'v-green' : 'v-amber'}">${s.time_saved_pct > 0 ? '+' : ''}${s.time_saved_pct}%</div><div class="sub">${s.baseline_wall_clock}s &rarr; ${s.optimized_wall_clock}s, predicted</div></div></div>
+    <div class="panel"><h3>Job dependency graph</h3><div class="hint">Arrows are <code>needs</code>; colour = predicted failure probability for the real diff of the latest run.</div>
+      ${dagSvg(jobs, { cls: j => riskClass(pred[j].failure), sub: j => `${pred[j].duration}s, P(fail) ${pred[j].failure.toFixed(2)}` })}
+      <div class="legend"><span><i style="background:#d4f1de"></i>below 0.2</span><span><i style="background:#fde8c5"></i>0.2 to 0.5</span><span><i style="background:#fbd5cf"></i>above 0.5</span></div></div>
+    <div class="grid2"><div class="panel"><h3>Predicted duration per job</h3><div class="hint">Duration estimator, seconds</div>${dur}</div>
+      <div class="panel"><h3>Predicted failure probability per job</h3><div class="hint">Compare with the job's own base rate on the Models page, not with 0</div>${fail}</div></div>
+    <div class="panel"><h3>Estimated timeline respecting <code>needs</code></h3><div class="hint">A job starts when all its <code>needs</code> jobs are done; predicted durations, unlimited runners. Critical path about ${Math.round(tl.total)} s. The scheduler's own figure (${s.baseline_wall_clock} s) is level-based - it waits for the slowest job of each DAG level - so it can be higher.</div>${tl.html}</div>
+    <div class="grid2"><div class="panel"><h3>Failure model against the baseline</h3><div class="hint">Rolling-origin point estimates on this repository</div>${oosCard(oos)}</div>
+      <div class="panel"><h3>How to read the numbers</h3><ul class="list">
+        <li><span class="pill meas">REAL</span>History, job durations and outcomes come from ingested GitHub Actions runs.</li>
+        <li><span class="pill est">ESTIMATED</span>Savings, cost, energy and CO&#8322; come from predicted durations, not from executions.</li>
+        <li>Cost, energy and CO&#8322; can rise when faster runners are chosen: a multi-objective trade-off, not a free gain.</li>
+        <li>Same inputs, same numbers: the scoring time is the scored run's own creation time (${esc((ds.scored_at || 'n/a').slice(0, 16).replace('T', ' '))} UTC).</li></ul></div></div>
+    <div class="panel"><h3>Pages</h3><div class="index-grid">${STEPS.map(([n, id, t]) => `<a class="index-card" href="#${id}"><span class="step-num">${n}</span><span class="index-text"><b>${esc(t)}</b></span></a>`).join('')}
+      <a class="index-card" href="#whatif"><span class="step-num">?</span><span class="index-text"><b>What-if: change files</b><span>pick files, watch jobs and predictions update</span></span></a></div></div>`;
+}
+function oosCard(o) {
+  if (!o) return '<p class="hint">Not enough failures on unseen rows to compare.</p>';
+  const better = o.pr_auc_model > o.pr_auc_baseline;
+  return kv([['unseen rows scored', o.rows], ['failures among them', `${o.failures} (${pct(o.base_rate)})`],
+    ['PR-AUC, model', o.pr_auc_model.toFixed(3)], ['PR-AUC, baseline (job\'s prior failure rate)', o.pr_auc_baseline.toFixed(3)],
+    ['Brier, model', o.brier_model.toFixed(4)], ['Brier, baseline', o.brier_baseline.toFixed(4)], ['highest model score on unseen rows', o.highest_score.toFixed(3)]]) +
+    `<div class="note ${better ? 'info' : ''}">${better ? 'On this repository the model ranks failures better than the baseline (point estimates).' : 'On this repository the baseline ranks failures at least as well as the model (point estimates). The model is not a clear improvement here.'} ${esc(o.note)}</div>`;
+}
+function pageRepository(d) {
+  const r = d.step1_repository;
+  return `<div class="grid2"><div class="compact"><h4>Files discovered (first 50 of ${r.file_count})</h4><div style="max-height:260px;overflow:auto">${r.files_discovered.map(f => `<div class="kv"><span class="v" style="text-align:left">${esc(f)}</span></div>`).join('')}</div></div>
+    <div class="compact"><h4>Workflow: ${esc(r.workflow_name)}</h4>${kv([['Triggers', esc(r.triggers.join(', '))], ['Jobs', r.job_count], ['needs edges', r.dag_edge_count]])}</div></div>
+    <div class="panel" style="margin-top:14px"><h3>Job DAG</h3><div class="hint">The original workflow's jobs and <code>needs</code> relationships.</div>${dagSvg(r.jobs, { sub: j => r.jobs[j].runs_on + ', ' + r.jobs[j].steps + ' steps' })}</div>
+    <div class="panel">${table(['Job', 'Runner', 'Steps', 'Needs', 'Cache'], Object.entries(r.jobs).map(([id, j]) => [`<span class="v-accent">${esc(id)}</span>`, esc(j.runs_on), j.steps, j.needs.length ? esc(j.needs.join(', ')) : '<span style="color:var(--text-dim)">root</span>', j.uses_cache ? '<span class="tag green">yes</span>' : 'no']))}</div>`;
+}
+const typeCounts = (o) => `<div class="chips">${Object.entries(o).map(([t, c]) => `<span class="tag blue">${esc(t)}: ${c}</span>`).join('')}</div>`;
+function pageSource(d) { const g = d.step2_source_graph; return `<div class="panel"><h3>${g.node_count} nodes, ${g.edge_count} edges from ${g.files_parsed} parsed files</h3><div class="hint">Node types</div>${typeCounts(g.node_types)}
+  <div class="hint" style="margin-top:12px">Discovered dependencies (first ${g.edges.length})</div>${table(['From', 'To', 'Type'], g.edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(e.type.replace('EdgeType.', ''))}</span>`]))}</div>`; }
+function pageCI(d) { const g = d.step3_ci_graph; return `<div class="panel"><h3>${g.node_count} nodes, ${g.edge_count} edges</h3><div class="hint">CI node types: jobs, steps, actions, cache keys, runners</div>${typeCounts(g.node_types)}</div>`; }
+function pageFusion(d) { const f = d.step4_fusion; return `<div class="grid2"><div class="compact"><h4>Fused graph</h4>${kv([['Total nodes', f.node_count], ['Total edges', f.edge_count], ['Cross-domain edges', `<span class="v-green">${f.cross_domain_edges}</span>`]])}</div>
+  <div class="compact"><h4>Graph summary</h4>${kv(Object.entries(f.summary).map(([k, v]) => [k, esc(v)]))}</div></div>
+  <div class="panel" style="margin-top:14px"><h3>Cross-domain edges (source file to job / cache key)</h3><div class="hint">Created by five static rules, each with its own confidence; first ${f.fusion_edges.length} shown.</div>
+  ${table(['From', 'To', 'Type', 'Confidence'], f.fusion_edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(String(e.type).replace('EdgeType.', ''))}</span>`, fmt(e.confidence, 2)]))}</div>`; }
+function pageImpact(d) { const i = d.step5_impact, jobs = d.step1_repository.jobs, hot = new Set(i.primary_impacted_jobs);
+  return `<div class="grid2"><div class="compact"><h4>The real diff of the latest run: <span class="v-accent">${esc(i.primary_change)}</span>${i.changed_file_count > 1 ? ` (+${i.changed_file_count - 1} more)` : ''}</h4>
+    ${kv([['Impacted jobs', esc(i.primary_impacted_jobs.join(', ') || 'none')], ['Cache keys touched', esc(i.primary_cache_touched.join(', ') || 'none')]])}</div>
+    <div class="compact"><h4>A different run's diff: <span class="v-accent">${esc(i.comparison_change || '(no previous different run)')}</span></h4>
+    ${kv([['Impacted jobs', esc(i.comparison_impacted_jobs.join(', ') || 'none')], ['Cache keys touched', esc(i.comparison_cache_touched.join(', ') || 'none')]])}</div></div>
+    <div class="panel" style="margin-top:14px"><h3>Impacted jobs highlighted</h3><div class="hint">"Impacted" is conservative: jobs the graph reaches plus every job with no file evidence. Try other files on the <a href="#whatif">What-if</a> page.</div>
+    ${dagSvg(jobs, { cls: j => hot.has(j) ? 'hot' : 'cold' })}<div class="legend"><span><i style="background:#ffe9c4"></i>impacted</span><span><i style="background:#f1f4f9"></i>not reached</span></div></div>`; }
+function pageFeatures(d) { const f = d.step6_features, cols = Object.keys(f.per_job_features);
+  return `<div class="panel"><h3>${f.feature_columns.length} features x ${cols.length} jobs</h3><div class="hint">Training data: ${f.history_records} records, frame ${esc(f.training_shape)}. An empty value (n/a) means no prior evidence; it is never replaced by a default.</div>
+  ${table(['Feature', ...cols.map(esc)], f.feature_columns.map(c => [`<span style="color:var(--text-dim)">${esc(c)}</span>`, ...cols.map(j => fmt(f.per_job_features[j][c], 3))]))}</div>`; }
+function modelCard(name, m) {
+  return `<div class="compact"><h4>${name}</h4>${kv([['Status', `<span class="tag green">${esc(m.status)}</span>`], ['Backend', esc(m.backend)], ['Validation', esc(m.validation)],
+    ...(m.f1 !== undefined ? [['F1 (threshold-dependent)', fmt(m.f1, 3)]] : []), ...(m.roc_auc !== undefined ? [['ROC AUC', fmt(m.roc_auc, 3)]] : []),
+    ...(m.pr_auc !== undefined ? [['PR-AUC (no-skill ' + fmt(m.pr_auc_baseline, 3) + ')', fmt(m.pr_auc, 3)]] : []), ...(m.r2 !== undefined ? [['R&#178;', fmt(m.r2, 3)]] : []),
+    ...(m.mae_seconds !== undefined ? [['MAE', fmt(m.mae_seconds) + ' s'], ['baseline MAE', fmt(m.baseline_mae_seconds) + ' s']] : [])])}</div>`;
+}
+function pageModels(d) {
+  const m = d.step7_models, p = m.predictions, o = m.failure_out_of_sample;
+  const seen = (v) => { const s = v.failure_seen_like_this; if (!s || !s.available) return '<span class="tag grey">n/a</span>';
+    return (s.outside_range ? '<span class="tag red" title="No unseen row ever scored this high: the probability is an extrapolation">above anything seen</span> ' : '') +
+      `${pct(s.observed_rate)} of ${s.rows} rows (${s.failures} failed) scored ${s.score_low.toFixed(2)}-${s.score_high.toFixed(2)}`; };
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:14px">${modelCard('Cache-miss predictor', m.cache_miss)}${modelCard('Failure predictor', m.failure)}${modelCard('Duration estimator', m.duration)}</div>
+    <div class="panel"><h3>Failure probability next to what it can be compared with</h3>
+      <div class="hint">A probability alone proves little. For each job: the model's score, the job's own historical failure rate (the naive baseline), and what actually happened to unseen rows that scored similarly (rolling-origin folds on this repository).</div>
+      ${table(['Job', 'Model score', 'Job base rate (baseline)', 'Seen on unseen rows that scored like this', 'P(cache miss)', 'Duration (s)'],
+        Object.entries(p).map(([j, v]) => [`<span class="v-accent">${esc(j)}</span>`, tagFor(v.failure), v.failure_base_rate === null ? 'n/a' : pct(v.failure_base_rate), seen(v), tagFor(v.cache_miss), v.duration]))}
+      <div class="note">The score is the model's output for the real diff; it is not a calibrated probability. Re-calibrating it did not help in a test on four repositories (<a href="#docs/CALIBRATION.md">calibration report</a>), so the dashboard reports the observed rate instead of adjusting the score. A score above the highest one the model produced on unseen rows is flagged: it is an extrapolation.</div></div>
+    <div class="grid2"><div class="panel"><h3>Model vs baseline on this repository</h3><div class="hint">Failure model, pooled rolling-origin folds</div>${oosCard(o)}</div>
+      <div class="panel"><h3>Feature importance (cache-miss model)</h3><div class="hint">Permutation importance on the temporal hold-out</div>${bars(m.feature_importance.map(f => [f.name, f.value, f.value]), m.feature_importance[0] ? m.feature_importance[0].value : 1)}</div></div>`;
+}
+function pageSchedule(d) {
+  const sc = d.step8_schedule, jobs = d.step1_repository.jobs, pred = d.step7_models.predictions;
+  return `<div class="grid2"><div class="compact"><h4>Original order</h4>${sc.original_order.map((j, i) => `<div class="kv"><span class="v" style="text-align:left">${i + 1}. ${esc(j)}</span></div>`).join('')}</div>
+    <div class="compact"><h4>Fail-fast order (what the proposal uses)</h4>${sc.jobs.map(j => `<div class="kv"><span class="v" style="text-align:left">${j.order + 1}. ${esc(j.job_id)}</span><span class="k">level ${j.dag_level}, P(fail) ${j.failure_prob}</span></div>`).join('')}</div></div>
+    <div class="panel" style="margin-top:14px"><h3>Plan by DAG level</h3>${dagSvg(jobs, { cls: j => riskClass(pred[j].failure), sub: j => 'level ' + sc.jobs.find(x => x.job_id === j).dag_level + ', ' + sc.jobs.find(x => x.job_id === j).runner })}</div>
+    <div class="panel">${table(['Job', 'Level', 'Runner', 'Est. duration', 'Est. cost', 'Skip?'], sc.jobs.map(j => [`<span class="v-accent">${esc(j.job_id)}</span>`, j.dag_level, `<span class="tag blue">${esc(j.runner)}</span>`, j.est_duration + 's', '$' + j.est_cost, j.skip ? '<span class="tag red">YES</span>' : '<span class="tag green">no</span>']))}</div>${estNote()}`;
+}
+function pageSafety(d) { const v = d.step9_validation;
+  const check = (label, ok) => `<div class="compact" style="display:flex;gap:10px;align-items:center"><span class="step-num" style="background:${ok ? 'var(--green)' : 'var(--red)'}">${ok ? '&#10003;' : '&times;'}</span><span>${label}</span></div>`;
+  return `<div class="grid2">${check('All jobs preserved', v.all_jobs_present)}${check('No circular dependencies', v.no_cycles)}${check('needs relationships preserved', v.needs_preserved)}${check('Workflow executable', v.workflow_executable)}</div>
+    <div class="note info">The proposed file is validated against the original before it is written: every job is kept, no <code>needs</code> edge is removed or reversed, and the original file is never modified.</div>`; }
+function diffHtml(diff) { return diff.split('\n').map(l => { const e = esc(l); return l.startsWith('+++') || l.startsWith('---') || l.startsWith('@@') ? `<span class="diff-hdr">${e}</span>` : l.startsWith('+') ? `<span class="diff-add">${e}</span>` : l.startsWith('-') ? `<span class="diff-del">${e}</span>` : e; }).join('\n'); }
+function pageWorkflow(d) { const o = d.step10_output;
+  window.downloadProposed = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([o.proposed_yaml], { type: 'text/yaml' })); a.download = o.file_name; a.click(); URL.revokeObjectURL(a.href); };
+  return `<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><span class="badge ${o.yaml_valid ? 'pass' : 'fail'}">${o.yaml_valid ? 'valid YAML' : 'INVALID YAML'}</span>
+      <button class="btn primary" onclick="downloadProposed()">Download ${esc(o.file_name)}</button><span class="hint" style="margin:0">Your original workflow file is not modified; review the diff before adopting anything.</span></div>
+    <div class="grid2"><div class="panel"><h3>Original</h3><pre class="code">${esc(o.original_yaml)}</pre></div><div class="panel"><h3>Proposed</h3><pre class="code">${esc(o.proposed_yaml)}</pre></div></div>
+    <div class="panel"><h3>Diff (original to proposed)</h3><pre class="code">${diffHtml(o.diff_preview)}</pre></div>`; }
+function pageSummary(d) { const s = d.summary, c = (title, rows) => `<div class="compact"><h4>${title}</h4>${kv(rows)}</div>`;
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
+    ${c('Wall-clock (estimated)', [['Baseline', s.baseline_wall_clock + 's'], ['Proposed', s.optimized_wall_clock + 's'], ['Saved', (s.time_saved_pct > 0 ? '+' : '') + s.time_saved_pct + '%']])}
+    ${c('Cost (estimated)', [['Baseline', '$' + s.baseline_cost], ['Proposed', '$' + s.optimized_cost], ['Change', (s.cost_saved_pct > 0 ? '+' : '') + s.cost_saved_pct + '%']])}
+    ${c('Energy (estimated)', [['Baseline', s.baseline_energy + ' Wh'], ['Proposed', s.optimized_energy + ' Wh'], ['Change', (s.energy_saved_pct > 0 ? '+' : '') + s.energy_saved_pct + '%']])}
+    ${c('CO&#8322; (estimated)', [['Baseline', s.baseline_co2 + ' g'], ['Proposed', s.optimized_co2 + ' g'], ['Change', (s.co2_saved_pct > 0 ? '+' : '') + s.co2_saved_pct + '%']])}</div>
+    <div class="note">Cost, energy and CO&#8322; can increase when the scheduler selects faster (more expensive) runners; that is the expected behaviour of the weighted objective. Predictions come from models trained on ${d.data_source.history_rows} real (run, job) rows from ${d.data_source.history_runs} runs of ${esc(d.data_source.repo)}.</div>${estNote()}`; }
+
+/* ------------------------------------------------------------------ what-if */
+async function pageWhatIf(d) {
+  let f;
+  try { f = await api(`/files?repo=${encodeURIComponent(S.repo)}`); } catch (e) { f = { available: false }; }
+  if (!f.available) {
+    return `<div class="panel"><h3>Preparing the models for what-if scoring</h3><div class="hint">The trained models and graph are kept in memory; after a server restart they are rebuilt once (the result itself came from the disk cache).</div><div class="bar"><div id="wiBar" style="width:5%"></div></div><div id="wiMsg" class="hint">starting...</div></div>`;
+  }
+  return `<div class="grid2"><div class="panel"><h3>1. Choose the changed files</h3><div class="hint">Search the repository's ${f.total} files, click to add, or use a ready-made scenario built from files that really exist here.</div>
+      <input type="search" id="wiSearch" placeholder="search a path, e.g. lock, tests/, .github/workflows" autocomplete="off"><div class="filelist" id="wiFiles"></div>
+      <div class="chips" id="wiScen">${f.suggestions.map((s, i) => `<button class="btn small" data-i="${i}">${esc(s.label)}</button>`).join('')}<button class="btn small" id="wiReal">The real diff (${f.real_diff.length} files)</button></div>
+      <div class="hint" style="margin:10px 0 0">Selected files</div><div class="chips" id="wiChips"></div><button class="btn primary" id="wiRun">Score these files</button></div>
+    <div class="panel"><h3>What this shows</h3><ul class="list"><li>Impacted jobs according to the dependency graph (conservative: jobs without file evidence count as impacted).</li>
+      <li>The three models re-scored for the files you pick, next to the scores for the real diff of the latest run.</li>
+      <li>The estimated plan and timeline for the new scores.</li>
+      <li>Honest limit: only the structural features react to the files; history features do not. Graph features are informative where the workflow gates on paths (see <a href="#docs/GRAPH_FEATURES.md">graph features</a>).</li></ul></div></div>
+    <div id="wiOut"></div>`;
+}
+PAGES.whatif[2] = async function whatIfWire() {
+  if (!$('wiSearch')) { // context not in memory yet: ask the server to rebuild it, then re-render the page
+    const my = S.seq; await api(`/run?repo=${encodeURIComponent(S.repo)}&need_context=true`, { method: 'POST' });
+    for (;;) { await new Promise(r => setTimeout(r, 700)); const st = await api(`/status?repo=${encodeURIComponent(S.repo)}`);
+      if (my !== S.seq) return; if ($('wiBar')) { $('wiBar').style.width = Math.round(100 * Math.max(st.stage, 0) / st.stages.length) + '%'; $('wiMsg').textContent = st.stage_name || 'queued'; }
+      if (st.state === 'error') { $('wiMsg').textContent = st.error; return; } if (st.state === 'done' && st.context_ready) { return route(); } }
+  }
+  const state = S.whatif;
+  const files = await api(`/files?repo=${encodeURIComponent(S.repo)}`);
+  const chips = () => { $('wiChips').innerHTML = state.files.length ? state.files.map((f, i) => `<span class="fchip">${esc(f)}<button data-i="${i}" title="remove">&times;</button></span>`).join('') : '<span class="hint">none yet</span>'; };
+  const list = async () => { const r = await api(`/files?repo=${encodeURIComponent(S.repo)}&q=${encodeURIComponent($('wiSearch').value)}`); $('wiFiles').innerHTML = r.files.map(x => `<div data-f="${esc(x)}">${esc(x)}</div>`).join('') || '<div style="cursor:default">no match</div>'; };
+  const add = (fs) => { fs.forEach(f => { if (!state.files.includes(f)) state.files.push(f); }); chips(); };
+  $('wiSearch').oninput = list; list(); chips();
+  $('wiFiles').onclick = (e) => { if (e.target.dataset.f) add([e.target.dataset.f]); };
+  $('wiChips').onclick = (e) => { if (e.target.dataset.i !== undefined) { state.files.splice(+e.target.dataset.i, 1); chips(); } };
+  $('wiScen').onclick = (e) => { if (e.target.dataset.i !== undefined) { state.files = files.suggestions[+e.target.dataset.i].files.slice(); chips(); runWhatIf(); } };
+  $('wiReal').onclick = () => { state.files = files.real_diff.slice(0, 200); chips(); runWhatIf(); };
+  $('wiRun').onclick = runWhatIf;
+  if (state.data) $('wiOut').innerHTML = whatIfResult(state.data);
+};
+async function runWhatIf() {
+  const out = $('wiOut'); if (!S.whatif.files.length) { out.innerHTML = '<div class="note">Pick at least one file.</div>'; return; }
+  out.innerHTML = '<p class="hint">Scoring...</p>';
+  try { S.whatif.data = await api('/whatif', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: S.repo, changed_files: S.whatif.files }) }); out.innerHTML = whatIfResult(S.whatif.data); }
+  catch (e) { out.innerHTML = `<div class="note">${esc(e.message)}</div>`; }
+}
+function whatIfResult(w) {
+  const d = S.result, jobs = d.step1_repository.jobs, hot = new Set(w.impacted_jobs), s = w.summary, b = w.base_summary;
+  const dur = {}; w.jobs.forEach(j => dur[j.job_id] = j.whatif.duration); const tl = timeline(jobs, dur, w.impacted_jobs);
+  const arrow = (a, c, digits = 3) => `${a.toFixed(digits)} &rarr; <b>${c.toFixed(digits)}</b>`;
+  return `<div class="panel"><h3>Result for ${w.changed_files.length} changed file${w.changed_files.length === 1 ? '' : 's'}</h3><div class="hint">${esc(w.changed_files.slice(0, 6).join(', '))}${w.changed_files.length > 6 ? ' ...' : ''}${w.unknown_files.length ? ` - not in the repository tree: ${esc(w.unknown_files.join(', '))}` : ''}</div>
+    <div class="kpis" style="margin-bottom:0"><div class="kpi"><div class="label">Impacted jobs</div><div class="value v-accent">${w.impacted_jobs.length} / ${w.jobs.length}</div><div class="sub">${esc(w.impacted_jobs.join(', ') || 'none')}</div></div>
+      <div class="kpi"><div class="label">Cache keys touched</div><div class="value v-cyan">${w.cache_keys_touched.length}</div><div class="sub" title="${esc(w.cache_keys_touched.join(' | '))}">${esc(w.cache_keys_touched.map(k => k.length > 44 ? k.slice(0, 43) + '...' : k).join(', ') || 'none')}</div></div>
+      <div class="kpi"><div class="label">Wall-clock (est.)</div><div class="value">${s.baseline_wall_clock}s</div><div class="sub">real diff: ${b.baseline_wall_clock}s</div></div>
+      <div class="kpi"><div class="label">Saved (est.)</div><div class="value ${s.time_saved_pct > 0 ? 'v-green' : 'v-amber'}">${s.time_saved_pct}%</div><div class="sub">default plan, ESTIMATED</div></div></div></div>
+    <div class="panel"><h3>Jobs: real diff &rarr; your files</h3>${dagSvg(jobs, { cls: j => hot.has(j) ? 'hot' : 'cold', sub: j => { const x = w.jobs.find(y => y.job_id === j); return 'P(fail) ' + x.base.failure.toFixed(2) + ' -> ' + x.whatif.failure.toFixed(2); } })}
+      <div class="legend"><span><i style="background:#ffe9c4"></i>impacted</span><span><i style="background:#f1f4f9"></i>not reached</span></div>
+      ${table(['Job', 'Impacted', 'P(failure)', 'Job base rate', 'Seen on unseen rows that scored like this', 'P(cache miss)', 'Duration (s)'], w.jobs.map(j => {
+        const sl = j.whatif.failure_seen_like_this; const seen = sl && sl.available ? (sl.outside_range ? '<span class="tag red">above anything seen</span> ' : '') + `${pct(sl.observed_rate)} of ${sl.rows}` : 'n/a';
+        return [`<span class="v-accent">${esc(j.job_id)}</span>`, j.impacted ? '<span class="tag amber">yes</span>' : '<span class="tag grey">no</span>', arrow(j.base.failure, j.whatif.failure),
+          j.whatif.failure_base_rate === null ? 'n/a' : pct(j.whatif.failure_base_rate), seen, arrow(j.base.cache_miss, j.whatif.cache_miss), arrow(j.base.duration, j.whatif.duration, 1)]; }))}</div>
+    <div class="panel"><h3>Estimated timeline for these files</h3><div class="hint">Critical path about ${Math.round(tl.total)} s; impacted jobs in orange.</div>${tl.html}</div>
+    <div class="note info">${esc(w.note)}</div>`;
+}
+
+/* ------------------------------------------------------------------ evidence */
+async function pageEvidence(d) {
+  const e = await api(`/evidence?repo=${encodeURIComponent(S.repo)}`);
+  if (!e.reports.length) return `<div class="note">No generated report has a row for ${esc(S.repo)}. Reports are written by the CLI (<code>eval-models</code>, <code>triage</code>, <code>replay-gates</code>, ...) into <code>docs/</code>.</div>`;
+  return `<div class="note info">Every row below is copied from a report that a CLI command generated from real data (<code>docs/</code>); the dashboard computes nothing here. Intervals that include 0 mean "not distinguishable from no difference".</div>` +
+    e.reports.map(r => `<div class="panel"><h3>${esc(r.title)} <a class="tag grey" href="#docs/${esc(r.report)}" style="text-decoration:none">${esc(r.report)}</a></h3>${r.tables.map(t => `<div class="hint" style="margin-top:10px">${esc(t.heading)}</div>${table(t.headers.map(esc), t.rows.map(row => row.map(c => mdInline(c))))}`).join('')}</div>`).join('');
+}
+async function pageLive() {
+  const l = await api('/live');
+  if (!l.ledgers.length) return '<div class="note">No live-scoring ledger found in <code>.gha_optimizer/live/</code>. Start one with <code>gha-optimizer live-score</code>.</div>';
+  return `<div class="note info">Predictions in a ledger were written when a run was queued, before any of its jobs finished, and every line carries the hash of the previous one: editing a past prediction breaks the chain.</div>
+    <div class="panel">${table(['Ledger', 'Entries', 'Scored runs', 'Skipped', 'Hash chain', 'First', 'Last'], l.ledgers.map(x => [esc(x.ledger), x.entries, x.scored_runs, x.skipped_runs, x.hash_chain_verified ? '<span class="tag green">verified</span>' : '<span class="tag red">BROKEN</span>', esc(x.first || 'n/a'), esc(x.last || 'n/a')]))}</div>
+    <p class="hint">Outcomes and scores: <a href="#docs/LIVE_TEST.md">LIVE_TEST.md</a>. A live window of hours or days is a demonstration, not a significance test.</p>`;
+}
+
+/* ------------------------------------------------------------------ project reports (markdown viewer) */
+function mdInline(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>')
+  .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => /^(https?:|#)/.test(u) ? `<a href="${u}">${t}</a>` : (/\.md$/.test(u) ? `<a href="#docs/${u.split('/').pop()}">${t}</a>` : t)); }
+function markdown(src) {
+  const lines = src.replace(/\r/g, '').split('\n'); const out = []; let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith('```')) { const buf = []; i++; while (i < lines.length && !lines[i].startsWith('```')) buf.push(lines[i++]); i++; out.push(`<pre class="code">${esc(buf.join('\n'))}</pre>`); continue; }
+    const h = /^(#{1,4})\s+(.*)$/.exec(l); if (h) { out.push(`<h${h[1].length}>${mdInline(h[2])}</h${h[1].length}>`); i++; continue; }
+    if (l.startsWith('|') && i + 1 < lines.length && /^\|?\s*:?-{3,}/.test(lines[i + 1])) {
+      const cells = (x) => x.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim()); const head = cells(l); i += 2; const rows = [];
+      while (i < lines.length && lines[i].startsWith('|')) rows.push(cells(lines[i++]));
+      out.push(`<table><tr>${head.map(c => `<th>${mdInline(c)}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${mdInline(c)}</td>`).join('')}</tr>`).join('')}</table>`); continue; }
+    if (/^\s*([-*]|\d+\.)\s+/.test(l)) { const ord = /^\s*\d+\./.test(l); const items = []; while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ''));
+      out.push(`<${ord ? 'ol' : 'ul'}>${items.map(x => `<li>${mdInline(x)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`); continue; }
+    if (l.startsWith('>')) { out.push(`<blockquote>${mdInline(l.replace(/^>\s?/, ''))}</blockquote>`); i++; continue; }
+    if (!l.trim()) { i++; continue; }
+    const para = []; while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\||>|\s*([-*]|\d+\.)\s)/.test(lines[i])) para.push(lines[i++]);
+    out.push(`<p>${mdInline(para.join(' '))}</p>`);
+  }
+  return out.join('\n');
+}
+async function pageDocs(d, name) {
+  const list = (await api('/docs')).docs;
+  const cur = name || (list.includes('IMPROVEMENT_RESULTS.md') ? 'IMPROVEMENT_RESULTS.md' : list[0]);
+  const body = cur ? markdown(await api('/docs/' + encodeURIComponent(cur))) : '<p class="hint">No reports found in docs/.</p>';
+  return `<div class="docs-layout"><div class="docs-list">${list.map(n => `<a href="#docs/${esc(n)}" class="${n === cur ? 'active' : ''}">${esc(n)}</a>`).join('')}</div><div class="panel md">${body}</div></div>`;
+}
+
+init();
+</script>
 </body>
 </html>
