@@ -1,58 +1,68 @@
 <#
 .SYNOPSIS
-  Start the prospective live scorers (gha-optimizer live-score) for the repositories of the live test, unless they already run.
+  Keep the prospective live scorers (gha-optimizer live-score) running; meant to be left open in a terminal tab.
 
 .DESCRIPTION
-  Idempotent: a repository whose scorer is already running is left alone, so this can be run by hand or by the watchdog task
-  (docs/BACKGROUND_RUNBOOK.md).  Each scorer appends to its own hash-chained ledger under .gha_optimizer/live/ and never
-  re-scores a run that is already in the ledger.  The GitHub token comes from `gh auth token` and lives only in the
-  environment of the scorer processes; it is never written to a file.
+  Default: a supervisor that stays in the foreground, starts a scorer for each repository of the live test if none is running,
+  checks every minute, restarts one whose window ended or that died, and prints one status line per check.  Stop it with Ctrl-C
+  (the scorers keep running; use -Stop to stop them too).
 
-.PARAMETER Minutes
-  Length of each scorer window (default 720 = 12 h); the watchdog starts a new window when one ends.
-.PARAMETER Stop
-  Stop the running scorers instead of starting them.
+  Why a terminal tab and not a background task: processes started by a Claude session, by a scheduled Claude task, through WMI or
+  through the Windows Task Scheduler all died here within seconds or when their session ended (the first scorers left gaps in the
+  ledgers).  A process tree started in the user's own interactive terminal lives as long as that terminal.
+
+  -Status : print what is running and the ledger sizes, then exit.
+  -Stop   : stop every scorer (and its wrapper) and exit.
+  Each scorer appends to its own hash-chained ledger under .gha_optimizer/live/ and never re-scores a run already in it;
+  the GitHub token is read by scripts/run_scorer.ps1 with `gh auth token` into that process's environment only.
 #>
 param(
     [int]$Minutes = 720,
     [int]$PollSeconds = 30,
+    [switch]$Status,
     [switch]$Stop
 )
 
-$ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$python = Join-Path $root ".venv\Scripts\python.exe"
 $targets = @(
     @{ repo = "astral-sh/uv";            workflow = ".github/workflows/ci.yml" },
     @{ repo = "astral-sh/ruff";          workflow = ".github/workflows/ci.yaml" },
     @{ repo = "prometheus/prometheus";   workflow = ".github/workflows/ci.yml" }
 )
-
-function Get-Scorer([string]$repo) {
-    Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
-        Where-Object { $_.CommandLine -match "live-score" -and $_.CommandLine -match ("--repo ""?" + [regex]::Escape($repo) + """?(\s|$)") }
+function Get-Procs([string]$repo) {
+    Get-CimInstance Win32_Process | Where-Object {
+        ($_.Name -in @("python.exe", "powershell.exe")) -and $_.CommandLine -match "(live-score|run_scorer\.ps1)" -and
+        $_.CommandLine -match ("(--repo|-Repo) ""?" + [regex]::Escape($repo) + """?(\s|$)") }
+}
+function Ledger-Lines([string]$repo) {
+    $f = Join-Path $root (".gha_optimizer\live\" + ($repo -replace "/", "__") + ".jsonl")
+    if (Test-Path $f) { (Get-Content $f | Measure-Object -Line).Lines } else { 0 }
 }
 
 if ($Stop) {
-    foreach ($t in $targets) { Get-Scorer $t.repo | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; "stopped $($t.repo) (pid $($_.ProcessId))" } }
+    # the supervisor first, otherwise it would restart what is stopped
+    Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" | Where-Object { $_.CommandLine -match "live_scorers\.ps1" -and $_.ProcessId -ne $PID -and $_.CommandLine -notmatch "-Stop|-Status" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; "stopped supervisor (pid $($_.ProcessId))" }
+    foreach ($t in $targets) { foreach ($p in @(Get-Procs $t.repo)) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue; "stopped $($t.repo) (pid $($p.ProcessId))" } }
+    return
+}
+if ($Status) {
+    foreach ($t in $targets) { "{0,-24} {1,-9} ledger entries: {2}" -f $t.repo, $(if (Get-Procs $t.repo) { "running" } else { "NOT running" }), (Ledger-Lines $t.repo) }
     return
 }
 
-$env:GITHUB_TOKEN = (gh auth token)
-if (-not $env:GITHUB_TOKEN) { throw "gh auth token returned nothing: run `gh auth login` first" }
-Set-Location $root
-$logs = Join-Path $root ".gha_optimizer\live\logs"
-New-Item -ItemType Directory -Force $logs | Out-Null
-
-foreach ($t in $targets) {
-    if (Get-Scorer $t.repo) { "already running: $($t.repo)"; continue }
-    $name = $t.repo -replace "/", "__"
-    $out = Join-Path $logs "$name.out.log"
-    $err = Join-Path $logs "$name.err.log"
-    $argList = @("-u", "-W", "ignore", "-m", "gha_optimizer.cli", "live-score", "--repo", $t.repo, "--workflow-path", $t.workflow,
-              "--minutes", "$Minutes", "--poll-seconds", "$PollSeconds")
-    $p = Start-Process -FilePath $python -ArgumentList $argList -WorkingDirectory $root -WindowStyle Hidden `
-         -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
-    "started $($t.repo) (pid $($p.Id)) for $Minutes min; log: $out"
+if (-not (gh auth token)) { throw "gh auth token returned nothing: run `gh auth login` first" }
+New-Item -ItemType Directory -Force (Join-Path $root ".gha_optimizer\live\logs") | Out-Null
+"live-scorer supervisor started $(Get-Date -Format s); Ctrl-C leaves the scorers running, -Stop stops them"
+while ($true) {
+    foreach ($t in $targets) {
+        if (-not (Get-Procs $t.repo)) {
+            Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -WorkingDirectory $root -ArgumentList @(
+                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$root\scripts\run_scorer.ps1`"", "-Repo", "`"$($t.repo)`"",
+                "-Workflow", "`"$($t.workflow)`"", "-Minutes", "$Minutes", "-PollSeconds", "$PollSeconds") | Out-Null
+            "$(Get-Date -Format s) started $($t.repo)"
+        }
+    }
+    Start-Sleep -Seconds 60
+    "$(Get-Date -Format s) " + ((@($targets | ForEach-Object { "{0}: {1} ({2})" -f ($_.repo -split "/")[1], $(if (Get-Procs $_.repo) { "up" } else { "DOWN" }), (Ledger-Lines $_.repo) })) -join "   ")
 }
-$env:GITHUB_TOKEN = $null
