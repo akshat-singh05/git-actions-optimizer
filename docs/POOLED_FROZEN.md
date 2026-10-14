@@ -31,4 +31,22 @@ the bar.
 Results are recorded in this file under "Result", whichever way they fall.
 
 ## Result
-Not yet run.
+Final run: not yet run (due on or after 2026-10-26).
+
+### Interim run, 2026-10-14 (report: `docs/POOLED_EVAL_FRESH_INTERIM_2026-10-14.md`, run by `scripts/interim_verdicts.sh`)
+Prepared for a review on 2026-10-16. Same procedure and cutoff (2026-10-12T14:58:29Z); only two days of fresh runs exist, so this is **not the verdict**.
+
+| repo | fresh positives | judged (>= 20)? | pooled - baseline (PR-AUC) |
+|---|---|---|---|
+| prometheus | 43 | **yes** | +0.4601 [+0.2708, +0.6394] **win** |
+| ruff | 125 | **yes** | +0.0198 [-0.0551, +0.1086] inconclusive |
+| uv | 72 | **yes** | -0.0725 [-0.1761, +0.0283] inconclusive |
+| dubbo | 8 | no | +0.0974 [-0.1159, +0.3867] |
+| quarkus | 11 | no | -0.0050 [-0.0643, +0.1620] |
+| pydantic | 2 | no | +0.1378 [+0.0174, +0.4634] |
+| poetry | 1 | no | +0.6002 [+0.1912, +0.9474] |
+| fastapi, cli/cli | - | no | no usable fold / one outcome class |
+
+Three repositories can already be judged, with **1 win and 0 losses**. The rule requires at least 3 wins; **if the final run looked like this interim one, the
+verdict would be REJECTED** (beats the baseline in fewer than 3 of at least 3 judged repositories). It is not recorded as the verdict because the rule asks for about two
+weeks of runs, and more repositories may reach 20 failures by then; the rule and the bar are unchanged. The exploratory rolling-origin result (3 of 9) did not repeat on fresh data in ruff and uv.

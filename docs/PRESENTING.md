@@ -26,9 +26,11 @@ gha-optimizer dashboard --repo python-poetry/poetry --warm --snapshot-root D:/gh
 |---|---|---|
 | `python-poetry/poetry` | full pipeline (614 runs, 6 jobs, 9 `needs` edges) | the main walk-through: small enough to read every page; `tests-matrix` is predicted to fail often and is the longest job |
 | `fastapi/fastapi` | full pipeline (699 runs, 6 jobs) | second example with a different workflow shape (aggregator job `test-alls-green`, low failure probabilities) |
+| `pydantic/pydantic` | full pipeline (about 200 runs, 20+ jobs) | many jobs, and a job (`send-tweet`) whose base rate is 100%: shows why the score is shown beside the base rate (cache labels were back-filled on 2026-10-14) |
+| `astral-sh/ruff` | full pipeline (about 180 runs, a long critical path) | script-gated CI; the model is not better than the baseline here (cache labels back-filled on 2026-10-14) |
 | `apache/dubbo` | full pipeline (298 runs, 14 jobs, 23 edges) | a large workflow and 4,050 source files: shows the graph and the timeline at scale |
 | `cli/cli` | full pipeline (293 runs, 2 jobs, no `needs`) | a degenerate case: nothing to reorder, so the plan is trivially the original |
-| `prometheus/prometheus`, `pydantic/pydantic`, `astral-sh/uv`, `astral-sh/ruff`, `quarkusio/quarkus` | **declines** with the reason | show it on purpose: the system refuses to predict when there is too little real history for a model (for example no cache labels, a job with no history, fewer than 30 runs), and never fills the gap with made-up values |
+| `prometheus/prometheus`, `astral-sh/uv`, `quarkusio/quarkus` | **declines** with the reason | show it on purpose: the system refuses to predict when there is too little real history (a job with no history; cache labels of only one class; fewer than 30 runs), and never fills the gap with made-up values |
 
 Declines are a feature, not a bug: say so before the panel asks.
 

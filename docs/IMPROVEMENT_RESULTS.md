@@ -77,13 +77,13 @@ writes a probability per job to an append-only, hash-chained ledger (`read_ledge
 only on history up to the start; the structural graph features are blanked because no per-commit graph is available at that moment.
 `gha-optimizer live-evaluate` later reads the real outcomes and reports PR-AUC and precision in the top 10% against the same
 baseline. It is a demonstration that predictions can be made and judged prospectively, **not a significance test**: the window is a
-few hours.
+few days.
 
-**Interim result (`docs/LIVE_TEST.md`, evaluated 2026-10-12 about 16:46 UTC, scorers still running):** only uv has scoreable
-outcomes - 13 completed runs, 190 job predictions, 21 failures. PR-AUC: baseline 0.510, old logistic 0.453, v2 boosted trees 0.429;
-neither difference from the baseline is distinguishable from 0 (-0.039 [-0.128, +0.059], -0.071 [-0.183, +0.069]). ruff had no
-failures among its scored runs and prometheus had none scored. So the live test shows the mechanism works and gives no evidence
-that the v2 model beats the baseline; it does not contradict the offline results either, since 13 runs cannot.
+**Interim result (`docs/LIVE_TEST.md`, 2026-10-14, scorers still running):** only uv has scoreable outcomes - 46 completed runs, 739 job predictions, 43 failures (5.8%).
+PR-AUC: baseline (the job's prior failure rate) 0.341, old logistic 0.154, v2 boosted trees 0.252; the old logistic model is significantly worse than the baseline
+(-0.173 [-0.271, -0.045]) and v2 is indistinguishable from it (-0.082 [-0.166, +0.007]). ruff had no failures among its scored runs and prometheus could not be scored (every run
+already had a completed job when the poll reached it). So the live test shows the mechanism works and gives no evidence that either model beats the baseline in uv; it does not contradict the
+offline uv results (v2 -0.09, not significant). Two days is a demonstration, not a significance test.
 
 ## E. Reproducibility (2026-10-14)
 
@@ -111,10 +111,25 @@ Question: is "P(failure) = 0.91" a probability? Measured with the rolling-origin
   `tests-matrix` is above its highest unseen score of 0.58, so it is an extrapolation) and states the model-vs-baseline PR-AUC and Brier for the
   repository (poetry: the baseline is better on both).
 
+## G. Data coverage: cache-miss labels (2026-10-14)
+
+Before: five of nine repositories declined in the dashboard (quarkus, prometheus, uv, ruff, pydantic). Cause for uv, ruff and pydantic: too few cache-miss labels, because
+they had been ingested with `--no-logs` (or a spent log budget) and `ingest` never revisited a run it had marked done. Change: runs that finished without logs are revisited when logs
+are requested (`tests/test_ingest.py::test_runs_finished_without_logs_are_backfilled_when_logs_are_requested`). Back-fill with `--log-budget 1500` per repository, newest runs first:
+
+| repository | logs fetched | cache labels (job rows) | dashboard now |
+|---|---|---|---|
+| pydantic | 1,033 downloads, 311 with a cache line | 120 -> 311 | **full pipeline** |
+| ruff | 1,500 downloads, 645 with a cache line | 0 -> 645 | **full pipeline** (its job-level model-vs-baseline: baseline better on PR-AUC and Brier) |
+| uv | 1,500 downloads, 55 with a cache line | 39 -> 55 | **still declines**: 33 labelled (run, job) rows, all of one class (cache hit), so a cache-miss model cannot be trained; most uv logs contain no cache line the parser recognises |
+
+quarkus (24 admitted runs) and prometheus (a job of its current workflow that never ran in the ingested window) still decline, as they should: the system does not fill gaps.
+Limit: the back-fill only affects labels, so the earlier model comparisons (which did not use these runs' cache labels) are unchanged.
+
 ## What remains open
 
-* Pooled model verdict (frozen test, about 2026-10-26) and the logistic-default verdict (`docs/FROZEN_CHOICE.md`, about 2026-10-21).
+* Final verdicts (scheduled, `docs/BACKGROUND_RUNBOOK.md`): live test 2026-10-19, logistic default 2026-10-21 (interim run 3 on 2026-10-14: two judged repositories, both pass, not yet confirmed),
+  pooled model 2026-10-26 (interim on 2026-10-14: three judged repositories, 1 win, 0 losses - **would be REJECTED if final**, but only two days of data exist).
 * Relaxed gates measured on one repository only; no failing run measured.
 * Triage recommendations not validated against developer actions; flakiness under-detected.
-* README is not updated (rule 11): it still describes the earlier failure-model results and does not mention triage, gate
-  relaxation or live scoring.
+* Live scoring cannot score prometheus (its runs already have a completed job when the 30-second poll reaches them).

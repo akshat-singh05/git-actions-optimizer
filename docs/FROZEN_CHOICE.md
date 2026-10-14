@@ -90,3 +90,17 @@ now counts only the runs finished by the current invocation (`ingestion/ingest.p
 databases for those repositories, so the cap behaved as intended there; I did not audit the older ingests of the five
 original repositories for this effect (those that used `--max-runs` on a partly filled repository may have stopped
 early, which would only have meant fewer runs, never wrong ones).
+
+### Interim run 3, 2026-10-14 (report: `docs/MODEL_EVAL_FRESH_INTERIM_2026-10-14.md`, run by `scripts/interim_verdicts.sh`)
+Prepared for a review on 2026-10-16; same procedure and same rule as above, data through 2026-10-14. **Not the final verdict** (final run: 2026-10-21, `docs/BACKGROUND_RUNBOOK.md`).
+
+| repo | fresh test rows / runs | positives | judged (>= 20)? | logistic - baseline (PR-AUC) |
+|---|---|---|---|---|
+| poetry | 90 / 31 | 33 | **yes** | +0.1995 [-0.0129, +0.4208] -> upper bound above 0: **PASS** |
+| prometheus | 4,337 / 258 | 182 | **yes** | +0.0155 [-0.0165, +0.0516] -> **PASS** |
+| fastapi | 104 / 18 | 1 | no | -0.0197 [-0.1167, +0.0659] (one failure; not judged) |
+| dubbo | 125 / 11 | 16 | no | -0.0731 [-0.2211, +0.0528] (16 failures; not judged) |
+
+Two of four repositories are judged and both pass; the choice is **still not confirmed** because fastapi (one fresh failure in 104 rows) may never reach 20 and dubbo is four failures short. No rule, threshold or default was changed.
+Context only (the tree variants cannot change the verdict): the original tree beats the baseline in poetry (+0.356 [+0.169, +0.544]) and in fastapi on one failure; it does not in prometheus.
+
