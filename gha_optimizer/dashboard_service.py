@@ -25,7 +25,7 @@ import re
 import threading
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -42,6 +42,7 @@ from gha_optimizer.features.feature_extraction import (
     build_training_frame,
     compute_history_stats,
 )
+from gha_optimizer.gates import plan_relaxation, validate_relaxation
 from gha_optimizer.generator.workflow_writer import generate_diff, generate_optimized_workflow, write_workflow
 from gha_optimizer.graph.builder import GraphBuilder
 from gha_optimizer.graph.dependency_graph import (
@@ -64,7 +65,7 @@ from gha_optimizer.server.db.session import SessionLocal, init_db
 
 logger = logging.getLogger(__name__)
 
-RESULT_VERSION = 3          # bump when the payload or anything it is computed from changes meaning
+RESULT_VERSION = 4          # bump when the payload or anything it is computed from changes meaning
 DEFAULT_CACHE_DIR = Path(".gha_optimizer") / "dashboard_cache"
 STAGES = [
     "Repository snapshot and history",
@@ -426,7 +427,19 @@ class DashboardService:
 
         progress(8, "fail-fast ordering, runner choice and the estimated plan")
         plan = scored["_plan"]
-        results["step8_schedule"] = {"jobs": scored["schedule_jobs"], "original_order": job_ids}
+        # opt-in lever, reported but NOT applied to the default proposal (rule 7): only gate-only `needs` edges that gates.py proves safe
+        rel = plan_relaxation(workflow, {jp.job_id: jp.estimated_duration_seconds for jp in plan.jobs},
+                              {j: (scored["predictions"][j]["failure_base_rate"] or 0.0) for j in job_ids})
+        results["step8_schedule"] = {
+            "jobs": scored["schedule_jobs"], "original_order": job_ids,
+            "relaxation": {
+                "relaxed": [{"upstream": u, "downstream": d} for u, d in rel.relaxed],
+                "kept": [{"upstream": g.upstream, "downstream": g.downstream, "relaxable": g.relaxable, "reasons": g.reasons} for g in rel.kept],
+                "baseline_seconds": round(rel.baseline_seconds, 1), "relaxed_seconds": round(rel.relaxed_seconds, 1),
+                "saved_pct": round(rel.saved_pct, 1), "expected_extra_seconds": round(rel.expected_extra_seconds, 1),
+                "estimated": True,
+            },
+        }
 
         progress(9, "checking every needs relationship")
         level = {j["job_id"]: j["dag_level"] for j in scored["schedule_jobs"]}
@@ -452,6 +465,17 @@ class DashboardService:
             "original_yaml": wf_path.read_text(encoding="utf-8"), "proposed_yaml": proposed_text,
             "file_name": f"{wf_path.stem}.optimized.yml",
         }
+        if rel.relaxed:      # a second, opt-in proposal with the relaxed gates, validated against the original before it is offered
+            plan_rel = replace(plan, gate_relaxation=rel)
+            relaxed_yaml = generate_optimized_workflow(workflow, plan_rel)
+            problems = validate_relaxation(workflow, relaxed_yaml)
+            relaxed_path = out_path.with_name(f"{wf_path.stem}.relaxed.yml")
+            write_workflow(relaxed_yaml, relaxed_path, plan_rel)
+            results["step10_output"].update({
+                "relaxed_yaml": relaxed_path.read_text(encoding="utf-8"), "relaxed_problems": problems,
+                "relaxed_diff": (generate_diff(wf_path, relaxed_yaml, plan=plan_rel) or "")[:20000],
+                "relaxed_file_name": f"{wf_path.stem}.relaxed.yml",
+            })
         results["summary"] = {
             "files_analyzed": len(snap.source_files), "source_deps": source_graph.number_of_edges(), "ci_deps": ci_graph.number_of_edges(),
             "fused_nodes": fused_graph.number_of_nodes(), "fused_edges": fused_graph.number_of_edges(), "jobs": len(workflow.jobs),

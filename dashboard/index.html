@@ -428,7 +428,19 @@ function pageSchedule(d) {
   return `<div class="grid2"><div class="compact"><h4>Original order</h4>${sc.original_order.map((j, i) => `<div class="kv"><span class="v" style="text-align:left">${i + 1}. ${esc(j)}</span></div>`).join('')}</div>
     <div class="compact"><h4>Fail-fast order (what the proposal uses)</h4>${sc.jobs.map(j => `<div class="kv"><span class="v" style="text-align:left">${j.order + 1}. ${esc(j.job_id)}</span><span class="k">level ${j.dag_level}, P(fail) ${j.failure_prob}</span></div>`).join('')}</div></div>
     <div class="panel" style="margin-top:14px"><h3>Plan by DAG level</h3>${dagSvg(jobs, { cls: j => riskClass(pred[j].failure), sub: j => 'level ' + sc.jobs.find(x => x.job_id === j).dag_level + ', ' + sc.jobs.find(x => x.job_id === j).runner })}</div>
-    <div class="panel">${table(['Job', 'Level', 'Runner', 'Est. duration', 'Est. cost', 'Skip?'], sc.jobs.map(j => [`<span class="v-accent">${esc(j.job_id)}</span>`, j.dag_level, `<span class="tag blue">${esc(j.runner)}</span>`, j.est_duration + 's', '$' + j.est_cost, j.skip ? '<span class="tag red">YES</span>' : '<span class="tag green">no</span>']))}</div>${estNote()}`;
+    <div class="panel">${table(['Job', 'Level', 'Runner', 'Est. duration', 'Est. cost', 'Skip?'], sc.jobs.map(j => [`<span class="v-accent">${esc(j.job_id)}</span>`, j.dag_level, `<span class="tag blue">${esc(j.runner)}</span>`, j.est_duration + 's', '$' + j.est_cost, j.skip ? '<span class="tag red">YES</span>' : '<span class="tag green">no</span>']))}</div>${relaxationPanel(sc.relaxation)}${estNote()}`;
+}
+function relaxationPanel(r) {
+  if (!r) return '';
+  const removed = r.relaxed.length
+    ? `<div class="kpis" style="margin-bottom:0"><div class="kpi"><div class="label">Gates removed</div><div class="value v-accent">${r.relaxed.length}</div><div class="sub">${r.relaxed.map(g => esc(g.downstream) + ' no longer waits for ' + esc(g.upstream)).join('; ')}</div></div>
+        <div class="kpi"><div class="label">Critical path (est.)</div><div class="value">${r.baseline_seconds}s &rarr; ${r.relaxed_seconds}s</div><div class="sub"><span class="pill est">ESTIMATED</span> ${r.saved_pct}% shorter, from predicted durations</div></div>
+        <div class="kpi"><div class="label">Trade-off</div><div class="value v-amber">+${r.expected_extra_seconds}s</div><div class="sub">expected extra billable time per run: the freed job also runs when its upstream fails</div></div></div>`
+    : '<p class="hint">No gate can be removed here: every <code>needs</code> edge either carries data / guards a side effect, or removing it would not shorten the estimated critical path.</p>';
+  const kept = r.kept.map(g => [esc(g.upstream) + ' &rarr; ' + esc(g.downstream), g.relaxable ? '<span class="tag amber">safe but no gain</span>' : '<span class="tag green">kept</span>', esc(g.reasons.join('; ') || 'removing it does not shorten the estimated critical path')]);
+  return `<div class="panel"><h3>Opt-in: safe gate relaxation (<code>analyze --relax-gates</code>)</h3>
+    <div class="hint">Not applied to the default proposal. Only a gate-only <code>needs</code> edge is ever removed: the downstream job uses no output of the upstream one, no secrets, no deploy / publish step and no status-function condition. Everything else is kept, with the reason.</div>
+    ${removed}${kept.length ? `<div class="hint" style="margin-top:12px">Gates kept, and why</div>${table(['Edge', 'Decision', 'Reason'], kept)}` : ''}</div>`;
 }
 function pageSafety(d) { const v = d.step9_validation;
   const check = (label, ok) => `<div class="compact" style="display:flex;gap:10px;align-items:center"><span class="step-num" style="background:${ok ? 'var(--green)' : 'var(--red)'}">${ok ? '&#10003;' : '&times;'}</span><span>${label}</span></div>`;
@@ -436,11 +448,16 @@ function pageSafety(d) { const v = d.step9_validation;
     <div class="note info">The proposed file is validated against the original before it is written: every job is kept, no <code>needs</code> edge is removed or reversed, and the original file is never modified.</div>`; }
 function diffHtml(diff) { return diff.split('\n').map(l => { const e = esc(l); return l.startsWith('+++') || l.startsWith('---') || l.startsWith('@@') ? `<span class="diff-hdr">${e}</span>` : l.startsWith('+') ? `<span class="diff-add">${e}</span>` : l.startsWith('-') ? `<span class="diff-del">${e}</span>` : e; }).join('\n'); }
 function pageWorkflow(d) { const o = d.step10_output;
+  window.downloadRelaxed = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([o.relaxed_yaml], { type: 'text/yaml' })); a.download = o.relaxed_file_name; a.click(); URL.revokeObjectURL(a.href); };
   window.downloadProposed = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([o.proposed_yaml], { type: 'text/yaml' })); a.download = o.file_name; a.click(); URL.revokeObjectURL(a.href); };
   return `<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><span class="badge ${o.yaml_valid ? 'pass' : 'fail'}">${o.yaml_valid ? 'valid YAML' : 'INVALID YAML'}</span>
       <button class="btn primary" onclick="downloadProposed()">Download ${esc(o.file_name)}</button><span class="hint" style="margin:0">Your original workflow file is not modified; review the diff before adopting anything.</span></div>
     <div class="grid2"><div class="panel"><h3>Original</h3><pre class="code">${esc(o.original_yaml)}</pre></div><div class="panel"><h3>Proposed</h3><pre class="code">${esc(o.proposed_yaml)}</pre></div></div>
-    <div class="panel"><h3>Diff (original to proposed)</h3><pre class="code">${diffHtml(o.diff_preview)}</pre></div>`; }
+    <div class="panel"><h3>Diff (original to proposed)</h3><pre class="code">${diffHtml(o.diff_preview)}</pre></div>
+    ${o.relaxed_yaml ? `<div class="panel"><h3>Opt-in proposal with the relaxed gates</h3>
+      <div class="hint">Validated against the original before it is offered: every job kept, remaining edges a subset of the original's. ${o.relaxed_problems && o.relaxed_problems.length ? '<b>Validation problems: ' + esc(o.relaxed_problems.join('; ')) + '</b>' : 'No problems found.'}</div>
+      <button class="btn primary" onclick="downloadRelaxed()">Download ${esc(o.relaxed_file_name)}</button>
+      <pre class="code" style="margin-top:10px">${diffHtml(o.relaxed_diff)}</pre></div>` : ''}`; }
 function pageSummary(d) { const s = d.summary, c = (title, rows) => `<div class="compact"><h4>${title}</h4>${kv(rows)}</div>`;
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
     ${c('Wall-clock (estimated)', [['Baseline', s.baseline_wall_clock + 's'], ['Proposed', s.optimized_wall_clock + 's'], ['Saved', (s.time_saved_pct > 0 ? '+' : '') + s.time_saved_pct + '%']])}

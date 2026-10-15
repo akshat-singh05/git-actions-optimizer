@@ -1,87 +1,83 @@
-# Demo script (about 10 minutes)
+# Live demo script (about 12 minutes)
 
-Everything here runs on **real ingested GitHub Actions history** already in the local database (poetry, fastapi,
-prometheus, dubbo, quarkus, pydantic, cli/cli, ruff, uv). No token and no network are needed for the demo itself. All
-commands run from the repository root with the project virtualenv (`.venv\Scripts\python.exe` on Windows).
+A working demo on **real ingested GitHub Actions history**: nothing is simulated or pre-recorded. Everything runs locally from the
+project folder; no network or token is needed during the demo itself.
 
-What was timed when this script was written (2026-10-11): `python demo.py --repo python-poetry/poetry` took 43 s and
-printed 282 lines. Nothing else below was timed; run it once beforehand.
+## 0. Before the guide arrives (start 15 minutes early)
 
-## 0. Before the audience arrives
+1. Open a terminal in the project folder and run **one command**; leave that tab open:
 
-* `python demo.py --repo python-poetry/poetry` once, so the persisted state and caches are warm.
-* Have `docs/RESULTS.md`, `docs/HELDOUT_RESULTS.md` and `docs/IMPACT_REPLAY.md` open in tabs.
-* If a tree-sitter warning appears ("Tree-sitter ... unavailable"), the Windows Application Control policy is blocking its DLL
-  on that machine: the demo still runs (source files are then not parsed into the graph), but say so rather than hide it.
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_demo.ps1
+   ```
 
-## 1. The data is real (1 min)
+   It checks that the models can load, starts the dashboard, warms every ingested repository and opens http://localhost:8501.
+   The repository selector shows `(ready)` next to each repository as it finishes (6-8 minutes the first time; results are
+   cached on disk and reused after a restart while the ingested runs are unchanged). Wait for `(ready)` on the ones you will show.
+2. Optional, in a second tab: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/live_scorers.ps1` keeps the live
+   test running (`-Status` shows its ledger sizes). Leave it open.
+3. Do not disable Windows Smart App Control. If the start script says scikit-learn could not be imported, wait a minute and retry.
 
-```bash
-gha-optimizer ingest-status --repo python-poetry/poetry
+Repositories you can show (full pipeline): `python-poetry/poetry`, `fastapi/fastapi`, `pydantic/pydantic`, `astral-sh/ruff`, `apache/dubbo`,
+`cli/cli`, `quarkusio/quarkus` and `akshat-singh05/git-actions-optimizer` (this project's own CI, 63 runs). Repositories that **decline**
+on purpose: `astral-sh/uv` (cache labels of one class only) and `prometheus/prometheus` (a job with no history).
+
+## 1. The dashboard (2 min) - poetry
+
+Open **Dashboard**. Point at: real run count and job rows, the job graph coloured by predicted failure risk, per-job predicted
+duration and failure bars, the estimated timeline that respects `needs`. Say: *"every saving shown is ESTIMATED; the default plan keeps the
+workflow's structure, so the estimate is 0%"*.
+
+## 2. The pipeline, stage by stage (2 min)
+
+Click through **Repository analysis** (job DAG), **Graph fusion** (source files linked to jobs and cache keys), **Impact analysis**
+(which jobs the real diff reaches) and **Feature extraction**. Say how the graph reaches the models.
+
+## 3. Models and probabilities (2 min) - the honest page
+
+Open **Models and probabilities**. For each job the model score sits next to the job's own failure rate and the failure rate actually
+seen on unseen rows that scored alike; a red **above anything seen** tag marks an extrapolation (poetry's `tests-matrix`). Say:
+*"on poetry the baseline is at least as good as the model, so we do not present the score as a probability"*. Show the model-vs-baseline card.
+
+## 4. What-if (2 min) - the live moment
+
+Open **What-if: change files**. Click **A dependency file**, then **Docs only**, then type a path from the audience in the search box and add it.
+Impacted jobs, scores and the estimated timeline update. Say what reacts (the structural features) and what does not (history).
+
+## 5. Safe gate relaxation on our own CI (2 min)
+
+Switch the selector to **akshat-singh05/git-actions-optimizer**, open **DAG-aware scheduling**: the opt-in panel shows `test` no longer waiting for `lint`,
+estimated critical path 171 s to 131 s (ESTIMATED, 23%), the trade-off, and why the other gate is kept. Then **Original vs proposed workflow**:
+download the relaxed workflow, show the diff. Say: *"we measured this on real runs: 159.5 s to 135.5 s, -15.1%, p = 0.013, billable time +4.1% not significant;
+the estimate is higher than the measurement"* (`docs/relax_run/`). Then switch to poetry or fastapi to show a mature pipeline where no gate can be removed.
+
+## 6. The command line (1 min)
+
+In a new tab (the proposed file is written to the snapshot folder, never over your workflow):
+
+```powershell
+.venv\Scripts\python.exe -m gha_optimizer.cli analyze D:/ghas/akshat-singh05__git-actions-optimizer/.github/workflows/ci.yml --repo akshat-singh05/git-actions-optimizer --repo-root D:/ghas/akshat-singh05__git-actions-optimizer --changed gha_optimizer/cli.py --relax-gates --as-of 2026-10-12T12:00:00Z
+.venv\Scripts\python.exe -m gha_optimizer.cli triage --repo python-poetry/poetry --out $env:TEMP\triage.md
 ```
 
-Point out real SQL row counts, the ingestion ledger (log downloads, expired logs), and that cache labels exist for only a
-small fraction of runs (log retention). Say how it was collected: GitHub REST API, a local bare git mirror for the workflow
-YAML and diffs at each commit, job logs for cache events.
+`analyze` prints the plan, the ESTIMATED figures, the relaxed gates with their trade-off, the failure triage of the workflow and the diff; the same `--as-of`
+gives the same numbers every time. `triage` classifies every real failure (15 s). `gha-optimizer ingest-status --repo python-poetry/poetry` shows the real SQL counts.
 
-## 2. The pipeline, stage by stage (4 min)
+## 7. Refusing to guess, evidence and the live test (1 min)
 
-```bash
-python demo.py --repo python-poetry/poetry
-```
+Select **astral-sh/uv**: the page explains why the system declined and shows no numbers. Open **Evidence: this repository** (rows of the generated reports),
+**Project reports** (`IMPROVEMENT_RESULTS`, `CALIBRATION`, `LIVE_TEST`) and **Live test ledger** (hash-chain verified, entries per repository).
 
-Talking points, in the order the output appears:
+## What to say about the results
 
-| output section | what to say |
-|---|---|
-| STEP 1 | the workflow has 6 jobs and 9 `needs` edges; this is the real `tests.yaml` as of the latest ingested run |
-| STEP 2 | source graph + CI graph fused; 650 cross-domain edges are inferred by five static rules, each with a confidence |
-| STEP 5 | the diff of a real run is mapped to jobs; unknown is `NaN`, never "all jobs"; `lockfile`/`smoke` show `∞ (no path)` |
-| STEP 6 | features use only strictly earlier runs; missing values are kept as `NaN` (617 rows have no structural evidence) |
-| STEP 7 | three models, each printed with its **baseline** (e.g. failure PR-AUC 0.442 vs base rate 0.109). **Note the cache model**: its Brier score (0.223) is *worse* than the baseline's (0.040) on this single holdout - say it first; it is why the cache probability is marked "informational, not used by the scheduler" |
-| STEP 8 | the generated order is checked: all jobs preserved, `needs` respected, acyclic |
-| STEP 10 | a **proposed** file plus a diff; the original is untouched. Estimated saving is **0.0%** because skip guards and runner upsizing are opt-in. The what-if line (49.2% faster, 66% more expensive) depends on an *assumed* speed-up law and says so |
-| STEP 11 | every figure is labelled ESTIMATED |
-
-Say explicitly: *a 0.0% result is the honest outcome here. Poetry already gates its jobs with `paths-filter`.*
-
-## 3. What the model evaluation says (2 min)
-
-Show `docs/RESULTS.md` section 3. Three sentences:
-
-1. Rolling-origin folds, paired bootstrap, baselines with no model.
-2. The logistic failure model beats the naive baseline significantly in fastapi (+0.085 PR-AUC) and in held-out pydantic
-   (+0.110), is indistinguishable elsewhere, and is never significantly worse.
-3. In held-out ruff the tree variants beat the baseline by about +0.39 while the logistic default does not clear it - a lead
-   we report, not a fix we apply (the default is frozen pending a pre-registered fresh-data test).
-
-## 4. The graph skip policy and why it is only advisory (2 min)
-
-Show `docs/IMPACT_REPLAY.md`, then `docs/HELDOUT_RESULTS.md` and `docs/HELDOUT_RESULTS_2.md`.
-
-* On the development repositories it saves 12-17% of billable time (fastapi, prometheus) but would make 3-10% of failing
-  runs look green.
-* On four **held-out** repositories (pydantic, cli/cli, ruff, uv) it did not generalise; the safe variant saves 0.0-2.0%.
-* So the system reports it (the "Advisory" section of `analyze`), with the measured risk, and never applies it.
-* Deferral to default-branch pushes was pre-registered and evaluated: not supported.
-
-## 5. Optional extras (only if asked)
-
-* `gha-optimizer analyze <checkout>/.github/workflows/ci.yml --repo owner/repo --changed a.py` on a real checkout shows
-  the Advisory section; needs a git checkout of the repo (not available for the mirrors alone).
-* `python demo_server.py --repo python-poetry/poetry` serves a UI at http://localhost:8501 (not re-run when this was written).
-* Triage of real failures: `gha-optimizer triage --repo prometheus/prometheus --out docs/FAILURE_TRIAGE.md` (or show the
-  generated file).
-* Gate relaxation: `gha-optimizer analyze <checkout>/.github/workflows/ci.yml --repo owner/repo --relax-gates` prints the removed
-  edges with the trade-off; real-run evidence in `docs/relax_run/` (-15.1% critical path, one simple pipeline).
-* Live scoring: `gha-optimizer live-score ...` then `live-evaluate ...` (`docs/LIVE_TEST.md`); a demonstration, not a significance test.
-* The full stack (`docker compose up --build`) was run once end to end: `docs/FULL_STACK_RUN.md`.
-* The generated workflow was executed on real GitHub Actions: `docs/VALIDITY_RUN.md` (12 runs, identical behaviour, no speed-up).
-* The LLM summary needs `GEMINI_API_KEY` and `GHA_LLM_MODEL`. Check them with `gha-optimizer llm-check`, then
-  `python demo.py --repo python-poetry/poetry --llm-summary`. It has not been run against the live service by us, so try it
-  once beforehand and do not demo it unless it worked.
+* The failure model beats a naive baseline only in some repositories (fastapi, pydantic); the improved model missed its pre-registered bar (2 of 9 against 3).
+* Scheduling is not faster by default; one measured case (-15%) and about zero on mature pipelines.
+* The live test (interim, two days) shows neither model beating the baseline on uv; final verdicts are 19, 21 and 26 October. See `docs/IMPROVEMENT_RESULTS.md`.
 
 ## If something goes wrong
 
-* `Declining to predict` / exit code 2 is the system working: too little history. It never substitutes data.
-* A repository not in the database must be ingested first (`gha-optimizer ingest ... --max-runs N`, needs `GITHUB_TOKEN`).
+* A repository shows a spinner: it is still being computed (the status label next to the selector shows the stage); pick another and come back.
+* The page cannot reach the API: the tab running `start_demo.ps1` was closed; run it again (cached results load in seconds).
+* `apache/dubbo` fails to load: the dashboard must be started with `--snapshot-root D:/ghas` (the start script does this).
+* Smart App Control blocks a library: never disable it; retry, or show the CLI output and the Evidence pages instead.
+* The what-if page says "preparing the models": the server restarted since the result was cached; wait for the bar (about 40 s).

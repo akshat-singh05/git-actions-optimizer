@@ -89,6 +89,7 @@ gha-optimizer evaluate <workflow.yml> --repo owner/repo   # scheduler alpha/beta
 python examples/demo.py --repo owner/repo         # full pipeline on a real ingested repo
 python demo.py --repo owner/repo                  # verbose stage-by-stage walkthrough on real data
 gha-optimizer dashboard [--repo owner/repo] [--warm] [--snapshot-root D:/ghas]   # THE dashboard at http://localhost:8501 (no Postgres/Redis/Celery); repository selector, one page per stage, what-if, evidence; `python demo_server.py ...` is a shim for the same command; `gha-optimizer serve` mounts it at /dashboard; see docs/PRESENTING.md
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_demo.ps1   # the live demo in one command: warms and opens the dashboard (docs/DEMO_SCRIPT.md)
 gha-optimizer eval-calibration --repo owner/repo [--repo ...] --out docs/CALIBRATION.md   # Brier / ECE / reliability of the failure probabilities (raw vs Platt vs out-of-sample isotonic vs baseline)
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/live_scorers.ps1 [-Status|-Stop]   # supervisor for the three prospective live scorers: leave it open in a terminal tab (docs/BACKGROUND_RUNBOOK.md)
 gha-optimizer serve [--reload]                    # FastAPI on :8000 (/api/v1/optimize returns 422 on cold start)
