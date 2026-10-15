@@ -65,7 +65,7 @@ from gha_optimizer.server.db.session import SessionLocal, init_db
 
 logger = logging.getLogger(__name__)
 
-RESULT_VERSION = 4          # bump when the payload or anything it is computed from changes meaning
+RESULT_VERSION = 5          # bump when the payload or anything it is computed from changes meaning
 DEFAULT_CACHE_DIR = Path(".gha_optimizer") / "dashboard_cache"
 STAGES = [
     "Repository snapshot and history",
@@ -330,6 +330,7 @@ class DashboardService:
             "node_types": dict(Counter(d.get("node_type", "unknown") for _, d in source_graph.nodes(data=True))),
             "edges": [{"from": u.split("::")[-1], "to": v.split("::")[-1], "type": d.get("edge_type", "?")}
                       for u, v, d in list(source_graph.edges(data=True))[:200]],
+            "view": source_graph_view(source_graph),
         }
 
         progress(2, "building the workflow graph")
@@ -339,6 +340,7 @@ class DashboardService:
         results["step3_ci_graph"] = {
             "node_count": ci_graph.number_of_nodes(), "edge_count": ci_graph.number_of_edges(),
             "node_types": dict(Counter(d.get("node_type", "unknown") for _, d in ci_graph.nodes(data=True))),
+            "view": ci_graph_view(ci_graph),
         }
 
         progress(3, "linking source files to jobs and cache keys")
@@ -352,6 +354,7 @@ class DashboardService:
         results["step4_fusion"] = {
             "node_count": fused_graph.number_of_nodes(), "edge_count": fused_graph.number_of_edges(),
             "cross_domain_edges": len(fusion_edges), "fusion_edges": fusion_edges[:20], "summary": graph_summary(fused_graph),
+            "view": fusion_graph_view(fused_graph),
         }
 
         progress(4, "which jobs does the real diff reach?")
@@ -568,6 +571,94 @@ class DashboardService:
 
 
 # ---------------------------------------------------------------------------------------------------------------
+def _val(x: Any) -> str:
+    """Enum value or plain string of a node / edge type."""
+    return str(getattr(x, "value", x) or "")
+
+
+def _label(node_id: str) -> str:
+    parts = node_id.split("::")
+    return parts[-1] if len(parts) > 1 else node_id
+
+
+def ci_graph_view(graph: nx.MultiDiGraph, max_nodes: int = 220) -> dict[str, Any]:
+    """Nodes and edges of the workflow graph for drawing; when it is large the step nodes are dropped first (and say so)."""
+    nodes = [(n, _val(d.get("node_type"))) for n, d in graph.nodes(data=True)]
+    truncated = False
+    if len(nodes) > max_nodes:
+        nodes = [(n, t) for n, t in nodes if t != "WorkflowStep"]
+        truncated = True
+    keep = {n for n, _ in nodes}
+    return {"nodes": [{"id": n, "type": t, "label": _label(n)} for n, t in nodes],
+            "edges": [{"from": u, "to": v, "type": _val(d.get("edge_type"))} for u, v, d in graph.edges(data=True) if u in keep and v in keep],
+            "truncated": truncated, "total_nodes": graph.number_of_nodes(), "total_edges": graph.number_of_edges()}
+
+
+def _dir_of(path: str, depth: int) -> str:
+    parts = path.split("/")
+    if len(parts) == 1:
+        return "(root)"
+    return "/".join(parts[:depth]) if len(parts) > depth else "/".join(parts[:-1])
+
+
+def _pick_depth(paths: list[str], max_dirs: int) -> int:
+    best = 1
+    for depth in (1, 2, 3, 4):
+        if len({_dir_of(p, depth) for p in paths}) <= max_dirs:
+            best = depth
+    return best
+
+
+def source_graph_view(graph: nx.MultiDiGraph, max_dirs: int = 26, max_packages: int = 18) -> dict[str, Any]:
+    """Directory -> imported package graph: which parts of the repository import which packages (weights = importing files)."""
+    files = [n for n, d in graph.nodes(data=True) if _val(d.get("node_type")) == "File"]
+    paths = {n: n.split("::", 1)[1] for n in files}
+    if not paths:
+        return {"dirs": [], "packages": [], "edges": []}
+    depth = _pick_depth(list(paths.values()), max_dirs)
+    dir_files: dict[str, int] = Counter(_dir_of(p, depth) for p in paths.values())
+    imports: dict[tuple[str, str], set[str]] = {}
+    pkg_files: dict[str, set[str]] = {}
+    for u, v, d in graph.edges(data=True):
+        if u in paths and _val(d.get("edge_type")) == "IMPORTS" and v.startswith("Package::"):
+            pkg = _label(v)
+            imports.setdefault((_dir_of(paths[u], depth), pkg), set()).add(u)
+            pkg_files.setdefault(pkg, set()).add(u)
+    top_pkgs = [p for p, _ in sorted(pkg_files.items(), key=lambda kv: -len(kv[1]))[:max_packages]]
+    top_dirs = [d for d, _ in dir_files.most_common(max_dirs)]
+    edges = [{"from": d, "to": p, "weight": len(fs)} for (d, p), fs in imports.items() if p in top_pkgs and d in top_dirs]
+    used_dirs = {e["from"] for e in edges} | set(top_dirs[:12])
+    return {"depth": depth, "files": len(paths),
+            "dirs": [{"id": d, "label": d, "files": dir_files[d]} for d in top_dirs if d in used_dirs],
+            "packages": [{"id": p, "label": p, "importers": len(pkg_files[p])} for p in top_pkgs], "edges": edges}
+
+
+def fusion_graph_view(fused: nx.MultiDiGraph, max_dirs: int = 22, max_targets: int = 16) -> dict[str, Any]:
+    """Which parts of the repository the fusion rules link to which jobs / build targets / cache keys (weights = linked files)."""
+    links: list[tuple[str, str, str]] = []
+    for u, v, d in fused.edges(data=True):
+        prov = d.get("provenance", {})
+        if isinstance(prov, dict) and prov.get("origin_parser") == "GraphFusion" and u.startswith("File::"):
+            links.append((u.split("::", 1)[1], v, _val(d.get("edge_type"))))
+    if not links:
+        return {"dirs": [], "targets": [], "edges": []}
+    depth = _pick_depth([p for p, _, _ in links], max_dirs)
+    agg: dict[tuple[str, str], int] = Counter()
+    for path, tgt, _ in links:
+        agg[(_dir_of(path, depth), tgt)] += 1
+    tgt_total: dict[str, int] = Counter()
+    dir_total: dict[str, int] = Counter()
+    for (d, t), w in agg.items():
+        tgt_total[t] += w
+        dir_total[d] += w
+    top_t = [t for t, _ in tgt_total.most_common(max_targets)]
+    top_d = [d for d, _ in dir_total.most_common(max_dirs)]
+    edges = [{"from": d, "to": t, "weight": w} for (d, t), w in agg.items() if t in top_t and d in top_d]
+    return {"depth": depth, "total_links": len(links),
+            "dirs": [{"id": d, "label": d, "files": dir_total[d]} for d in top_d],
+            "targets": [{"id": t, "label": _label(t), "type": t.split("::", 1)[0], "links": tgt_total[t]} for t in top_t], "edges": edges}
+
+
 def _plan_numbers(plan: Any) -> dict[str, Any]:
     return {
         "baseline_wall_clock": round(plan.baseline_wall_clock_seconds, 1), "optimized_wall_clock": round(plan.estimated_wall_clock_seconds, 1),

@@ -130,6 +130,16 @@ input:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent);
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); margin-top: 8px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 
+/* graph drawings */
+.graphbox { border: 1px solid var(--border); border-radius: 6px; background: #fff; overflow: hidden; position: relative; }
+.graphbox svg { display: block; width: 100%; height: auto; cursor: grab; touch-action: none; }
+.graphbox svg:active { cursor: grabbing; }
+.graphbox .gedge { fill: none; stroke: #9aa7bb; stroke-width: 1; opacity: .75; }
+.graphbox .gnode text { font-family: var(--mono); font-size: 10px; fill: var(--text); pointer-events: none; }
+.graphbox .gnode circle { stroke: #fff; stroke-width: 1.5; }
+.graphbox .gedge.dep { stroke: #1f4fb4; stroke-width: 1.8; opacity: .9; }
+.zoomhint { position: absolute; right: 8px; top: 6px; font-size: 10.5px; color: var(--text-dim); background: rgba(255,255,255,.85); padding: 2px 6px; border-radius: 4px; }
+.legend i.dot { border-radius: 50%; }
 /* code / diff / markdown */
 pre.code { font-family: var(--mono); font-size: 12px; background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; overflow: auto; max-height: 520px; line-height: 1.55; white-space: pre; }
 .diff-add { color: #116329; background: #e6f4ea; } .diff-del { color: #a4161a; background: #fdecea; } .diff-hdr { color: #1f4fb4; }
@@ -294,6 +304,7 @@ async function route() {
   $('body').innerHTML = html + (step ? `<div class="pager">${prev ? `<a href="#${prev[1]}">&larr; ${esc(prev[2])}</a>` : '<span></span>'}${next ? `<a href="#${next[1]}">${esc(next[2])} &rarr;</a>` : '<span></span>'}</div>` : '') +
     `<div class="footer">GitHub Actions Performance Optimizer - Akshat Singh (23BKT0005) &middot; Aditya Choubey (23BCE2274)</div>`;
   page.scrollTop = 0;
+  wireZoom();
   if (PAGES[key][2]) PAGES[key][2]();
 }
 function declinedBody(d) {
@@ -336,6 +347,68 @@ const bars = (items, max, cls) => items.map(([n, v, label]) => `<div class="hbar
 const kv = (rows) => rows.map(([k, v]) => `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`).join('');
 const table = (heads, rows) => `<table><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</table>`;
 function estNote() { return `<div class="note"><span class="pill est">ESTIMATED</span> Every saving, cost, energy and CO&#8322; figure is derived from predicted durations; none is a measured execution. The default plan keeps the workflow's job structure, so the estimated saving is 0% unless an opt-in lever is used (see <a href="#docs/SCHEDULER_ASSUMPTIONS.md">scheduler assumptions</a>).</div>`; }
+
+/* ------------------------------------------------------------------ graph drawings (plain SVG, no library) */
+const TYPE_COLORS = { Workflow: '#1f4fb4', WorkflowJob: '#0f766e', WorkflowTrigger: '#7c3aed', WorkflowStep: '#94a3b8', Runner: '#d97706', ExternalDependency: '#b45309', CacheKey: '#0e7490',
+  BuildTarget: '#0f766e', File: '#1f4fb4', Package: '#b45309', Dir: '#1f4fb4' };
+const typeColor = (ty) => TYPE_COLORS[ty] || '#64748b';
+const TYPE_R = { Workflow: 13, WorkflowJob: 10, WorkflowTrigger: 7, WorkflowStep: 4.5, Runner: 8, ExternalDependency: 7, CacheKey: 8 };
+function legendOf(types) { return `<div class="legend">${types.map(ty => `<span><i class="dot" style="background:${typeColor(ty)}"></i>${esc(ty)}</span>`).join('')}</div>`; }
+function forceGraph(view, width = 900, height = 520) {
+  const nodes = view.nodes.map((n, i) => ({ ...n, i, x: width / 2 + Math.cos(i * 2.399) * (60 + (i * 7) % 260), y: height / 2 + Math.sin(i * 2.399) * (50 + (i * 5) % 200), vx: 0, vy: 0 }));
+  const idx = new Map(nodes.map(n => [n.id, n.i]));
+  const edges = view.edges.filter(e => idx.has(e.from) && idx.has(e.to)).map(e => ({ a: idx.get(e.from), b: idx.get(e.to), type: e.type }));
+  const k = Math.sqrt(width * height / Math.max(nodes.length, 1)) * 0.75;
+  for (let it = 0, temp = width / 8; it < 260; it++, temp *= 0.975) {
+    for (const n of nodes) { n.vx = 0; n.vy = 0; }
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      let dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y; const d = Math.hypot(dx, dy) || 0.01, f = k * k / d;
+      dx /= d; dy /= d; nodes[i].vx += dx * f; nodes[i].vy += dy * f; nodes[j].vx -= dx * f; nodes[j].vy -= dy * f;
+    }
+    for (const e of edges) {
+      const A = nodes[e.a], B = nodes[e.b]; let dx = A.x - B.x, dy = A.y - B.y; const d = Math.hypot(dx, dy) || 0.01, f = d * d / k * (e.type === 'DEPENDS_ON' ? 1.6 : 1);
+      dx /= d; dy /= d; A.vx -= dx * f; A.vy -= dy * f; B.vx += dx * f; B.vy += dy * f;
+    }
+    for (const n of nodes) { n.vx += (width / 2 - n.x) * 0.02; n.vy += (height / 2 - n.y) * 0.02; const d = Math.hypot(n.vx, n.vy) || 1, m = Math.min(d, temp); n.x += n.vx / d * m; n.y += n.vy / d * m; }
+  }
+  const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y), pad = 40;
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad, w = Math.max(...xs) - x0 + pad, h = Math.max(...ys) - y0 + pad;
+  const labelled = (n) => ['Workflow', 'WorkflowJob', 'Runner', 'WorkflowTrigger', 'ExternalDependency', 'CacheKey'].includes(n.type) || nodes.length < 40;
+  const types = [...new Set(nodes.map(n => n.type))];
+  const vb = `${x0.toFixed(0)} ${y0.toFixed(0)} ${w.toFixed(0)} ${h.toFixed(0)}`;
+  const svg = `<svg class="zoomable" data-vb="${vb}" viewBox="${vb}" role="img" aria-label="Workflow graph">
+    ${edges.map(e => `<line class="gedge${e.type === 'DEPENDS_ON' ? ' dep' : ''}" x1="${nodes[e.a].x.toFixed(1)}" y1="${nodes[e.a].y.toFixed(1)}" x2="${nodes[e.b].x.toFixed(1)}" y2="${nodes[e.b].y.toFixed(1)}"/>`).join('')}
+    ${nodes.map(n => `<g class="gnode"><title>${esc(n.type)}: ${esc(n.id)}</title><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${TYPE_R[n.type] || 6}" fill="${typeColor(n.type)}"/>
+      ${labelled(n) ? `<text x="${(n.x + (TYPE_R[n.type] || 6) + 3).toFixed(1)}" y="${(n.y + 3.5).toFixed(1)}">${esc(n.label.length > 26 ? n.label.slice(0, 25) + '...' : n.label)}</text>` : ''}</g>`).join('')}</svg>`;
+  return `<div class="graphbox">${svg}<span class="zoomhint">scroll to zoom, drag to pan, double-click to reset, hover for the full id</span></div>${legendOf(types)}`;
+}
+function bipartite(left, right, edges, opts = {}) {
+  if (!left.length || !right.length) return '<p class="hint">Nothing to draw.</p>';
+  const rowH = 24, h = Math.max(left.length, right.length) * rowH + 40, w = 900, lx = 270, rx = w - 270;
+  const ly = (i) => 28 + i * (h - 56) / Math.max(left.length - 1, 1), ry = (i) => 28 + i * (h - 56) / Math.max(right.length - 1, 1);
+  const li = new Map(left.map((n, i) => [n.id, i])), ri = new Map(right.map((n, i) => [n.id, i]));
+  const maxW = Math.max(...edges.map(e => e.weight), 1), maxL = Math.max(...left.map(x => x.size || 1));
+  const paths = edges.filter(e => li.has(e.from) && ri.has(e.to)).map(e => {
+    const y1 = ly(li.get(e.from)), y2 = ry(ri.get(e.to)), mx = (lx + rx) / 2;
+    return `<path class="gedge" style="stroke-width:${(0.8 + 5 * e.weight / maxW).toFixed(2)};stroke:${opts.edgeColor || '#6b86c9'};opacity:.55" d="M${lx},${y1} C${mx},${y1} ${mx},${y2} ${rx},${y2}"><title>${esc(e.from)} -> ${esc(e.to)}: ${e.weight} files</title></path>`; }).join('');
+  const L = left.map((n, i) => `<g class="gnode"><circle cx="${lx}" cy="${ly(i)}" r="${(4 + 6 * Math.sqrt((n.size || 1) / maxL)).toFixed(1)}" fill="${typeColor('Dir')}"/><text x="${lx - 14}" y="${ly(i) + 3.5}" text-anchor="end">${esc(n.label.length > 34 ? '...' + n.label.slice(-33) : n.label)} (${n.size})</text></g>`).join('');
+  const R = right.map((n, i) => `<g class="gnode"><circle cx="${rx}" cy="${ry(i)}" r="7" fill="${typeColor(n.type)}"/><text x="${rx + 14}" y="${ry(i) + 3.5}">${esc(n.label.length > 34 ? n.label.slice(0, 33) + '...' : n.label)}${n.size ? ' (' + n.size + ')' : ''}</text></g>`).join('');
+  return `<div class="graphbox"><svg class="zoomable" data-vb="0 0 ${w} ${h}" viewBox="0 0 ${w} ${h}">${paths}${L}${R}</svg><span class="zoomhint">scroll to zoom, drag to pan; line width = number of files</span></div>
+    <div class="legend"><span><i class="dot" style="background:${typeColor('Dir')}"></i>${esc(opts.leftName || 'directory')}</span>${[...new Set(right.map(n => n.type))].map(ty => `<span><i class="dot" style="background:${typeColor(ty)}"></i>${esc(ty)}</span>`).join('')}</div>`;
+}
+function wireZoom() {
+  document.querySelectorAll('svg.zoomable').forEach(svg => {
+    const base = svg.dataset.vb.split(' ').map(Number); let vb = base.slice(), drag = null;
+    const apply = () => svg.setAttribute('viewBox', vb.map(v => v.toFixed(1)).join(' '));
+    svg.addEventListener('wheel', (e) => { e.preventDefault(); const r = svg.getBoundingClientRect(), f = e.deltaY < 0 ? 0.85 : 1.18;
+      const px = vb[0] + (e.clientX - r.left) / r.width * vb[2], py = vb[1] + (e.clientY - r.top) / r.height * vb[3];
+      vb = [px - (px - vb[0]) * f, py - (py - vb[1]) * f, vb[2] * f, vb[3] * f]; apply(); }, { passive: false });
+    svg.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; svg.setPointerCapture(e.pointerId); });
+    svg.addEventListener('pointermove', (e) => { if (!drag) return; const r = svg.getBoundingClientRect(); vb[0] -= (e.clientX - drag.x) / r.width * vb[2]; vb[1] -= (e.clientY - drag.y) / r.height * vb[3]; drag = { x: e.clientX, y: e.clientY }; apply(); });
+    svg.addEventListener('pointerup', () => { drag = null; });
+    svg.addEventListener('dblclick', () => { vb = base.slice(); apply(); });
+  });
+}
 
 /* ------------------------------------------------------------------ pages */
 function pageOverview(d) {
@@ -386,13 +459,29 @@ function pageRepository(d) {
     <div class="panel">${table(['Job', 'Runner', 'Steps', 'Needs', 'Cache'], Object.entries(r.jobs).map(([id, j]) => [`<span class="v-accent">${esc(id)}</span>`, esc(j.runs_on), j.steps, j.needs.length ? esc(j.needs.join(', ')) : '<span style="color:var(--text-dim)">root</span>', j.uses_cache ? '<span class="tag green">yes</span>' : 'no']))}</div>`;
 }
 const typeCounts = (o) => `<div class="chips">${Object.entries(o).map(([t, c]) => `<span class="tag blue">${esc(t)}: ${c}</span>`).join('')}</div>`;
-function pageSource(d) { const g = d.step2_source_graph; return `<div class="panel"><h3>${g.node_count} nodes, ${g.edge_count} edges from ${g.files_parsed} parsed files</h3><div class="hint">Node types</div>${typeCounts(g.node_types)}
-  <div class="hint" style="margin-top:12px">Discovered dependencies (first ${g.edges.length})</div>${table(['From', 'To', 'Type'], g.edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(e.type.replace('EdgeType.', ''))}</span>`]))}</div>`; }
-function pageCI(d) { const g = d.step3_ci_graph; return `<div class="panel"><h3>${g.node_count} nodes, ${g.edge_count} edges</h3><div class="hint">CI node types: jobs, steps, actions, cache keys, runners</div>${typeCounts(g.node_types)}</div>`; }
-function pageFusion(d) { const f = d.step4_fusion; return `<div class="grid2"><div class="compact"><h4>Fused graph</h4>${kv([['Total nodes', f.node_count], ['Total edges', f.edge_count], ['Cross-domain edges', `<span class="v-green">${f.cross_domain_edges}</span>`]])}</div>
-  <div class="compact"><h4>Graph summary</h4>${kv(Object.entries(f.summary).map(([k, v]) => [k, esc(v)]))}</div></div>
-  <div class="panel" style="margin-top:14px"><h3>Cross-domain edges (source file to job / cache key)</h3><div class="hint">Created by five static rules, each with its own confidence; first ${f.fusion_edges.length} shown.</div>
-  ${table(['From', 'To', 'Type', 'Confidence'], f.fusion_edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(String(e.type).replace('EdgeType.', ''))}</span>`, fmt(e.confidence, 2)]))}</div>`; }
+function pageSource(d) {
+  const g = d.step2_source_graph, v = g.view || {};
+  const left = (v.dirs || []).map(x => ({ id: x.id, label: x.label, size: x.files })), right = (v.packages || []).map(x => ({ id: x.id, label: x.label, type: 'Package', size: x.importers }));
+  return `<div class="panel"><h3>What each part of the repository imports</h3><div class="hint">${g.node_count} nodes and ${g.edge_count} edges from ${g.files_parsed} parsed files, summarised at directory level (depth ${v.depth || '-'}): the ${right.length} most-imported packages and the directories that import them. Counts in brackets are files.</div>
+    ${bipartite(left, right, v.edges || [], { leftName: 'directory (files)' })}</div>
+    <div class="panel"><h3>Node types</h3>${typeCounts(g.node_types)}
+      <div class="hint" style="margin-top:12px">Discovered dependencies (first ${g.edges.length})</div>${table(['From', 'To', 'Type'], g.edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(e.type.replace('EdgeType.', ''))}</span>`]))}</div>`;
+}
+function pageCI(d) {
+  const g = d.step3_ci_graph, v = g.view;
+  return `<div class="panel"><h3>${g.node_count} nodes, ${g.edge_count} edges</h3><div class="hint">The workflow as a graph: triggers, jobs (blue lines are <code>needs</code>), steps, runners, external actions and cache keys.${v && v.truncated ? ' Large workflow: step nodes are left out of the drawing (' + v.total_nodes + ' nodes in total).' : ''}</div>
+    ${v ? forceGraph(v) : ''}<div class="hint" style="margin-top:12px">Node types</div>${typeCounts(g.node_types)}</div>`;
+}
+function pageFusion(d) {
+  const f = d.step4_fusion, v = f.view || {};
+  const left = (v.dirs || []).map(x => ({ id: x.id, label: x.label, size: x.files })), right = (v.targets || []).map(x => ({ id: x.id, label: x.label, type: x.type, size: x.links }));
+  return `<div class="panel"><h3>Source files linked to jobs, build targets and cache keys</h3><div class="hint">${f.cross_domain_edges} cross-domain edges created by five static rules (path filters, path arguments, toolchain scope, setup actions, cache-key globs). Directories on the left, the jobs / targets / cache keys they feed on the right; counts are linked files.</div>
+    ${bipartite(left, right, v.edges || [], { leftName: 'directory (linked files)', edgeColor: '#0f766e' })}</div>
+    <div class="grid2"><div class="compact"><h4>Fused graph</h4>${kv([['Total nodes', f.node_count], ['Total edges', f.edge_count], ['Cross-domain edges', `<span class="v-green">${f.cross_domain_edges}</span>`]])}</div>
+    <div class="compact"><h4>Graph summary</h4>${kv(Object.entries(f.summary).map(([k, x]) => [k, esc(x)]))}</div></div>
+    <div class="panel" style="margin-top:14px"><h3>Cross-domain edges (first ${f.fusion_edges.length})</h3>
+    ${table(['From', 'To', 'Type', 'Confidence'], f.fusion_edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(String(e.type).replace('EdgeType.', ''))}</span>`, fmt(e.confidence, 2)]))}</div>`;
+}
 function pageImpact(d) { const i = d.step5_impact, jobs = d.step1_repository.jobs, hot = new Set(i.primary_impacted_jobs);
   return `<div class="grid2"><div class="compact"><h4>The real diff of the latest run: <span class="v-accent">${esc(i.primary_change)}</span>${i.changed_file_count > 1 ? ` (+${i.changed_file_count - 1} more)` : ''}</h4>
     ${kv([['Impacted jobs', esc(i.primary_impacted_jobs.join(', ') || 'none')], ['Cache keys touched', esc(i.primary_cache_touched.join(', ') || 'none')]])}</div>
