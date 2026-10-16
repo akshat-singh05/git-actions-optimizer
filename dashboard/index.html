@@ -132,10 +132,10 @@ input:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent);
 
 /* graph drawings */
 .graphbox { border: 1px solid var(--border); border-radius: 6px; background: #fff; overflow: hidden; position: relative; }
-.graphbox svg { display: block; width: 100%; height: auto; cursor: grab; touch-action: none; }
+.graphbox svg { display: block; width: 100%; height: calc(100vh - 300px); min-height: 360px; cursor: grab; touch-action: none; }
 .graphbox svg:active { cursor: grabbing; }
 .graphbox .gedge { fill: none; stroke: #9aa7bb; stroke-width: 1; opacity: .75; }
-.graphbox .gnode text { font-family: var(--mono); font-size: 10px; fill: var(--text); pointer-events: none; }
+.graphbox .gnode text { font-family: var(--mono); font-size: 11px; fill: var(--text); pointer-events: none; }
 .graphbox .gnode circle { stroke: #fff; stroke-width: 1.5; }
 .graphbox .gedge.dep { stroke: #1f4fb4; stroke-width: 1.8; opacity: .9; }
 .zoomhint { position: absolute; right: 8px; top: 6px; font-size: 10.5px; color: var(--text-dim); background: rgba(255,255,255,.85); padding: 2px 6px; border-radius: 4px; }
@@ -147,6 +147,7 @@ pre.code { font-family: var(--mono); font-size: 12px; background: #f8fafc; borde
 .md h3 { font-size: 15px; margin: 16px 0 6px; } .md p { margin: 8px 0; } .md ul, .md ol { margin: 8px 0 8px 22px; } .md li { margin: 3px 0; }
 .md table { display: block; overflow-x: auto; } .md blockquote { border-left: 3px solid var(--border); padding-left: 12px; color: var(--text-dim); margin: 8px 0; }
 .md pre { margin: 8px 0; } .md a { color: var(--accent); }
+.sel { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); width: 100%; }
 .docs-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; }
 .docs-list { display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 210px); overflow-y: auto; }
 .docs-list a { font-size: 12.5px; padding: 6px 10px; border-radius: 5px; color: var(--text); text-decoration: none; font-family: var(--mono); }
@@ -384,7 +385,7 @@ function forceGraph(view, width = 900, height = 520) {
 }
 function bipartite(left, right, edges, opts = {}) {
   if (!left.length || !right.length) return '<p class="hint">Nothing to draw.</p>';
-  const rowH = 24, h = Math.max(left.length, right.length) * rowH + 40, w = 900, lx = 270, rx = w - 270;
+  const rowH = 22, h = Math.max(left.length, right.length) * rowH + 40, w = 1000, lx = 320, rx = w - 300;
   const ly = (i) => 28 + i * (h - 56) / Math.max(left.length - 1, 1), ry = (i) => 28 + i * (h - 56) / Math.max(right.length - 1, 1);
   const li = new Map(left.map((n, i) => [n.id, i])), ri = new Map(right.map((n, i) => [n.id, i]));
   const maxW = Math.max(...edges.map(e => e.weight), 1), maxL = Math.max(...left.map(x => x.size || 1));
@@ -464,8 +465,41 @@ function pageSource(d) {
   const left = (v.dirs || []).map(x => ({ id: x.id, label: x.label, size: x.files })), right = (v.packages || []).map(x => ({ id: x.id, label: x.label, type: 'Package', size: x.importers }));
   return `<div class="panel"><h3>What each part of the repository imports</h3><div class="hint">${g.node_count} nodes and ${g.edge_count} edges from ${g.files_parsed} parsed files, summarised at directory level (depth ${v.depth || '-'}): the ${right.length} most-imported packages and the directories that import them. Counts in brackets are files.</div>
     ${bipartite(left, right, v.edges || [], { leftName: 'directory (files)' })}</div>
+    ${pageSourceExplorer(v)}
     <div class="panel"><h3>Node types</h3>${typeCounts(g.node_types)}
       <div class="hint" style="margin-top:12px">Discovered dependencies (first ${g.edges.length})</div>${table(['From', 'To', 'Type'], g.edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(e.type.replace('EdgeType.', ''))}</span>`]))}</div>`;
+}
+function pageSourceExplorer(v) {
+  const fi = v.file_imports || {}, names = v.pkg_names || [];
+  if (!Object.keys(fi).length) return '';
+  const depth = v.depth || 1, dirOf = (p) => { const x = p.split('/'); return x.length === 1 ? '(root)' : (x.length > depth ? x.slice(0, depth).join('/') : x.slice(0, -1).join('/')); };
+  const dirs = {}; Object.keys(fi).forEach(p => { (dirs[dirOf(p)] = dirs[dirOf(p)] || []).push(p); });
+  const dirList = Object.keys(dirs).sort((a, b) => dirs[b].length - dirs[a].length);
+  return `<div class="panel"><h3>Explore: pick a directory or a file, see the packages it is connected to</h3>
+    <div class="hint">${Object.keys(fi).length} files with their imports${v.file_imports_truncated ? ' (the first 3,000 only)' : ''}. Choose a directory, then optionally one file.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <select id="srcDir" class="sel">${dirList.map(x => `<option value="${esc(x)}">${esc(x)} (${dirs[x].length} files)</option>`).join('')}</select>
+      <select id="srcFile" class="sel"></select></div><div id="srcOut"></div></div>`;
+}
+function wireSourceExplorer() {
+  const v = (S.result.step2_source_graph || {}).view || {}, fi = v.file_imports || {}, names = v.pkg_names || [];
+  const dsel = $('srcDir'), fsel = $('srcFile'), out = $('srcOut'); if (!dsel) return;
+  const depth = v.depth || 1, dirOf = (p) => { const x = p.split('/'); return x.length === 1 ? '(root)' : (x.length > depth ? x.slice(0, depth).join('/') : x.slice(0, -1).join('/')); };
+  const render = () => {
+    const files = Object.keys(fi).filter(p => dirOf(p) === dsel.value).sort(), chosen = fsel.value;
+    const useFiles = chosen ? [chosen] : files, counts = {};
+    useFiles.forEach(f => fi[f].forEach(i => { counts[i] = (counts[i] || 0) + 1; }));
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 22).map(([i]) => +i);
+    const left = (chosen ? [chosen] : files.filter(f => fi[f].some(i => top.includes(i))).sort((a, b) => fi[b].length - fi[a].length).slice(0, 22)).map(f => ({ id: f, label: f.split('/').slice(-2).join('/'), size: fi[f].length }));
+    const edges = []; left.forEach(l => fi[l.id].forEach(i => { if (top.includes(i)) edges.push({ from: l.id, to: names[i], weight: 1 }); }));
+    const right = top.map(i => ({ id: names[i], label: names[i], type: 'Package', size: counts[i] }));
+    out.innerHTML = `<div class="hint">${chosen ? esc(chosen) + ' imports ' + fi[chosen].length + ' packages' : files.length + ' files in ' + esc(dsel.value) + ' import ' + Object.keys(counts).length + ' distinct packages'}; the ${right.length} most used are drawn (the number in brackets is the count of ${chosen ? 'imports of the file' : 'files importing it'}).</div>` +
+      bipartite(left, right, edges, { leftName: 'file (imports)' }) +
+      table(['Package', chosen ? 'Imported' : 'Files importing it'], Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([i, c]) => [esc(names[i]), c]));
+    wireZoom();
+  };
+  const fill = () => { const files = Object.keys(fi).filter(p => dirOf(p) === dsel.value).sort(); fsel.innerHTML = '<option value="">all files in this directory</option>' + files.map(f => `<option value="${esc(f)}">${esc(f.split('/').pop())}</option>`).join(''); render(); };
+  dsel.onchange = fill; fsel.onchange = render; fill();
 }
 function pageCI(d) {
   const g = d.step3_ci_graph, v = g.view;
@@ -547,13 +581,47 @@ function pageWorkflow(d) { const o = d.step10_output;
       <div class="hint">Validated against the original before it is offered: every job kept, remaining edges a subset of the original's. ${o.relaxed_problems && o.relaxed_problems.length ? '<b>Validation problems: ' + esc(o.relaxed_problems.join('; ')) + '</b>' : 'No problems found.'}</div>
       <button class="btn primary" onclick="downloadRelaxed()">Download ${esc(o.relaxed_file_name)}</button>
       <pre class="code" style="margin-top:10px">${diffHtml(o.relaxed_diff)}</pre></div>` : ''}`; }
-function pageSummary(d) { const s = d.summary, c = (title, rows) => `<div class="compact"><h4>${title}</h4>${kv(rows)}</div>`;
-  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
+async function pageSummary(d) {
+  const s = d.summary, c = (title, rows) => `<div class="compact"><h4>${title}</h4>${kv(rows)}</div>`;
+  let measured = { experiments: [] };
+  try { measured = await api('/measured?repo=' + encodeURIComponent(S.repo)); } catch (e) { /* none */ }
+  return `<div class="note"><span class="pill est">ESTIMATED</span> The four boxes below are derived from predicted durations; none is a measured execution. The default plan keeps the workflow's job structure, so they show 0% unless an opt-in lever is used.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
     ${c('Wall-clock (estimated)', [['Baseline', s.baseline_wall_clock + 's'], ['Proposed', s.optimized_wall_clock + 's'], ['Saved', (s.time_saved_pct > 0 ? '+' : '') + s.time_saved_pct + '%']])}
     ${c('Cost (estimated)', [['Baseline', '$' + s.baseline_cost], ['Proposed', '$' + s.optimized_cost], ['Change', (s.cost_saved_pct > 0 ? '+' : '') + s.cost_saved_pct + '%']])}
     ${c('Energy (estimated)', [['Baseline', s.baseline_energy + ' Wh'], ['Proposed', s.optimized_energy + ' Wh'], ['Change', (s.energy_saved_pct > 0 ? '+' : '') + s.energy_saved_pct + '%']])}
     ${c('CO&#8322; (estimated)', [['Baseline', s.baseline_co2 + ' g'], ['Proposed', s.optimized_co2 + ' g'], ['Change', (s.co2_saved_pct > 0 ? '+' : '') + s.co2_saved_pct + '%']])}</div>
-    <div class="note">Cost, energy and CO&#8322; can increase when the scheduler selects faster (more expensive) runners; that is the expected behaviour of the weighted objective. Predictions come from models trained on ${d.data_source.history_rows} real (run, job) rows from ${d.data_source.history_runs} runs of ${esc(d.data_source.repo)}.</div>${estNote()}`; }
+    ${measuredPanels(measured)}`;
+}
+function stripChart(runs, key, unit) {
+  const vals = runs.map(r => r[key]), lo = Math.min(...vals) - 10, hi = Math.max(...vals) + 10, W = 900, H = 150, x = (v) => 110 + (v - lo) / (hi - lo) * (W - 140);
+  const rows = [['A', 'Original', '#64748b', 45], ['B', 'Proposed', '#0f766e', 105]];
+  const med = (a) => { const s2 = a.slice().sort((p, q) => p - q), m = Math.floor(s2.length / 2); return s2.length % 2 ? s2[m] : (s2[m - 1] + s2[m]) / 2; };
+  const ticks = Array.from({ length: 5 }, (_, i) => lo + (hi - lo) * i / 4);
+  return `<div class="graphbox"><svg viewBox="0 0 ${W} ${H}" style="height:auto;min-height:0;cursor:default">
+    ${ticks.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="20" y2="130" stroke="#e3e8ef"/><text x="${x(t)}" y="146" font-size="11" text-anchor="middle" fill="#5a6578" font-family="monospace">${Math.round(t)}${unit}</text>`).join('')}
+    ${rows.map(([arm, label, color, y]) => { const v = runs.filter(r => r.arm === arm).map(r => r[key]); const m = med(v);
+      return `<text x="100" y="${y + 4}" text-anchor="end" font-size="12" fill="#1a2333">${label}</text><line x1="${x(m)}" x2="${x(m)}" y1="${y - 20}" y2="${y + 20}" stroke="${color}" stroke-width="3"/>
+        ${v.map(q => `<circle cx="${x(q)}" cy="${y}" r="6" fill="${color}" fill-opacity=".55" stroke="#fff"><title>${q}${unit}</title></circle>`).join('')}
+        <text x="${x(m) + 6}" y="${y - 22}" font-size="11" fill="${color}" font-family="monospace">median ${m}${unit}</text>`; }).join('')}</svg></div>`;
+}
+function measuredPanels(m) {
+  if (!m.experiments || !m.experiments.length) return `<div class="panel" style="margin-top:14px"><h3>Measured evidence</h3>
+    <p class="hint">No executed benchmark exists for ${esc(S.repo)}: nobody has run its original and proposed workflows on GitHub Actions, so nothing here is MEASURED. The only executed benchmarks of this project are on <b>akshat-singh05/git-actions-optimizer</b> (select it in the repository menu). For the history of this repository, the replay of safe gate relaxation (<span class="pill meas">MEASURED on history</span>) is on the <a href="#evidence">Evidence</a> page.</p></div>`;
+  return m.experiments.map(e => {
+    const sm = e.summary, cp = sm.critical_path_s, bl = sm.billable_job_s, A = cp.A_original, B = cp.B_proposed, faster = cp.median_diff_B_minus_A_s < 0 && cp.permutation_p < 0.05;
+    return `<div class="panel" style="margin-top:14px"><h3>MEASURED: ${esc(e.title)} <span class="pill meas">MEASURED</span></h3>
+      <div class="hint">Real GitHub Actions runs on ${esc(S.repo)}: ${sm.n_measured_runs} measured runs, ${A.n} per arm, order alternated, one warm-up run per arm not counted. Wall-clock critical path = first job start to last job end.</div>
+      <div class="kpis"><div class="kpi"><div class="label">Original, median</div><div class="value">${A.median}s</div><div class="sub">min ${A.min} / max ${A.max}</div></div>
+        <div class="kpi"><div class="label">Proposed, median</div><div class="value ${faster ? 'v-green' : ''}">${B.median}s</div><div class="sub">min ${B.min} / max ${B.max}</div></div>
+        <div class="kpi"><div class="label">Difference</div><div class="value ${faster ? 'v-green' : 'v-amber'}">${cp.median_diff_pct > 0 ? '+' : ''}${cp.median_diff_pct}%</div><div class="sub">${cp.median_diff_B_minus_A_s}s median</div></div>
+        <div class="kpi"><div class="label">Permutation p</div><div class="value ${cp.permutation_p < 0.05 ? 'v-green' : 'v-amber'}">${cp.permutation_p}</div><div class="sub">${cp.permutation_p < 0.05 ? 'significant at 0.05' : 'no detectable difference'}</div></div>
+        <div class="kpi"><div class="label">Billable job time</div><div class="value v-amber">${bl.median_diff_pct > 0 ? '+' : ''}${bl.median_diff_pct}%</div><div class="sub">p = ${bl.permutation_p}${bl.permutation_p >= 0.05 ? ' (not significant)' : ''}</div></div></div>
+      <div class="hint" style="margin-top:6px">Critical path of every measured run (each dot is one run)</div>${stripChart(e.runs, 'critical_path_s', 's')}
+      <div class="hint" style="margin-top:12px">${sm.needs_respected_every_run ? '&#10003; every <code>needs</code> relationship still in the proposed file was respected in every run. ' : ''}${sm.same_steps_and_conclusions_everywhere ? '&#10003; identical steps and conclusions in all runs. ' : ''}${sm.relaxed_arm_test_overlaps_lint_in_every_run ? '&#10003; in the proposed arm <code>test</code> started while <code>lint</code> was running, in every run; in the original arm never.' : ''}</div>
+      ${table(['Arm', 'Round', 'Run (GitHub)', 'Critical path', 'Billable job time'], e.runs.slice().sort((p, q) => p.round - q.round || p.arm.localeCompare(q.arm)).map(r => [r.arm === 'A' ? 'original' : 'proposed', r.round, `<a href="https://github.com/${esc(S.repo)}/actions/runs/${r.run_id}" target="_blank" rel="noopener">${r.run_id}</a>`, r.critical_path_s + 's', r.billable_job_s + 's']))}</div>`;
+  }).join('') + `<div class="note">Read this honestly: ${m.experiments.some(e => e.summary.critical_path_s.permutation_p < 0.05 && e.summary.critical_path_s.median_diff_B_minus_A_s < 0) ? 'the opt-in relaxed-gate workflow was faster on this one simple lint-then-test pipeline, but it spent more billable time, and the gain depends on the gate being safe to remove.' : ''} The default proposal changes no timing by design. This is one workflow with six runs per arm and no failing run; replayed on the history of nine mature repositories the same lever saves about 0% (<a href="#evidence">Evidence</a>). It is evidence that the method can shorten a pipeline, not that it speeds up CI in general.</div>`;
+}
 
 /* ------------------------------------------------------------------ what-if */
 async function pageWhatIf(d) {
@@ -572,6 +640,7 @@ async function pageWhatIf(d) {
       <li>Honest limit: only the structural features react to the files; history features do not. Graph features are informative where the workflow gates on paths (see <a href="#docs/GRAPH_FEATURES.md">graph features</a>).</li></ul></div></div>
     <div id="wiOut"></div>`;
 }
+PAGES.source[2] = wireSourceExplorer;
 PAGES.whatif[2] = async function whatIfWire() {
   if (!$('wiSearch')) { // context not in memory yet: ask the server to rebuild it, then re-render the page
     const my = S.seq; await api(`/run?repo=${encodeURIComponent(S.repo)}&need_context=true`, { method: 'POST' });

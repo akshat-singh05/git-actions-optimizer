@@ -65,8 +65,15 @@ from gha_optimizer.server.db.session import SessionLocal, init_db
 
 logger = logging.getLogger(__name__)
 
-RESULT_VERSION = 5          # bump when the payload or anything it is computed from changes meaning
+RESULT_VERSION = 6          # bump when the payload or anything it is computed from changes meaning
 DEFAULT_CACHE_DIR = Path(".gha_optimizer") / "dashboard_cache"
+# executed benchmarks of the project (docs/<folder>/summary.json + timings.json): real GitHub Actions runs of original vs proposed workflow
+MEASURED_RUNS = {
+    "akshat-singh05/git-actions-optimizer": [
+        ("relax_run", "Opt-in safe gate relaxation vs the original workflow"),
+        ("validity_run", "Default proposal vs the original workflow"),
+    ],
+}
 STAGES = [
     "Repository snapshot and history",
     "Source code graph",
@@ -545,6 +552,23 @@ class DashboardService:
                          "they are informative only where the workflow states a file-to-job relationship (docs/GRAPH_FEATURES.md). "
                          "The other features come from the repository's history and do not change with the files.")}
 
+    def measured(self, repo: str) -> dict:
+        """Executed benchmarks (real GitHub Actions runs, original vs proposed workflow) recorded for ``repo``, if any."""
+        out = []
+        for folder, title in MEASURED_RUNS.get(repo, []):
+            base = self.docs_dir / folder
+            try:
+                summary = json.loads((base / "summary.json").read_text(encoding="utf-8"))
+                timings = json.loads((base / "timings.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            runs = [{"arm": t["arm"], "round": t["round"], "run_id": t["run_id"], "conclusion": t.get("conclusion"),
+                     "critical_path_s": t["critical_path_s"], "billable_job_s": t["billable_job_s"]} for t in timings if not t.get("warmup")]
+            keep = ("n_measured_runs", "critical_path_s", "billable_job_s", "needs_respected_every_run", "same_steps_and_conclusions_everywhere",
+                    "jobs_all_success", "relaxed_arm_test_overlaps_lint_in_every_run", "original_arm_test_overlaps_lint_in_any_run")
+            out.append({"id": folder, "title": title, "summary": {k: summary[k] for k in keep if k in summary}, "runs": runs})
+        return {"repo": repo, "experiments": out}
+
     # ------------------------------------------------------------------ evidence and documents
     def evidence(self, repo: str) -> dict:
         return {"repo": repo, "reports": evidence.evidence_for_repo(repo, self.docs_dir), "docs": evidence.list_docs(self.docs_dir)}
@@ -619,18 +643,26 @@ def source_graph_view(graph: nx.MultiDiGraph, max_dirs: int = 26, max_packages: 
     dir_files: dict[str, int] = Counter(_dir_of(p, depth) for p in paths.values())
     imports: dict[tuple[str, str], set[str]] = {}
     pkg_files: dict[str, set[str]] = {}
+    file_pkgs: dict[str, set[str]] = {}
     for u, v, d in graph.edges(data=True):
         if u in paths and _val(d.get("edge_type")) == "IMPORTS" and v.startswith("Package::"):
             pkg = _label(v)
             imports.setdefault((_dir_of(paths[u], depth), pkg), set()).add(u)
             pkg_files.setdefault(pkg, set()).add(u)
+            file_pkgs.setdefault(paths[u], set()).add(pkg)
+    # every file's imported packages, for the dashboard's "pick a directory / file" explorer (capped so the payload stays small)
+    explorer_files = sorted(file_pkgs)[:3000]
+    pkg_names = sorted({p for f in explorer_files for p in file_pkgs[f]})
+    pkg_index = {p: i for i, p in enumerate(pkg_names)}
     top_pkgs = [p for p, _ in sorted(pkg_files.items(), key=lambda kv: -len(kv[1]))[:max_packages]]
     top_dirs = [d for d, _ in dir_files.most_common(max_dirs)]
     edges = [{"from": d, "to": p, "weight": len(fs)} for (d, p), fs in imports.items() if p in top_pkgs and d in top_dirs]
     used_dirs = {e["from"] for e in edges} | set(top_dirs[:12])
     return {"depth": depth, "files": len(paths),
             "dirs": [{"id": d, "label": d, "files": dir_files[d]} for d in top_dirs if d in used_dirs],
-            "packages": [{"id": p, "label": p, "importers": len(pkg_files[p])} for p in top_pkgs], "edges": edges}
+            "packages": [{"id": p, "label": p, "importers": len(pkg_files[p])} for p in top_pkgs], "edges": edges,
+            "pkg_names": pkg_names, "file_imports": {f: sorted(pkg_index[p] for p in file_pkgs[f]) for f in explorer_files},
+            "file_imports_truncated": len(file_pkgs) > len(explorer_files)}
 
 
 def fusion_graph_view(fused: nx.MultiDiGraph, max_dirs: int = 22, max_targets: int = 16) -> dict[str, Any]:

@@ -81,6 +81,11 @@ def whatif(req: WhatIfRequest):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/measured")
+def measured(repo: str):
+    return service().measured(repo)
+
+
 @router.get("/evidence")
 def evidence(repo: str):
     return service().evidence(repo)

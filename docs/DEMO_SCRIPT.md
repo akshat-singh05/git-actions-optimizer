@@ -30,7 +30,7 @@ workflow's structure, so the estimate is 0%"*.
 
 ## 2. The pipeline, stage by stage (2 min)
 
-Click through **Repository analysis** (job DAG), **Graph fusion** (source files linked to jobs and cache keys), **Impact analysis**
+Click through **Repository analysis** (job DAG), **Source code graph** (open *Explore*: pick a directory, then a file, to see the packages it is connected to), **CI/CD graph** (drawn workflow graph; scroll to zoom), **Graph fusion** (source files linked to jobs and cache keys), **Impact analysis**
 (which jobs the real diff reaches) and **Feature extraction**. Say how the graph reaches the models.
 
 ## 3. Models and probabilities (2 min) - the honest page
@@ -50,6 +50,7 @@ Switch the selector to **akshat-singh05/git-actions-optimizer**, open **DAG-awar
 estimated critical path 171 s to 131 s (ESTIMATED, 23%), the trade-off, and why the other gate is kept. Then **Original vs proposed workflow**:
 download the relaxed workflow, show the diff. Say: *"we measured this on real runs: 159.5 s to 135.5 s, -15.1%, p = 0.013, billable time +4.1% not significant;
 the estimate is higher than the measurement"* (`docs/relax_run/`). Then switch to poetry or fastapi to show a mature pipeline where no gate can be removed.
+Finish on **Final summary**: below the four ESTIMATED boxes is the **MEASURED** evidence - 12 real GitHub Actions runs (clickable run ids), the strip chart of every run's critical path, median 159.5 s to 135.5 s (-15%), permutation p = 0.013, billable time +4% not significant - and the second experiment showing the default proposal changes nothing (+0.3%, p = 0.92). Say plainly that this is one simple pipeline: it shows the method can shorten a pipeline, not that CI is faster in general.
 
 ## 6. The command line (1 min)
 
