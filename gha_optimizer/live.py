@@ -93,6 +93,9 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+OPEN_STATUSES = ("queued", "in_progress", "waiting", "requested", "pending")
+
+
 class LiveScorer:
     """State needed to score newly queued runs of one workflow: fitted models + the history they were fitted on."""
 
@@ -189,18 +192,22 @@ class LiveScorer:
                                            "history_until": self.history_until, "jobs": jobs})
 
     def poll_once(self, workflow_id: int, since: str, seen: set[str]) -> int:
-        """Score every queued / in-progress run of the workflow created at or after ``since`` that is not yet in the ledger."""
+        """Score every queued / in-progress run of the workflow created at or after ``since`` that is not yet in the ledger.
+
+        One request per poll (runs created since ``since``, any status; finished ones are ignored here, exactly as the two
+        status-filtered requests used before): half the API cost, which is what allows a poll interval of a few seconds."""
         n = 0
-        for status in ("queued", "in_progress"):
-            data = self.client.get_json(f"/repos/{self.repo}/actions/workflows/{workflow_id}/runs",
-                                        {"status": status, "per_page": 100, "created": f">={since}"})
-            for run in data.get("workflow_runs", []):
-                rid = str(run["id"])
-                if rid in seen:
-                    continue
-                seen.add(rid)
-                entry = self.score_run(run)
-                n += entry["kind"] == "scored"
+        data = self.client.get_json(f"/repos/{self.repo}/actions/workflows/{workflow_id}/runs",
+                                    {"per_page": 100, "created": f">={since}"})
+        for run in data.get("workflow_runs", []):
+            if run.get("status") not in OPEN_STATUSES:
+                continue
+            rid = str(run["id"])
+            if rid in seen:
+                continue
+            seen.add(rid)
+            entry = self.score_run(run)
+            n += entry["kind"] == "scored"
         return n
 
 

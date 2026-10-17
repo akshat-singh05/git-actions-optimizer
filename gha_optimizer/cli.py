@@ -65,6 +65,18 @@ def _load_real_history(repo: str, workflow_repo_path: str):
         db.close()
 
 
+def _step_seconds(repo: str, workflow_repo_path: str):
+    """Recorded median seconds per (job key, step name) of this workflow's ingested runs (feeds an ESTIMATE only)."""
+    from gha_optimizer.ingestion.history import load_step_seconds
+    from gha_optimizer.server.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return load_step_seconds(db, repo, workflow_repo_path)
+    finally:
+        db.close()
+
+
 def _replay_stats(repo: str, workflow_repo_path: str):
     """Replay figures for the advisory section, or None (with a warning) if they cannot be computed."""
     from gha_optimizer.advisory import advisory_stats
@@ -175,6 +187,8 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             replay_stats=_replay_stats(args.repo, wf_repo_path),
             llm_client=_llm_client(args.llm_summary),
             relax_gates=args.relax_gates or None,
+            prune_installs=args.prune_installs or None,
+            step_seconds=_step_seconds(args.repo, wf_repo_path) if args.prune_installs else None,
             triage_profile=_triage_profile(args.repo, wf_repo_path),
             as_of=_parse_as_of(args.as_of),
         )
@@ -476,6 +490,7 @@ def cmd_eval_calibration(args: argparse.Namespace) -> None:
     _use_db(args)
     from gha_optimizer.features.dataset import build_dataset
     from gha_optimizer.models.calibration import evaluate_calibration_repo, render_calibration
+    from gha_optimizer.models.failure_predictor import ShrunkClassifier, _logistic
     from gha_optimizer.server.db.session import SessionLocal, init_db
 
     init_db()
@@ -485,7 +500,8 @@ def cmd_eval_calibration(args: argparse.Namespace) -> None:
         for repo in args.repo:
             df, _ = build_dataset(db, repo, args.workflow_path)
             logger.info("%s: %d rows", repo, len(df))
-            results[repo] = evaluate_calibration_repo(df, n_folds=args.folds, n_boot=args.bootstrap) if not df.empty                 else {"note": "no ingested rows"}
+            results[repo] = evaluate_calibration_repo(df, n_folds=args.folds, n_boot=args.bootstrap,
+                                                      estimator_factory=(lambda: ShrunkClassifier(_logistic())) if args.model == "shrunk" else None) if not df.empty                 else {"note": "no ingested rows"}
     finally:
         db.close()
     text = render_calibration(results, args.bootstrap)
@@ -670,6 +686,9 @@ def main() -> None:
     p_analyze.add_argument("--relax-gates", action="store_true",
                            help="opt-in: drop `needs` gates proven safe (no data dependency, no secrets/deploy) that shorten the "
                                 "estimated critical path; the job then also runs when its former upstream fails (see docs/IMPROVEMENT_PLAN.md C)")
+    p_analyze.add_argument("--prune-installs", action="store_true",
+                           help="opt-in: remove project-dependency installs (`pip install -r FILE`) from jobs that only run stand-alone tools such as ruff "
+                                "(see gha_optimizer/install_pruning.py for the exact conditions); the saving is ESTIMATED from recorded step durations")
     p_analyze.add_argument("--llm-summary", action="store_true",
                            help="append a plain-language summary written by an LLM (needs GEMINI_API_KEY and GHA_LLM_MODEL). "
                                 "Sends only job ids, runner labels and computed numbers to the provider; never affects the plan")
@@ -773,6 +792,8 @@ def main() -> None:
     p_ec.add_argument("--workflow-path", help="repo-relative workflow path (default: all ingested workflows)")
     p_ec.add_argument("--folds", type=int, default=5)
     p_ec.add_argument("--bootstrap", type=int, default=1000)
+    p_ec.add_argument("--model", choices=["logistic", "shrunk"], default="logistic",
+                      help="logistic = the default failure model; shrunk = the same model anchored to the job's prior failure rate (EXPLORATORY, see docs/IMPROVEMENT_RESULTS.md I)")
     p_ec.add_argument("--out", default="docs/CALIBRATION.md")
 
     p_ep = subparsers.add_parser("eval-pooled", help="EXPLORATORY: leave-one-repository-out failure model -> docs/POOLED_EVAL.md")

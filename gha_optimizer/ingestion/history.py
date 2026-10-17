@@ -210,3 +210,21 @@ def require_history(
                 "failure model cannot be trained: the history needs at least one failing and one passing job outcome",
                 failing_job_runs=failed, passing_job_runs=passed,
             )
+
+
+def load_step_seconds(db: Session, repo: str, workflow_path: str | None = None) -> dict[tuple[str, str], float]:
+    """Median recorded duration in seconds per ``(job key, step name)`` over successful jobs of ingested runs (measured
+    history; used only to ESTIMATE what removing a step would save)."""
+    import statistics
+
+    q = (db.query(m.WorkflowJob.job_key, m.WorkflowStep.name, m.WorkflowStep.duration_seconds)
+         .join(m.WorkflowStep, m.WorkflowStep.github_job_id == m.WorkflowJob.github_job_id)
+         .join(m.WorkflowRun, m.WorkflowRun.run_id == m.WorkflowJob.run_id)
+         .filter(m.WorkflowRun.repo == repo, m.WorkflowJob.job_key.isnot(None), m.WorkflowJob.conclusion == "success",
+                 m.WorkflowStep.conclusion == "success", m.WorkflowStep.duration_seconds.isnot(None)))
+    if workflow_path:
+        q = q.filter(m.WorkflowRun.workflow_path == workflow_path)
+    by: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for key, name, sec in q.all():
+        by[(key, name)].append(float(sec))
+    return {k: statistics.median(v) for k, v in by.items()}

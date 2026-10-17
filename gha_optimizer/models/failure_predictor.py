@@ -59,7 +59,7 @@ except ImportError:
     _HAS_XGBOOST = False
 
 
-VARIANTS = ("logistic", "tree", "regularized_tree", "v2_logistic", "v2_hgb", "v2_blend")
+VARIANTS = ("logistic", "tree", "regularized_tree", "v2_logistic", "v2_hgb", "v2_blend", "v2_shrunk")
 
 
 class BlendClassifier(BaseEstimator, ClassifierMixin):
@@ -75,6 +75,56 @@ class BlendClassifier(BaseEstimator, ClassifierMixin):
 
     def predict_proba(self, X):
         p = np.mean([m.predict_proba(X)[:, 1] for m in self.members_], axis=0)
+        return np.column_stack([1.0 - p, p])
+
+
+class ShrunkClassifier(BaseEstimator, ClassifierMixin):
+    """A model anchored to the job's own prior failure rate (EXPLORATORY, designed after seeing docs/IMPROVEMENT_RESULTS.md A).
+
+    The first ``1 - holdout`` of the (chronologically ordered) training rows fit the base model; on the remaining rows a two-feature
+    logistic regression learns how far to trust ``logit(prior failure rate)`` versus ``logit(base score)`` (strong L2, so an
+    uninformative base score gets weight near 0 and the output falls back to the prior).  The base model is then refit on all rows.
+    Rows whose job has no prior yet use the training failure rate.  Nothing here is tuned on the evaluation folds."""
+
+    def __init__(self, base: Any = None, prior_col: str = "historical_failure_rate", holdout: float = 0.3, C: float = 0.5):
+        self.base = base
+        self.prior_col = prior_col
+        self.holdout = holdout
+        self.C = C
+
+    @staticmethod
+    def _logit(p: np.ndarray) -> np.ndarray:
+        p = np.clip(p, 1e-4, 1 - 1e-4)
+        return np.log(p / (1 - p))
+
+    def _meta_features(self, X: pd.DataFrame, base_score: np.ndarray) -> np.ndarray:
+        # a feature-set ablation may remove the prior column: the model then has no prior to anchor to and uses the base rate
+        prior = X[self.prior_col].to_numpy(dtype=float) if self.prior_col in X else np.full(len(X), np.nan)
+        prior = np.where(np.isnan(prior), self.global_rate_, prior)
+        return np.column_stack([self._logit(prior), self._logit(base_score)])
+
+    def fit(self, X, y):
+        X = pd.DataFrame(X).reset_index(drop=True)
+        y = np.asarray(y).astype(int)
+        self.classes_ = np.array([0, 1])
+        self.global_rate_ = float(y.mean())
+        cut = int(len(X) * (1 - self.holdout))
+        self.meta_ = None
+        if cut > 0 and len(set(y[:cut])) == 2 and len(set(y[cut:])) == 2:
+            try:
+                first = clone(self.base).fit(X.iloc[:cut], y[:cut])
+            except ValueError:                       # e.g. a feature with no observed value in the first part: no anchoring, base model alone
+                first = None
+            if first is not None:
+                z = self._meta_features(X.iloc[cut:], first.predict_proba(X.iloc[cut:])[:, 1])
+                self.meta_ = LogisticRegression(C=self.C, max_iter=1000).fit(z, y[cut:])
+        self.base_ = clone(self.base).fit(X, y)
+        return self
+
+    def predict_proba(self, X):
+        X = pd.DataFrame(X).reset_index(drop=True)
+        s = self.base_.predict_proba(X)[:, 1]
+        p = s if self.meta_ is None else self.meta_.predict_proba(self._meta_features(X, s))[:, 1]
         return np.column_stack([1.0 - p, p])
 
 
@@ -117,6 +167,9 @@ class FailurePredictor:
             self.model, self._backend_name = _logistic(), "sklearn-logistic-v2"
         elif variant == "v2_hgb":
             self.model, self._backend_name = _regularized_hgb(random_state), "sklearn-hist-regularized-v2"
+        elif variant == "v2_shrunk":
+            self.model = ShrunkClassifier(BlendClassifier([_logistic(), _regularized_hgb(random_state)]))
+            self._backend_name = "shrunk-blend-v2"
         elif variant == "v2_blend":
             self.model = BlendClassifier([_logistic(), _regularized_hgb(random_state)])
             self._backend_name = "blend-v2"

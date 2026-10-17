@@ -252,7 +252,7 @@ def evaluate_calibration_repo(df: pd.DataFrame, n_folds: int = 5, initial_fracti
     for i, r in enumerate(run_arr):
         groups.setdefault(r, []).append(i)
     gl = [np.array(v) for v in groups.values()]
-    diffs: dict[str, list[float]] = {"platt_tail - raw": [], "isotonic_oos - raw": [], "isotonic_oos - baseline": []}
+    diffs: dict[str, list[float]] = {"platt_tail - raw": [], "isotonic_oos - raw": [], "isotonic_oos - baseline": [], "raw - baseline": []}
     for _ in range(n_boot):
         ix = np.concatenate([gl[i] for i in rng.integers(0, len(gl), len(gl))])
         yb = y[ix]
@@ -262,6 +262,7 @@ def evaluate_calibration_repo(df: pd.DataFrame, n_folds: int = 5, initial_fracti
         diffs["platt_tail - raw"].append(b["platt_tail"] - b["raw"])
         diffs["isotonic_oos - raw"].append(b["isotonic_oos"] - b["raw"])
         diffs["isotonic_oos - baseline"].append(b["isotonic_oos"] - b["baseline"])
+        diffs["raw - baseline"].append(b["raw"] - b["baseline"])
     out["brier_difference"] = {k: ({"delta": round(float(np.mean(v)), 5),
                                     "ci95": [round(float(np.percentile(v, 2.5)), 5), round(float(np.percentile(v, 97.5)), 5)]}
                                    if len(v) >= 50 else {"note": "too few usable resamples"}) for k, v in diffs.items()}
@@ -281,7 +282,7 @@ def render_calibration(results: dict[str, dict[str, Any]], n_boot: int) -> str:
              "the raw model's (isotonic can create ties).\n",
              "| repo | test rows | positives (base rate) | Brier raw / platt_tail / isotonic_oos / baseline | "
              "ECE raw / platt_tail / isotonic_oos / baseline | Brier: platt_tail - raw | Brier: isotonic_oos - raw | "
-             "Brier: isotonic_oos - baseline |", "|---|---|---|---|---|---|---|---|"]
+             "Brier: isotonic_oos - baseline | Brier: raw - baseline |", "|---|---|---|---|---|---|---|---|---|"]
 
     def ci(d: dict[str, Any]) -> str:
         return f"{d['delta']:+.5f} [{d['ci95'][0]:+.5f}, {d['ci95'][1]:+.5f}]" if "ci95" in d else "n/a"
@@ -289,14 +290,14 @@ def render_calibration(results: dict[str, dict[str, Any]], n_boot: int) -> str:
     order = ("raw", "platt_tail", "isotonic_oos", "baseline")
     for repo, r in results.items():
         if "scores" not in r:
-            lines.append(f"| {repo} | - | - | - | - | {r.get('note', 'no result')} | - | - |")
+            lines.append(f"| {repo} | - | - | - | - | {r.get('note', 'no result')} | - | - | - |")
             continue
         s = r["scores"]
         b = r["brier_difference"]
         lines.append(f"| {repo} | {r['n_test_rows']} | {r['positives']} ({100 * r['base_rate']:.1f}%) | "
                      + " / ".join(f"{s[k]['brier']:.4f}" for k in order) + " | "
                      + " / ".join(f"{s[k]['ece']:.4f}" for k in order) + " | "
-                     f"{ci(b['platt_tail - raw'])} | {ci(b['isotonic_oos - raw'])} | {ci(b['isotonic_oos - baseline'])} |")
+                     f"{ci(b['platt_tail - raw'])} | {ci(b['isotonic_oos - raw'])} | {ci(b['isotonic_oos - baseline'])} | {ci(b['raw - baseline'])} |")
     lines.append("\n## How far can a displayed probability be trusted?\n")
     lines.append("| repo | highest raw score on unseen rows | rows scored above 0.5 on unseen rows |")
     lines.append("|---|---|---|")

@@ -27,8 +27,11 @@ TARGETS = [
     ("astral-sh/ruff", ".github/workflows/ci.yaml"),
     ("prometheus/prometheus", ".github/workflows/ci.yml"),
 ]
+# Poll interval per repository.  prometheus jobs finish within seconds of the run being queued and a run is scored only if
+# no job has completed yet, so it is polled much faster (one API request per poll: 600/h of the 5000/h budget at 6 s).
+POLL_SECONDS_BY_REPO = {"prometheus/prometheus": 6}
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
-WINDOW_MINUTES, POLL_SECONDS = 720, 30
+WINDOW_MINUTES, POLL_SECONDS = 720, 30   # POLL_SECONDS is the default; see POLL_SECONDS_BY_REPO
 GH_CANDIDATES = ["gh", r"C:\Program Files\GitHub CLI\gh.exe"]
 
 
@@ -94,7 +97,7 @@ def start_scorer(repo: str, workflow: str, token: str) -> subprocess.Popen:
     py = ROOT / ".venv" / "Scripts" / "python.exe"
     return subprocess.Popen(
         [str(py), "-u", "-W", "ignore", "-m", "gha_optimizer.cli", "live-score", "--repo", repo, "--workflow-path", workflow,
-         "--minutes", str(WINDOW_MINUTES), "--poll-seconds", str(POLL_SECONDS)],
+         "--minutes", str(WINDOW_MINUTES), "--poll-seconds", str(POLL_SECONDS_BY_REPO.get(repo, POLL_SECONDS))],
         cwd=str(ROOT), env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
 
 

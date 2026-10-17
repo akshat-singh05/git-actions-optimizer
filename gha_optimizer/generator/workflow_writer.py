@@ -18,6 +18,7 @@ from pathlib import Path
 import yaml
 
 from gha_optimizer.gates import apply_relaxation, header_lines
+from gha_optimizer.install_pruning import apply_pruning, header_lines as pruning_header_lines
 from gha_optimizer.ingestion.workflow_parser import WorkflowSpec
 from gha_optimizer.scheduler.optimizer import SchedulePlan, base_runner_label
 
@@ -77,6 +78,10 @@ def generate_optimized_workflow(workflow: WorkflowSpec, plan: SchedulePlan) -> d
     if plan.gate_relaxation is not None and plan.gate_relaxation.relaxed:
         optimized = apply_relaxation(optimized, plan.gate_relaxation.relaxed)
 
+    # --- Pruned dependency installs (opt-in, validated by the pipeline against install_pruning.plan_install_pruning) ---
+    if plan.install_pruning is not None and plan.install_pruning.actions:
+        optimized = apply_pruning(optimized, plan.install_pruning.actions)
+
     # No metadata is added as a YAML key: GitHub rejects unknown top-level keys, so provenance and the estimated
     # figures live in the header comment written by write_workflow / generate_diff (see _plan_header).
     return optimized
@@ -95,6 +100,7 @@ def _plan_header(plan: SchedulePlan | None) -> str:
     for jp in plan.jobs:
         if jp.skip_recommended:
             lines.append(f"# Skip guard on '{jp.job_id}': {jp.skip_reason}")
+    lines += pruning_header_lines(plan.install_pruning)
     lines += header_lines(plan.gate_relaxation)
     candidates = [jp.job_id for jp in plan.jobs if jp.skip_candidate and not jp.skip_recommended]
     if candidates:

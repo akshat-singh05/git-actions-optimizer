@@ -21,6 +21,7 @@ import networkx as nx
 from gha_optimizer.advisory import advise_unreached_jobs, render_advisory
 from gha_optimizer.config import config
 from gha_optimizer.gates import plan_relaxation, render_relaxation, validate_relaxation
+from gha_optimizer.install_pruning import plan_install_pruning, render_pruning, validate_pruning
 from gha_optimizer.triage import render_profile
 from gha_optimizer.features.feature_extraction import (
     build_inference_frame,
@@ -80,6 +81,8 @@ def run_pipeline(
     replay_stats: dict | None = None,
     llm_client: LLMClient | None = None,
     relax_gates: bool | None = None,
+    prune_installs: bool | None = None,
+    step_seconds: dict | None = None,
     triage_profile: dict | None = None,
     as_of: datetime | None = None,
 ) -> tuple[SchedulePlan, str]:
@@ -111,6 +114,9 @@ def run_pipeline(
     relax_gates : Opt-in (default off): remove ``needs`` gates that ``gates.py`` proves safe and that shorten the estimated
         critical path.  Rule 7 (CLAUDE.md) allows this exception only; the written workflow is validated and every
         removed edge is listed in the file header and the explanation.
+    prune_installs : Opt-in (default off): remove project-dependency installs from jobs that only run stand-alone tools
+        (``install_pruning.py``); validated, listed in the file header and the explanation.  ``step_seconds`` (recorded median
+        seconds per ``(job key, step name)``, ``history.load_step_seconds``) only feeds the ESTIMATED saving.
     llm_client : Optional explanation-layer client (``llm_summary.py``).  When given, a validated plain-language
         summary is appended to the explanation; it never affects the plan, the predictions or the written workflow.
     model_dir : Directory of persisted models (``models/store.py``).  If it holds models trained on exactly this
@@ -245,12 +251,18 @@ def run_pipeline(
 
     plan = build_schedule(dag, failure_prob, cache_miss_prob, duration_pred, **schedule_kwargs)
     sensitivity = speedup_sensitivity(dag, failure_prob, cache_miss_prob, duration_pred, **sensitivity_kwargs)
+    durations_for_gates = {jp.job_id: jp.estimated_duration_seconds for jp in plan.jobs}
+    if prune_installs:
+        # opt-in: a tool-only job does not need the project's dependencies; the shorter jobs feed the gate relaxation below
+        plan.install_pruning = plan_install_pruning(workflow, repo_root, durations_for_gates, step_seconds)
+        for job_id, saved in plan.install_pruning.seconds_by_job().items():
+            durations_for_gates[job_id] = max(durations_for_gates[job_id] - saved, 0.0)
     if relax_gates:
         # opt-in: drop only the `needs` gates gates.py can prove safe AND that shorten the estimated critical path
         # the extra-cost estimate uses each job's own recent failure rate (a plain statistic of its history), not the
         # model's probability: with few recorded failures a fitted model extrapolates wildly
         plan.gate_relaxation = plan_relaxation(
-            workflow, {jp.job_id: jp.estimated_duration_seconds for jp in plan.jobs},
+            workflow, durations_for_gates,
             infer_df["historical_failure_rate"].fillna(0.0).to_dict())
 
     # ──────────────────────────────────────────────────────────────
@@ -258,6 +270,8 @@ def run_pipeline(
     # ──────────────────────────────────────────────────────────────
     optimized_yaml = generate_optimized_workflow(workflow, plan)
     problems = validate_relaxation(workflow, optimized_yaml)       # every job kept, no needs edge added or unsafely removed
+    if plan.install_pruning is not None:
+        problems += validate_pruning(workflow, optimized_yaml, repo_root)   # steps unchanged except the provably unnecessary installs
     if problems:                                                   # DAG correctness is sacred: never write such a file
         raise RuntimeError("generated workflow failed validation: " + "; ".join(problems))
     write_workflow(optimized_yaml, out_path, plan)
@@ -305,6 +319,8 @@ def run_pipeline(
     # Advisory only: which jobs the graph says this diff cannot reach. Never changes the plan or the proposed YAML.
     advice, unknown_jobs = advise_unreached_jobs(workflow, infer_df["job_structurally_impacted"].to_dict())
     full_explanation += "\n\n" + render_advisory(advice, unknown_jobs, replay_stats)
+    if plan.install_pruning is not None:
+        full_explanation += "\n\n" + render_pruning(plan.install_pruning)
     if plan.gate_relaxation is not None:
         full_explanation += "\n\n" + render_relaxation(plan.gate_relaxation)
     if triage_profile is not None:

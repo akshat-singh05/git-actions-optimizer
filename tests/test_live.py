@@ -54,7 +54,7 @@ class FakeClient:
         return {"files": self.files} if self.files is not None else None
 
     def get_json(self, path, params=None):
-        return {"workflow_runs": [r for r in self.runs if r["status"] == params["status"]]}
+        return {"workflow_runs": [r for r in self.runs if params.get("status") in (None, r["status"])]}
 
 
 def run_json(i, status="queued", event="pull_request", pr=True):

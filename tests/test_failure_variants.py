@@ -21,7 +21,7 @@ def frame(n_runs: int = 80):
 
 def test_logistic_is_the_default_variant():
     assert FailurePredictor().variant == "logistic"
-    assert set(VARIANTS) == {"logistic", "tree", "regularized_tree", "v2_logistic", "v2_hgb", "v2_blend"}
+    assert set(VARIANTS) == {"logistic", "tree", "regularized_tree", "v2_logistic", "v2_hgb", "v2_blend", "v2_shrunk"}
 
 
 @pytest.mark.parametrize("variant", VARIANTS)

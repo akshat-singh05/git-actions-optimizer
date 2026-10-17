@@ -102,6 +102,8 @@ class SchedulePlan:
     both_cost_usd: float = 0.0
     # opt-in: safe `needs` gates relaxed in the proposed workflow (gha_optimizer/gates.py::GateRelaxation) or None
     gate_relaxation: Any = None
+    # opt-in: provably unnecessary dependency installs removed from tool-only jobs (gha_optimizer/install_pruning.py::InstallPruning) or None
+    install_pruning: Any = None
 
     @staticmethod
     def _pct(base: float, value: float) -> float:

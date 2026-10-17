@@ -81,6 +81,10 @@ TARGETS: dict[str, TargetSpec] = {
         "failure_v2_blend", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
         lambda: FailurePredictor(variant="v2_blend").model, "the job's prior decayed failure rate",
         features=FAILURE_V2_COLUMNS),
+    "failure_v2_shrunk": TargetSpec(
+        "failure_v2_shrunk", "binary", lambda d: d["label_failed"], lambda d: d["historical_failure_rate"],
+        lambda: FailurePredictor(variant="v2_shrunk").model, "the job's prior decayed failure rate",
+        features=FAILURE_V2_COLUMNS),
     "cache_any_miss": TargetSpec(
         "cache_any_miss", "binary",
         lambda d: miss_target(d, "any_miss").where(d["label_cache_hit"].notna()),
