@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable
 
-PARSER_VERSION = "1"
+PARSER_VERSION = "2"
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _TS = re.compile(r"^\ufeff?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ?")
@@ -44,6 +44,10 @@ _RESTORE_HIT = re.compile(r"^Cache restored from key: (.+?)\s*$")
 _RESTORE_MISS_KEYS = re.compile(r"^Cache not found for input keys?: (.+?)\s*$")
 _RESTORE_MISS_UV = re.compile(r"^No GitHub Actions cache found for key: (.+?)\s*$")
 _RESTORE_MISS_SETUP = re.compile(r"^(?:[\w.-]+ )?[Cc]ache is not found\.?\s*$")
+# Swatinem/rust-cache (used by uv): the restore step prints whether the matched key was the requested one.
+_RESTORE_RUST = re.compile(r'^Restored from cache key "(.+?)" full match: (true|false)\.?\s*$')
+# Printed by the same action when nothing matched (taken from the action's source; not yet seen in an ingested log).
+_RESTORE_MISS_RUST = re.compile(r"^No cache found\.\s*$")
 _SAVED = re.compile(r"^Cache saved with key: (.+?)\s*$")
 _PRIMARY_HIT = re.compile(r"^Cache hit occurred on the primary key (.+?), not saving cache\.?\s*$")
 
@@ -58,6 +62,7 @@ class CacheEvent:
     action: str | None
     primary_key: str | None = None   # 'key:' input of the step header, when printed
     restore_kind: str | None = None  # exact | partial | unresolved (restore_hit only)
+    full_match: bool | None = None   # the log itself states whether the matched key was the requested one
     raw_line: str = ""
 
 
@@ -115,6 +120,10 @@ def parse_log_lines(lines: Iterable[str]) -> ParsedLog:
 
         kind: str | None = None
         key = ""
+        full_match: bool | None = None
+        rm = _RESTORE_RUST.match(line)
+        if rm:
+            kind, key, full_match = "restore_hit", rm.group(1), rm.group(2) == "true"
         for rx, k in (
             (_RESTORE_HIT, "restore_hit"),
             (_RESTORE_MISS_KEYS, "restore_miss"),
@@ -122,11 +131,13 @@ def parse_log_lines(lines: Iterable[str]) -> ParsedLog:
             (_SAVED, "saved"),
             (_PRIMARY_HIT, "primary_hit_not_saved"),
         ):
+            if kind is not None:
+                break
             mm = rx.match(line)
             if mm:
                 kind, key = k, mm.group(1)
                 break
-        if kind is None and _RESTORE_MISS_SETUP.match(line):
+        if kind is None and (_RESTORE_MISS_SETUP.match(line) or _RESTORE_MISS_RUST.match(line)):
             kind, key = "restore_miss", ""
         if kind is None:
             continue
@@ -141,6 +152,7 @@ def parse_log_lines(lines: Iterable[str]) -> ParsedLog:
                 step_name=step_title,
                 action=action,
                 primary_key=header_key,
+                full_match=full_match,
                 raw_line=line[:500],
             )
         )
@@ -175,7 +187,9 @@ def _resolve_restore_kinds(events: list[CacheEvent]) -> None:
         if e.kind != "restore_hit":
             continue
         matched = e.cache_key
-        if e.primary_key is not None:
+        if e.full_match is not None:
+            e.restore_kind = "exact" if e.full_match else "partial"
+        elif e.primary_key is not None:
             e.restore_kind = "exact" if matched == e.primary_key else "partial"
         elif matched in primary_hits:
             e.restore_kind = "exact"

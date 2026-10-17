@@ -1,0 +1,175 @@
+2026-10-13T17:33:57.9543937Z ##[group]Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+2026-10-13T17:33:57.9544155Z with:
+2026-10-13T17:33:57.9544261Z   prefix-key: v1-rust-workspace
+2026-10-13T17:33:57.9544432Z   key: ffaebc8a9d20a2aef4ea2ed2802e527a86508037a34d3c79755e786a375045b4
+2026-10-13T17:33:57.9544603Z   workspaces: D:/uv
+2026-10-13T17:33:57.9544705Z   cache-workspace-crates: true
+2026-10-13T17:33:57.9544819Z   add-job-id-key: false
+2026-10-13T17:33:57.9544918Z   save-if: false
+2026-10-13T17:33:57.9545025Z   add-rust-environment-hash-key: true
+2026-10-13T17:33:57.9545150Z   cache-targets: true
+2026-10-13T17:33:57.9545250Z   cache-all-crates: false
+2026-10-13T17:33:57.9545401Z   cache-provider: github
+2026-10-13T17:33:57.9545520Z   cache-bin: true
+2026-10-13T17:33:57.9545619Z   lookup-only: false
+2026-10-13T17:33:57.9545720Z   cmd-format: {0}
+2026-10-13T17:33:57.9545809Z env:
+2026-10-13T17:33:57.9545892Z   CARGO_INCREMENTAL: 0
+2026-10-13T17:33:57.9546013Z   CARGO_NET_RETRY: 10
+2026-10-13T17:33:57.9546124Z   CARGO_TERM_COLOR: always
+2026-10-13T17:33:57.9546225Z   PYTHON_VERSION: 3.12
+2026-10-13T17:33:57.9546322Z   RUSTC_BOOTSTRAP: 1
+2026-10-13T17:33:57.9552581Z   RUSTUP_MAX_RETRIES: 10
+2026-10-13T17:33:57.9552687Z   UV_LOCKED: 1
+2026-10-13T17:33:57.9552783Z   DEV_DRIVE: D:
+2026-10-13T17:33:57.9552878Z   TMP: D:\uv-tmp
+2026-10-13T17:33:57.9552971Z   TEMP: D:\uv-tmp
+2026-10-13T17:33:57.9553071Z   RUSTUP_HOME: D:/.rustup
+2026-10-13T17:33:57.9553178Z   CARGO_HOME: D:/.cargo
+2026-10-13T17:33:57.9553277Z   UV_WORKSPACE: D:/uv
+2026-10-13T17:33:57.9553386Z   UV_PYTHON_INSTALL_DIR: D:/uv-python
+2026-10-13T17:33:57.9560826Z   PATH: D:/.cargo/bin;C:\Program Files\PowerShell\7;C:\Program Files\MongoDB\Server\7.0\bin;C:\Program Files\MongoDB\Server\7.0\bin;C:\Program Files\MongoDB\Server\7.0\bin;C:\aliyun-cli;C:\vcpkg;C:\Program Files (x86)\NSIS\;C:\tools\zstd;C:\Program Files\Mercurial\;c:\hostedtoolcache\windows\stack\3.9.3\x64;C:\cabal\bin;C:\\ghcup\bin;C:\mingw64\bin;C:\Program Files\dotnet;C:\Program Files\MySQL\MySQL Server 8.0\bin;C:\Program Files\R\R-4.6.0\bin\x64;C:\SeleniumWebDrivers\GeckoDriver;C:\SeleniumWebDrivers\ChromeDriver;C:\Program Files (x86)\sbt\bin;C:\Program Files (x86)\GitHub CLI;C:\Program Files\Git\bin;C:\Program Files (x86)\pipx_bin;C:\npm\prefix;C:\hostedtoolcache\windows\go\1.24.13\x64\bin;C:\hostedtoolcache\windows\Python\3.12.10\x64\Scripts;C:\hostedtoolcache\windows\Python\3.12.10\x64;C:\hostedtoolcache\windows\Ruby\3.3.11\x64\bin;C:\Program Files\OpenSSL\bin;C:\tools\kotlinc\bin;C:\hostedtoolcache\windows\Java_Temurin-Hotspot_jdk\8.0.492-9\x64\bin;C:\Program Files\ImageMagick-7.1.2-Q16-HDRI;C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;C:\ProgramData\kind;C:\ProgramData\Chocolatey\bin;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files\PowerShell\7\;C:\Program Files\Microsoft\Web Platform Installer\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\dotnet\;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;C:\Program Files\TortoiseSVN\bin;C:\Program Files (x86)\WiX Toolset v3.14\bin;C:\Program Files\Microsoft SQL Server\130\DTS\Binn\;C:\Program Files\Microsoft SQL Server\140\DTS\Binn\;C:\Program Files\Microsoft SQL Server\150\DTS\Binn\;C:\Program Files\Microsoft SQL Server\160\DTS\Binn\;C:\Program Files\Microsoft SQL Server\170\DTS\Binn\;C:\Strawberry\c\bin;C:\Strawberry\perl\site\bin;C:\Strawberry\perl\bin;C:\ProgramData\chocolatey\lib\pulumi\tools\Pulumi\bin;C:\Program Files\CMake\bin;C:\ProgramData\chocolatey\lib\maven\apache-maven-3.9.16\bin;C:\Program Files\Microsoft Service Fabric\bin\Fabric\Fabric.Code;C:\Program Files\Microsoft SDKs\Service Fabric\Tools\ServiceFabricLocalClusterManager;C:\Program Files\nodejs\;C:\Program Files\Git\cmd;C:\Program Files\Git\mingw64\bin;C:\Program Files\Git\usr\bin;C:\Program Files\GitHub CLI\;c:\tools\php;C:\Program Files (x86)\sbt\bin;C:\Program Files\Amazon\AWSCLIV2\;C:\Program Files\Amazon\SessionManagerPlugin\bin\;C:\Program Files\Amazon\AWSSAMCLI\bin\;C:\Program Files\Microsoft SQL Server\130\Tools\Binn\;C:\Program Files\LLVM\bin;C:\Program Files (x86)\LLVM\bin;C:\Users\runneradmin\.dotnet\tools;C:\Users\runneradmin\.cargo\bin;C:\Users\runneradmin\.cargo\bin;C:\Users\runneradmin\AppData\Local\Microsoft\WindowsApps;C:\namespace\nsc
+2026-10-13T17:33:57.9566957Z   UV_TOOL_BIN_DIR: D:\a\_temp\uv-tool-bin-dir
+2026-10-13T17:33:57.9567123Z   UV_TOOL_DIR: D:\a\_temp\uv-tool-dir
+2026-10-13T17:33:57.9567256Z ##[endgroup]
+2026-10-13T17:33:58.4818513Z ##[group]Cache Configuration
+2026-10-13T17:33:58.4818789Z Cache Provider:
+2026-10-13T17:33:58.4818939Z     github
+2026-10-13T17:33:58.4819076Z Workspaces:
+2026-10-13T17:33:58.4819228Z     D:\uv
+2026-10-13T17:33:58.4819380Z Cache Paths:
+2026-10-13T17:33:58.4819532Z     D:\.cargo\bin
+2026-10-13T17:33:58.4819728Z     D:\.cargo\.crates.toml
+2026-10-13T17:33:58.4819915Z     D:\.cargo\.crates2.json
+2026-10-13T17:33:58.4820037Z     D:\.cargo\registry
+2026-10-13T17:33:58.4820139Z     D:\.cargo\git
+2026-10-13T17:33:58.4820230Z     D:\uv\target
+2026-10-13T17:33:58.4820319Z Restore Key:
+2026-10-13T17:33:58.4820657Z     v1-rust-workspace-ffaebc8a9d20a2aef4ea2ed2802e527a86508037a34d3c79755e786a375045b4-Windows_NT-x64-733c1100
+2026-10-13T17:33:58.4820942Z Cache Key:
+2026-10-13T17:33:58.4821176Z     v1-rust-workspace-ffaebc8a9d20a2aef4ea2ed2802e527a86508037a34d3c79755e786a375045b4-Windows_NT-x64-733c1100-071f5a27
+2026-10-13T17:33:58.4821440Z .. Prefix:
+2026-10-13T17:33:58.4821655Z   - v1-rust-workspace-ffaebc8a9d20a2aef4ea2ed2802e527a86508037a34d3c79755e786a375045b4-Windows_NT-x64
+2026-10-13T17:33:58.4821924Z .. Environment considered:
+2026-10-13T17:33:58.4822034Z   - Rust Versions:
+2026-10-13T17:33:58.4822190Z     - 1.99.0 x86_64-pc-windows-msvc b940084d7eb6a299eb4bfeb8e34901bc051e7ac4
+2026-10-13T17:33:58.4822363Z   - CARGO_HOME
+2026-10-13T17:33:58.4822459Z   - CARGO_INCREMENTAL
+2026-10-13T17:33:58.4822561Z   - CARGO_NET_RETRY
+2026-10-13T17:33:58.4822654Z   - CARGO_TERM_COLOR
+2026-10-13T17:33:58.4822750Z   - RUSTC_BOOTSTRAP
+2026-10-13T17:33:58.4822844Z   - RUSTUP_HOME
+2026-10-13T17:33:58.4822938Z   - RUSTUP_MAX_RETRIES
+2026-10-13T17:33:58.4823042Z .. Lockfiles considered:
+2026-10-13T17:33:58.4823154Z   - D:\a\uv\uv\.cargo\config.toml
+2026-10-13T17:33:58.4823280Z   - D:\a\uv\uv\rust-toolchain.toml
+2026-10-13T17:33:58.4823402Z   - D:\uv\.cargo\config.toml
+2026-10-13T17:33:58.4823508Z   - D:\uv\Cargo.lock
+2026-10-13T17:33:58.4823625Z   - D:\uv\crates\uv-audit-operations\Cargo.toml
+2026-10-13T17:33:58.4823767Z   - D:\uv\crates\uv-audit\Cargo.toml
+2026-10-13T17:33:58.4823891Z   - D:\uv\crates\uv-auth\Cargo.toml
+2026-10-13T17:33:58.4824014Z   - D:\uv\crates\uv-bench\Cargo.toml
+2026-10-13T17:33:58.4824141Z   - D:\uv\crates\uv-bin-install\Cargo.toml
+2026-10-13T17:33:58.4824277Z   - D:\uv\crates\uv-build-backend\Cargo.toml
+2026-10-13T17:33:58.4824421Z   - D:\uv\crates\uv-build-commands\Cargo.toml
+2026-10-13T17:33:58.4824563Z   - D:\uv\crates\uv-build-frontend\Cargo.toml
+2026-10-13T17:33:58.4824709Z   - D:\uv\crates\uv-build\Cargo.toml
+2026-10-13T17:33:58.4824841Z   - D:\uv\crates\uv-build\rust-toolchain.toml
+2026-10-13T17:33:58.4824979Z   - D:\uv\crates\uv-cache-info\Cargo.toml
+2026-10-13T17:33:58.4825108Z   - D:\uv\crates\uv-cache-key\Cargo.toml
+2026-10-13T17:33:58.4825285Z   - D:\uv\crates\uv-cache\Cargo.toml
+2026-10-13T17:33:58.4825611Z   - D:\uv\crates\uv-cli\Cargo.toml
+2026-10-13T17:33:58.4825812Z   - D:\uv\crates\uv-client\Cargo.toml
+2026-10-13T17:33:58.4825963Z   - D:\uv\crates\uv-command-support\Cargo.toml
+2026-10-13T17:33:58.4826115Z   - D:\uv\crates\uv-configuration\Cargo.toml
+2026-10-13T17:33:58.4826255Z   - D:\uv\crates\uv-console\Cargo.toml
+2026-10-13T17:33:58.4826379Z   - D:\uv\crates\uv-dev\Cargo.toml
+2026-10-13T17:33:58.4826593Z   - D:\uv\crates\uv-dirs\Cargo.toml
+2026-10-13T17:33:58.4826719Z   - D:\uv\crates\uv-dispatch\Cargo.toml
+2026-10-13T17:33:58.4830112Z   - D:\uv\crates\uv-distribution-filename\Cargo.toml
+2026-10-13T17:33:58.4830286Z   - D:\uv\crates\uv-distribution-types\Cargo.toml
+2026-10-13T17:33:58.4830435Z   - D:\uv\crates\uv-distribution\Cargo.toml
+2026-10-13T17:33:58.4830592Z   - D:\uv\crates\uv-environment-operations\Cargo.toml
+2026-10-13T17:33:58.4830740Z   - D:\uv\crates\uv-errors\Cargo.toml
+2026-10-13T17:33:58.4830863Z   - D:\uv\crates\uv-extract\Cargo.toml
+2026-10-13T17:33:58.4830983Z   - D:\uv\crates\uv-fastid\Cargo.toml
+2026-10-13T17:33:58.4831101Z   - D:\uv\crates\uv-flags\Cargo.toml
+2026-10-13T17:33:58.4831220Z   - D:\uv\crates\uv-fs\Cargo.toml
+2026-10-13T17:33:58.4831365Z   - D:\uv\crates\uv-git-types\Cargo.toml
+2026-10-13T17:33:58.4831509Z   - D:\uv\crates\uv-git\Cargo.toml
+2026-10-13T17:33:58.4831734Z   - D:\uv\crates\uv-globfilter\Cargo.toml
+2026-10-13T17:33:58.4831925Z   - D:\uv\crates\uv-install-operations\Cargo.toml
+2026-10-13T17:33:58.4832092Z   - D:\uv\crates\uv-install-wheel\Cargo.toml
+2026-10-13T17:33:58.4832227Z   - D:\uv\crates\uv-installer\Cargo.toml
+2026-10-13T17:33:58.4832360Z   - D:\uv\crates\uv-keyring\Cargo.toml
+2026-10-13T17:33:58.4832499Z   - D:\uv\crates\uv-lock-operations\Cargo.toml
+2026-10-13T17:33:58.4832631Z   - D:\uv\crates\uv-lock\Cargo.toml
+2026-10-13T17:33:58.4832752Z   - D:\uv\crates\uv-logging\Cargo.toml
+2026-10-13T17:33:58.4832869Z   - D:\uv\crates\uv-macros\Cargo.toml
+2026-10-13T17:33:58.4832988Z   - D:\uv\crates\uv-metadata\Cargo.toml
+2026-10-13T17:33:58.4833109Z   - D:\uv\crates\uv-netrc\Cargo.toml
+2026-10-13T17:33:58.4833230Z   - D:\uv\crates\uv-normalize\Cargo.toml
+2026-10-13T17:33:58.4833353Z   - D:\uv\crates\uv-once-map\Cargo.toml
+2026-10-13T17:33:58.4833500Z   - D:\uv\crates\uv-options-metadata\Cargo.toml
+2026-10-13T17:33:58.4833634Z   - D:\uv\crates\uv-pep440\Cargo.toml
+2026-10-13T17:33:58.4833749Z   - D:\uv\crates\uv-pep508\Cargo.toml
+2026-10-13T17:33:58.4833898Z   - D:\uv\crates\uv-performance-memory-allocator\Cargo.toml
+2026-10-13T17:33:58.4834068Z   - D:\uv\crates\uv-pip-commands\Cargo.toml
+2026-10-13T17:33:58.4834203Z   - D:\uv\crates\uv-platform-tags\Cargo.toml
+2026-10-13T17:33:58.4834329Z   - D:\uv\crates\uv-platform\Cargo.toml
+2026-10-13T17:33:58.4834450Z   - D:\uv\crates\uv-preview\Cargo.toml
+2026-10-13T17:33:58.4834580Z   - D:\uv\crates\uv-project-commands\Cargo.toml
+2026-10-13T17:33:58.4834736Z   - D:\uv\crates\uv-project-edit\Cargo.toml
+2026-10-13T17:33:58.4834871Z   - D:\uv\crates\uv-publish-commands\Cargo.toml
+2026-10-13T17:33:58.4835007Z   - D:\uv\crates\uv-publish\Cargo.toml
+2026-10-13T17:33:58.4835129Z   - D:\uv\crates\uv-pypi-types\Cargo.toml
+2026-10-13T17:33:58.4835326Z   - D:\uv\crates\uv-python-commands\Cargo.toml
+2026-10-13T17:33:58.4835468Z   - D:\uv\crates\uv-python-discovery\Cargo.toml
+2026-10-13T17:33:58.4835625Z   - D:\uv\crates\uv-python-interpreter\Cargo.toml
+2026-10-13T17:33:58.4835767Z   - D:\uv\crates\uv-python-managed\Cargo.toml
+2026-10-13T17:33:58.4835904Z   - D:\uv\crates\uv-python-types\Cargo.toml
+2026-10-13T17:33:58.4845700Z   - D:\uv\crates\uv-redacted\Cargo.toml
+2026-10-13T17:33:58.4845864Z   - D:\uv\crates\uv-requirements-txt\Cargo.toml
+2026-10-13T17:33:58.4846001Z   - D:\uv\crates\uv-requirements\Cargo.toml
+2026-10-13T17:33:58.4846139Z   - D:\uv\crates\uv-resolve-operations\Cargo.toml
+2026-10-13T17:33:58.4846284Z   - D:\uv\crates\uv-resolver-types\Cargo.toml
+2026-10-13T17:33:58.4846418Z   - D:\uv\crates\uv-resolver\Cargo.toml
+2026-10-13T17:33:58.4846539Z   - D:\uv\crates\uv-scripts\Cargo.toml
+2026-10-13T17:33:58.4846656Z   - D:\uv\crates\uv-settings\Cargo.toml
+2026-10-13T17:33:58.4846772Z   - D:\uv\crates\uv-shell\Cargo.toml
+2026-10-13T17:33:58.4846895Z   - D:\uv\crates\uv-small-str\Cargo.toml
+2026-10-13T17:33:58.4847023Z   - D:\uv\crates\uv-state\Cargo.toml
+2026-10-13T17:33:58.4847145Z   - D:\uv\crates\uv-static\Cargo.toml
+2026-10-13T17:33:58.4847267Z   - D:\uv\crates\uv-test\Cargo.toml
+2026-10-13T17:33:58.4847390Z   - D:\uv\crates\uv-threads\Cargo.toml
+2026-10-13T17:33:58.4848861Z   - D:\uv\crates\uv-toml\Cargo.toml
+2026-10-13T17:33:58.4849643Z   - D:\uv\crates\uv-tool-commands\Cargo.toml
+2026-10-13T17:33:58.4849783Z   - D:\uv\crates\uv-tool\Cargo.toml
+2026-10-13T17:33:58.4849899Z   - D:\uv\crates\uv-torch\Cargo.toml
+2026-10-13T17:33:58.4850040Z   - D:\uv\crates\uv-trampoline-builder\Cargo.toml
+2026-10-13T17:33:58.4850193Z   - D:\uv\crates\uv-trampoline\.cargo\config.toml
+2026-10-13T17:33:58.4850340Z   - D:\uv\crates\uv-trampoline\rust-toolchain.toml
+2026-10-13T17:33:58.4850478Z   - D:\uv\crates\uv-types\Cargo.toml
+2026-10-13T17:33:58.4850597Z   - D:\uv\crates\uv-unix\Cargo.toml
+2026-10-13T17:33:58.4850716Z   - D:\uv\crates\uv-version\Cargo.toml
+2026-10-13T17:33:58.4850839Z   - D:\uv\crates\uv-virtualenv\Cargo.toml
+2026-10-13T17:33:58.4850971Z   - D:\uv\crates\uv-warnings\Cargo.toml
+2026-10-13T17:33:58.4851093Z   - D:\uv\crates\uv-windows\Cargo.toml
+2026-10-13T17:33:58.4851224Z   - D:\uv\crates\uv-workspace-commands\Cargo.toml
+2026-10-13T17:33:58.4851365Z   - D:\uv\crates\uv-workspace\Cargo.toml
+2026-10-13T17:33:58.4851496Z   - D:\uv\crates\uv\Cargo.toml
+2026-10-13T17:33:58.4851616Z   - D:\uv\rust-toolchain.toml
+2026-10-13T17:33:58.4851833Z ##[endgroup]
+2026-10-13T17:33:58.4851889Z 
+2026-10-13T17:33:58.4851934Z ... Restoring cache ...
+2026-10-13T17:33:58.5711664Z Cache hit for: v1-rust-workspace-ffaebc8a9d20a2aef4ea2ed2802e527a86508037a34d3c79755e786a375045b4-Windows_NT-x64-733c1100-071f5a27
+2026-10-13T17:33:59.6571243Z Received 268435456 of 806669843 (33.3%), 252.5 MBs/sec
+2026-10-13T17:34:00.6573496Z Received 553648128 of 806669843 (68.6%), 262.2 MBs/sec
+2026-10-13T17:34:01.3983169Z Received 806669843 of 806669843 (100.0%), 279.2 MBs/sec
+2026-10-13T17:34:01.3989651Z Cache Size: ~769 MB (806669843 B)
+2026-10-13T17:34:01.4016308Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/68c839c1-db4a-4480-8f60-725da4db08b9/cache.tzst -P -C D:/a/uv/uv --force-local --use-compress-program "zstd -d"
+2026-10-13T17:34:15.1653452Z Cache restored successfully
+2026-10-13T17:34:15.2019350Z Restored from cache key "v1-rust-workspace-ffaebc8a9d20a2aef4ea2ed2802e527a86508037a34d3c79755e786a375045b4-Windows_NT-x64-733c1100-071f5a27" full match: true.
+2026-10-13T17:34:15.2171305Z ##[group]Run New-Item -Path "C:\uv" -ItemType Directory -Force
+2026-10-13T17:34:15.2171587Z [36;1mNew-Item -Path "C:\uv" -ItemType Directory -Force[0m
+2026-10-13T17:34:15.2192130Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"

@@ -70,6 +70,11 @@ LOG_CONCLUSIONS = ("success", "failure")
 PR_EVENTS = ("pull_request", "pull_request_target")
 
 
+def _parsed_by_older_parser(ledger: m.JobLogFetch) -> bool:
+    """A log that yielded no cache line under an older parser is read again: the parser may recognise more now."""
+    return ledger.status == "parsed_no_events" and ledger.parser_version != PARSER_VERSION
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -448,7 +453,7 @@ class RepoIngestor:
             if job.conclusion not in LOG_CONCLUSIONS:
                 continue
             ledger = self.db.get(m.JobLogFetch, job.github_job_id)
-            if ledger is None or ledger.status in LOG_RETRY:
+            if ledger is None or ledger.status in LOG_RETRY or _parsed_by_older_parser(ledger):
                 return True
         return False
 
@@ -761,7 +766,7 @@ class RepoIngestor:
         pending: list[m.WorkflowJob] = []
         for job in self.db.query(m.WorkflowJob).filter_by(run_id=run.run_id).order_by(m.WorkflowJob.github_job_id).all():
             ledger = self.db.get(m.JobLogFetch, job.github_job_id)
-            if ledger is not None and ledger.status in LOG_TERMINAL:
+            if ledger is not None and ledger.status in LOG_TERMINAL and not _parsed_by_older_parser(ledger):
                 continue
             reason = self._skip_reason(run, job, jobs_yaml)
             if reason is not None:

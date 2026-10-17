@@ -36,6 +36,7 @@ class JobMatcher:
     key: str
     regex: re.Pattern[str]
     specificity: int  # number of literal characters in the name template
+    matrix: bool = False  # the job has a ``strategy.matrix``
 
 
 def _template_to_regex(template: str, has_matrix: bool, is_reusable_call: bool) -> tuple[re.Pattern[str], int]:
@@ -65,11 +66,11 @@ def build_matchers(jobs: dict[str, Any]) -> list[JobMatcher]:
         has_matrix = bool((body.get("strategy") or {}).get("matrix")) if isinstance(body.get("strategy"), dict) else False
         is_call = "uses" in body
         rx, literal = _template_to_regex(template, has_matrix, is_call)
-        matchers.append(JobMatcher(str(key), rx, literal))
+        matchers.append(JobMatcher(str(key), rx, literal, has_matrix))
         # A job whose name template is customised can still appear under its key.
         if template != str(key):
             rx2, lit2 = _template_to_regex(str(key), has_matrix, is_call)
-            matchers.append(JobMatcher(str(key), rx2, lit2))
+            matchers.append(JobMatcher(str(key), rx2, lit2, has_matrix))
     return matchers
 
 
@@ -79,7 +80,14 @@ def match_job_key(api_job_name: str, matchers: list[JobMatcher]) -> str | None:
     if not hits:
         return None
     best = max(m.specificity for m in hits)
-    keys = {m.key for m in hits if m.specificity == best}
+    top = [m for m in hits if m.specificity == best]
+    keys = {m.key for m in top}
+    if len(keys) > 1:
+        # Two jobs share one display name (prometheus: a matrix job and the aggregator job that gives branch protection
+        # a stable name).  GitHub appends " (<matrix values>)" to every matrix cell, so a name without that suffix cannot
+        # be a matrix cell and one with it cannot be a plain job.  Only used to break a tie, never to override a match.
+        suffixed = re.search(r" \(.*\)$", api_job_name) is not None
+        keys = {m.key for m in top if m.matrix == suffixed}
     return next(iter(keys)) if len(keys) == 1 else None
 
 

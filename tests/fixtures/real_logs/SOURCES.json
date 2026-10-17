@@ -128,5 +128,20 @@
         null
       ]
     ]
+  },
+  "rust_cache_exact_hit": {
+    "repo": "astral-sh/uv",
+    "run_id": null,
+    "job_id": 115442187559,
+    "job_name": "test / cargo test on windows 1 of 3",
+    "outcome": "exact_hit",
+    "n_events": 1,
+    "excerpt_lines": 175,
+    "kinds": [
+      [
+        "restore_hit",
+        "exact"
+      ]
+    ]
   }
 }

@@ -141,3 +141,17 @@ class TestRealLogExcerpts:
         assert parsed.events, f"{name}: no cache events parsed from a real log excerpt"
         assert [(e.kind, e.restore_kind) for e in parsed.events] == [tuple(k) for k in meta["kinds"]]
         assert derive_job_label(parsed.events).outcome == meta["outcome"]
+
+
+def test_rust_cache_partial_match_and_no_cache_lines():
+    """Swatinem/rust-cache states in the log whether the restored key was the requested one (exact fixture:
+    rust_cache_exact_hit.txt); the partial and the miss line are built from the action's documented output."""
+    p = parse_log_lines([
+        "##[group]Run Swatinem/rust-cache@abc",
+        "##[endgroup]",
+        'Restored from cache key "v1-rust-old" full match: false.',
+    ])
+    assert [(e.kind, e.restore_kind) for e in p.events] == [("restore_hit", "partial")]
+    assert derive_job_label(p.events).outcome == "partial_hit"
+    q = parse_log_lines(["##[group]Run Swatinem/rust-cache@abc", "##[endgroup]", "No cache found."])
+    assert derive_job_label(q.events).outcome == "miss"

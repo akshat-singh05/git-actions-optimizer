@@ -75,7 +75,16 @@ def test_expression_that_expands_to_nothing_still_maps():
 
 
 def test_two_jobs_with_the_same_display_name_stay_unmapped():
-    """Real case (prometheus): two job keys share one display name; guessing would mislabel data."""
-    jobs = {"test_go_oldest": {"name": "Go tests with previous Go version"},
+    """Two plain jobs (no matrix) share one display name: nothing tells them apart, so guessing would mislabel data."""
+    jobs = {"a": {"name": "Same name"}, "b": {"name": "Same name"}}
+    assert match_job_key("Same name", build_matchers(jobs)) is None
+
+
+def test_matrix_job_and_aggregator_with_the_same_display_name_are_told_apart():
+    """Real case (prometheus): a matrix job and the status job that gives branch protection a stable name share one name.
+    GitHub appends the matrix values to a matrix cell's name, so the suffix decides."""
+    jobs = {"test_go_oldest": {"name": "Go tests with previous Go version", "strategy": {"matrix": {"go_version": ["1.26"]}}},
             "test_go_oldest_status": {"name": "Go tests with previous Go version"}}
-    assert match_job_key("Go tests with previous Go version", build_matchers(jobs)) is None
+    ms = build_matchers(jobs)
+    assert match_job_key("Go tests with previous Go version (1.26)", ms) == "test_go_oldest"
+    assert match_job_key("Go tests with previous Go version", ms) == "test_go_oldest_status"
