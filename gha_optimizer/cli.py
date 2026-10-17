@@ -415,6 +415,7 @@ def cmd_live_evaluate(args: argparse.Namespace) -> None:
     _use_db(args)
     from datetime import datetime, timezone
 
+    from gha_optimizer.ingestion.github_client import GithubAPIError
     from gha_optimizer.ingestion.history import load_history
     from gha_optimizer.ingestion.ingest import IngestOptions, RepoIngestor
     from gha_optimizer.live import evaluate_ledger, read_ledger, render_live
@@ -428,13 +429,20 @@ def cmd_live_evaluate(args: argparse.Namespace) -> None:
     db = SessionLocal()
     try:
         opts = IngestOptions(since=datetime.now(timezone.utc).replace(tzinfo=None), workflows=[args.workflow_path],
-                             fetch_logs=False, use_mirror=True)
+                             fetch_logs=False, use_mirror=True,
+                             mirror_refresh=False)   # one run at a time: refreshing the mirror for each cost ~19 s; missing commits are fetched on demand
         pending = 0
+        failed_runs: list[str] = []
         for r in scored:
-            if client.get_run(r["run_id"]).get("status") != "completed":
-                pending += 1
-                continue
-            RepoIngestor(args.repo, client, db, opts).ingest_single_run(r["run_id"])
+            try:
+                if client.get_run(r["run_id"]).get("status") != "completed":
+                    pending += 1
+                    continue
+                RepoIngestor(args.repo, client, db, opts).ingest_single_run(r["run_id"])
+            except GithubAPIError as exc:       # a transient GitHub error must not discard the other runs' outcomes
+                db.rollback()
+                failed_runs.append(str(r["run_id"]))
+                logger.warning("run %s skipped in the evaluation: %s", r["run_id"], exc)
         history = load_history(db, args.repo, args.workflow_path)
     finally:
         db.close()
@@ -442,9 +450,12 @@ def cmd_live_evaluate(args: argparse.Namespace) -> None:
                 for r in history}
     result = evaluate_ledger(rows, outcomes)
     result["runs_not_completed_yet"] = pending
+    result["runs_failed_to_fetch"] = len(failed_runs)
     text = render_live(result, str(ledger), scored[0]["scored_at"] if scored else None, scored[-1]["scored_at"] if scored else None)
     if pending:
         text += f"\n{pending} scored run(s) had not completed when this was evaluated and are not included.\n"
+    if failed_runs:
+        text += f"\n{len(failed_runs)} scored run(s) could not be fetched from GitHub (server errors after retries) and are not included.\n"
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
