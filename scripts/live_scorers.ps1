@@ -1,68 +1,83 @@
 <#
 .SYNOPSIS
-  Keep the prospective live scorers (gha-optimizer live-score) running; meant to be left open in a terminal tab.
+  Install, inspect and remove the durable prospective live-test runner (gha-optimizer live-score for uv, ruff and prometheus).
 
 .DESCRIPTION
-  Default: a supervisor that stays in the foreground, starts a scorer for each repository of the live test if none is running,
-  checks every minute, restarts one whose window ended or that died, and prints one status line per check.  Stop it with Ctrl-C
-  (the scorers keep running; use -Stop to stop them too).
+  Default (no switch): register the Windows Task Scheduler task "GHA-Optimizer-LiveSupervisor" if missing and start it.
+  The task runs scripts/live_supervisor.py with pythonw.exe (no console window), starts at logon, re-checks every 15 minutes and
+  is independent of the Claude app and of any terminal tab; the supervisor itself keeps one scorer per repository alive
+  (12 h windows, restart with back-off) and takes a single-instance lock.  Needs no administrator rights.
 
-  Why a terminal tab and not a background task: processes started by a Claude session, by a scheduled Claude task, through WMI or
-  through the Windows Task Scheduler all died here within seconds or when their session ended (the first scorers left gaps in the
-  ledgers).  A process tree started in the user's own interactive terminal lives as long as that terminal.
+  Why pythonw: a *console* program started by the Task Scheduler, by WMI or by a Claude session was killed within seconds or when
+  the session ended (exit code 0xC000013A, a Ctrl-C event when the console goes away); a console-less process is not.
 
-  -Status : print what is running and the ledger sizes, then exit.
-  -Stop   : stop every scorer (and its wrapper) and exit.
-  Each scorer appends to its own hash-chained ledger under .gha_optimizer/live/ and never re-scores a run already in it;
-  the GitHub token is read by scripts/run_scorer.ps1 with `gh auth token` into that process's environment only.
+  -Status : task state, running supervisor / scorers, ledger sizes and the last supervisor log lines.
+  -Stop   : unregister the task and stop the supervisor and the scorers (use this when the live test is over).
+  The GitHub token comes from `gh auth token` inside the supervisor and lives only in each scorer's environment.
 #>
 param(
-    [int]$Minutes = 720,
-    [int]$PollSeconds = 30,
     [switch]$Status,
     [switch]$Stop
 )
 
+$ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$targets = @(
-    @{ repo = "astral-sh/uv";            workflow = ".github/workflows/ci.yml" },
-    @{ repo = "astral-sh/ruff";          workflow = ".github/workflows/ci.yaml" },
-    @{ repo = "prometheus/prometheus";   workflow = ".github/workflows/ci.yml" }
-)
-function Get-Procs([string]$repo) {
+$taskName = "GHA-Optimizer-LiveSupervisor"
+$targets = "astral-sh/uv", "astral-sh/ruff", "prometheus/prometheus"
+
+function Get-LiveProcs {
     Get-CimInstance Win32_Process | Where-Object {
-        ($_.Name -in @("python.exe", "powershell.exe")) -and $_.CommandLine -match "(live-score|run_scorer\.ps1)" -and
-        $_.CommandLine -match ("(--repo|-Repo) ""?" + [regex]::Escape($repo) + """?(\s|$)") }
+        ($_.Name -in @("python.exe", "pythonw.exe")) -and $_.CommandLine -match "(live-score|live_supervisor\.py)" }
 }
 function Ledger-Lines([string]$repo) {
     $f = Join-Path $root (".gha_optimizer\live\" + ($repo -replace "/", "__") + ".jsonl")
     if (Test-Path $f) { (Get-Content $f | Measure-Object -Line).Lines } else { 0 }
 }
 
-if ($Stop) {
-    # the supervisor first, otherwise it would restart what is stopped
-    Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" | Where-Object { $_.CommandLine -match "live_scorers\.ps1" -and $_.ProcessId -ne $PID -and $_.CommandLine -notmatch "-Stop|-Status" } |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; "stopped supervisor (pid $($_.ProcessId))" }
-    foreach ($t in $targets) { foreach ($p in @(Get-Procs $t.repo)) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue; "stopped $($t.repo) (pid $($p.ProcessId))" } }
+if ($Status) {
+    $t = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    "task $taskName : " + $(if ($t) { $t.State } else { "NOT registered" })
+    $procs = @(Get-LiveProcs)
+    "supervisor running: " + [bool]($procs | Where-Object { $_.CommandLine -match "live_supervisor\.py" })
+    foreach ($r in $targets) {
+        $up = [bool]($procs | Where-Object { $_.CommandLine -match [regex]::Escape("--repo $r ") })
+        "{0,-24} {1,-11} ledger entries: {2}" -f $r, $(if ($up) { "running" } else { "NOT running" }), (Ledger-Lines $r)
+    }
+    $log = Join-Path $root ".gha_optimizer\live\logs\supervisor.log"
+    if (Test-Path $log) { "--- supervisor.log (last 5)"; Get-Content $log -Tail 5 }
     return
 }
-if ($Status) {
-    foreach ($t in $targets) { "{0,-24} {1,-9} ledger entries: {2}" -f $t.repo, $(if (Get-Procs $t.repo) { "running" } else { "NOT running" }), (Ledger-Lines $t.repo) }
+
+if ($Stop) {
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+        "unregistered $taskName"
+    }
+    # the supervisor first (it would restart the scorers), then the scorers
+    foreach ($p in @(Get-LiveProcs | Sort-Object { if ($_.CommandLine -match "live_supervisor") { 0 } else { 1 } })) {
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        "stopped pid $($p.ProcessId)"
+    }
+    Remove-Item (Join-Path $root ".gha_optimizer\live\supervisor.pid") -ErrorAction SilentlyContinue
     return
 }
 
 if (-not (gh auth token)) { throw "gh auth token returned nothing: run `gh auth login` first" }
 New-Item -ItemType Directory -Force (Join-Path $root ".gha_optimizer\live\logs") | Out-Null
-"live-scorer supervisor started $(Get-Date -Format s); Ctrl-C leaves the scorers running, -Stop stops them"
-while ($true) {
-    foreach ($t in $targets) {
-        if (-not (Get-Procs $t.repo)) {
-            Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -WorkingDirectory $root -ArgumentList @(
-                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$root\scripts\run_scorer.ps1`"", "-Repo", "`"$($t.repo)`"",
-                "-Workflow", "`"$($t.workflow)`"", "-Minutes", "$Minutes", "-PollSeconds", "$PollSeconds") | Out-Null
-            "$(Get-Date -Format s) started $($t.repo)"
-        }
-    }
-    Start-Sleep -Seconds 60
-    "$(Get-Date -Format s) " + ((@($targets | ForEach-Object { "{0}: {1} ({2})" -f ($_.repo -split "/")[1], $(if (Get-Procs $_.repo) { "up" } else { "DOWN" }), (Ledger-Lines $_.repo) })) -join "   ")
+$pythonw = Join-Path $root ".venv\Scripts\pythonw.exe"
+if (-not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
+    $action = New-ScheduledTaskAction -Execute $pythonw -Argument "-W ignore `"$root\scripts\live_supervisor.py`"" -WorkingDirectory $root
+    $triggers = @(
+        (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"),
+        (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Days 30))
+    )
+    $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5)
+    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal `
+        -Description "Prospective live test of the GHA optimizer (docs/BACKGROUND_RUNBOOK.md). Remove with: scripts/live_scorers.ps1 -Stop" | Out-Null
+    "registered $taskName"
 }
+Start-ScheduledTask -TaskName $taskName
+"started $taskName; check with: scripts/live_scorers.ps1 -Status"
