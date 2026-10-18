@@ -31,3 +31,11 @@ def test_run_metrics_and_needs_check():
     assert m["critical_path_s"] == 117 and m["billable_job_s"] == 27 + 89 and m["job_s"]["test"] == 89
     assert mw.needs_respected(jobs, {"test": ["lint"]}) is True
     assert mw.needs_respected([job("lint", 3, 30), job("test", 10, 120)], {"test": ["lint"]}) is False
+
+
+def test_rank_permutation_p_separates_what_the_median_test_cannot():
+    """Fully separated groups of 7: the exact rank test gives 2/3432; the difference-of-medians test stays near 0.1 (many splits share a median)."""
+    a, b = [49, 45, 47, 45, 39, 43, 46], [29, 26, 28, 28, 27, 30, 26]
+    assert mw.rank_permutation_p(a, b) == pytest.approx(2 / 3432, abs=1e-6)
+    assert mw.permutation_p(a, b) > 0.05
+    assert mw.rank_permutation_p([5, 5, 5], [5, 5, 5]) == 1.0
