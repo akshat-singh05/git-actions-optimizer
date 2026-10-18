@@ -57,7 +57,8 @@ from gha_optimizer.ingestion.history import InsufficientHistoryError, load_step_
 from gha_optimizer.ingestion.mirror import DEFAULT_MIRROR_ROOT, RepoMirror
 from gha_optimizer.ingestion.workflow_parser import parse_workflow
 from gha_optimizer.ingestion.workspace import prepare_repo_snapshot
-from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
+from gha_optimizer.graph.ci_semantics import workflow_cannot_restore_cache
+from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, NoCacheModel
 from gha_optimizer.models.calibration import OutOfSampleCalibrator, out_of_sample_predictions
 from gha_optimizer.models.duration_estimator import DurationEstimator
 from gha_optimizer.models.failure_predictor import FailurePredictor
@@ -67,7 +68,7 @@ from gha_optimizer.server.db.session import SessionLocal, init_db
 
 logger = logging.getLogger(__name__)
 
-RESULT_VERSION = 7          # bump when the payload or anything it is computed from changes meaning
+RESULT_VERSION = 8          # bump when the payload or anything it is computed from changes meaning
 DEFAULT_CACHE_DIR = Path(".gha_optimizer") / "dashboard_cache"
 # executed benchmarks of the project (docs/<folder>/summary.json + timings.json): real GitHub Actions runs of original vs proposed workflow
 MEASURED_RUNS = {
@@ -380,7 +381,8 @@ class DashboardService:
             "comparison_cache_touched": sorted(cache_keys_touched_by(full_graph, alt_changed)) if alt_changed else [],
         }
         try:
-            require_history(snap.history, workflow.jobs.keys(), config.model.min_history_runs, config.model.min_cache_labels,
+            no_cache_possible = workflow_cannot_restore_cache(workflow.raw.get("jobs") or {})   # no cache labels can exist: the report-only cache model is skipped
+            require_history(snap.history, workflow.jobs.keys(), config.model.min_history_runs, 0 if no_cache_possible else config.model.min_cache_labels,
                             need_failure_labels=True)
         except InsufficientHistoryError as exc:
             results.update(declined=True, reason=str(exc), hint="ingest more real history (with job logs); no synthetic data is substituted")
@@ -402,11 +404,12 @@ class DashboardService:
         progress(6, "cache-miss, failure and duration models")
         trained: dict[str, Any] = {}
         step7: dict[str, Any] = {}
-        for name, model in {"cache_miss": CacheMissPredictor(), "failure": FailurePredictor(), "duration": DurationEstimator()}.items():
+        for name, model in {"cache_miss": NoCacheModel() if no_cache_possible else CacheMissPredictor(), "failure": FailurePredictor(), "duration": DurationEstimator()}.items():
             try:
                 metrics = model.fit(train_df)
                 trained[name] = model
-                step7[name] = {**{k: _num(v) for k, v in metrics.items()}, "status": "TRAINED"}
+                step7[name] = ({"status": "NOT APPLICABLE - no step of this workflow can restore a cache, so there are no cache labels"} if isinstance(model, NoCacheModel)
+                               else {**{k: _num(v) for k, v in metrics.items()}, "status": "TRAINED"})
             except ValueError as exc:
                 step7[name] = {"status": f"NOT TRAINED - {exc}"}
         if len(trained) < 3:
@@ -547,7 +550,7 @@ class DashboardService:
         for j in ctx.job_ids:
             lookup = ctx.calibrator.lookup(fail[j]) if ctx.calibrator is not None else {"available": False}
             predictions[j] = {
-                "cache_miss": round(cache[j], 4), "failure": round(fail[j], 4), "duration": round(dur[j], 1),
+                "cache_miss": _nan_to_none(round(cache[j], 4)), "failure": round(fail[j], 4), "duration": round(dur[j], 1),
                 "failure_base_rate": _nan_to_none(round(float(infer_df.loc[j, "historical_failure_rate"]), 4)),
                 "failure_seen_like_this": lookup,
                 "structurally_impacted": _nan_to_none(infer_df.loc[j, "job_structurally_impacted"]),

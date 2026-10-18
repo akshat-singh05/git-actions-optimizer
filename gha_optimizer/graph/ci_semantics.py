@@ -356,6 +356,29 @@ def implicit_cache(uses: str, with_: dict[str, Any] | None) -> dict[str, Any] | 
     return None
 
 
+# Actions that cache in ways implicit_cache() does not model (their input names / defaults are not tracked here): treated as "may cache".
+_MAY_CACHE_ACTIONS = ("actions/cache", "actions/setup-dotnet", "ruby/setup-ruby", "pnpm/action-setup", "swatinem/rust-cache",
+                      "gradle/", "hynek/build-and-inspect-python-package", "docker/build-push-action", "docker/setup-buildx-action")
+
+
+def workflow_cannot_restore_cache(jobs: dict[str, Any]) -> bool:
+    """True only if **no step of the workflow can restore a cache**: no ``actions/cache``, no ``setup-*`` action with its cache input on, no
+    local composite action or reusable workflow (their contents are unknown) and none of the other caching actions in ``_MAY_CACHE_ACTIONS``.
+
+    Used to decide that a cache-miss model cannot exist by construction (there is no log line to label): anything unclear returns False."""
+    for body in (jobs or {}).values():
+        if not isinstance(body, dict) or "uses" in body:
+            return False
+        for step in body.get("steps") or []:
+            if not isinstance(step, dict) or not step.get("uses"):
+                continue
+            uses = str(step["uses"])
+            low = uses.lower()
+            if low.startswith("./") or low.startswith(_MAY_CACHE_ACTIONS) or implicit_cache(uses, step.get("with")) is not None:
+                return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # dorny/paths-filter
 # ---------------------------------------------------------------------------

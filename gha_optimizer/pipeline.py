@@ -39,7 +39,8 @@ from gha_optimizer.ingestion.github_client import WorkflowRunRecord
 from gha_optimizer.ingestion.history import require_history
 from gha_optimizer.ingestion.workflow_parser import WorkflowSpec, parse_workflow
 from gha_optimizer.llm_summary import LLMClient, summarize
-from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
+from gha_optimizer.graph.ci_semantics import workflow_cannot_restore_cache
+from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, NoCacheModel
 from gha_optimizer.models.duration_estimator import DurationEstimator
 from gha_optimizer.models.store import ModelStore, fingerprint
 from gha_optimizer.models.failure_predictor import FailurePredictor
@@ -146,11 +147,13 @@ def run_pipeline(
     # Cold start: decline to predict rather than invent numbers.
     if workflow_repo_path:
         history = [r for r in history if r.workflow_path in (None, workflow_repo_path)]
+    # a workflow in which no step can restore a cache has no cache labels by construction: the (report-only) cache model is skipped, not faked
+    no_cache_possible = workflow_cannot_restore_cache(workflow.raw.get("jobs") or {})
     require_history(
         history,
         workflow.jobs.keys(),
         min_runs=config.model.min_history_runs,
-        need_cache_labels=config.model.min_cache_labels,
+        need_cache_labels=0 if no_cache_possible else config.model.min_cache_labels,
         need_failure_labels=True,
     )
 
@@ -175,7 +178,7 @@ def run_pipeline(
     # ──────────────────────────────────────────────────────────────
     # Layer 3 — Train models & score current diff
     # ──────────────────────────────────────────────────────────────
-    store = ModelStore(model_dir) if model_dir is not None else None
+    store = ModelStore(model_dir) if (model_dir is not None and not no_cache_possible) else None
     fp = fingerprint(history) if store is not None else None
     loaded = store.try_load(fp, workflow_repo_path) if store is not None else None
     if loaded is not None:
@@ -184,7 +187,7 @@ def run_pipeline(
         cache_metrics, failure_metrics, duration_metrics = metrics["cache_miss"], metrics["failure"], metrics["duration"]
         model_source = f"loaded from {model_dir} (same history, features and hyper-parameters as when they were fit)"
     else:
-        cache_model = CacheMissPredictor()
+        cache_model = NoCacheModel() if no_cache_possible else CacheMissPredictor()
         failure_model = FailurePredictor()
         duration_model = DurationEstimator()
 
@@ -221,7 +224,7 @@ def run_pipeline(
     for job_id in workflow.jobs:
         predictions.append(PredictionResult(
             job_id=job_id,
-            cache_miss_probability=cache_miss_prob[job_id],
+            cache_miss_probability=None if cache_miss_prob[job_id] != cache_miss_prob[job_id] else cache_miss_prob[job_id],   # NaN -> not predicted
             failure_probability=failure_prob[job_id],
             predicted_duration_seconds=duration_pred[job_id],
             status=PredictionStatus.PREDICTED,
@@ -302,17 +305,20 @@ def run_pipeline(
     ]
     labelled_jobs = {r.job_id for r in history if r.cache_hit is not None}
     unsupported = [j for j in workflow.jobs if j not in labelled_jobs]
-    if unsupported:
+    if no_cache_possible:
+        model_lines.append("- P(cache miss) is not defined for this workflow: no step of it can restore a cache, so there are no cache labels (reported as n/a; it never entered the schedule)")
+    elif unsupported:
         model_lines.append(
             f"- P(cache miss) for {unsupported} is NOT backed by any log-derived label for that job "
             "(the model extrapolates its overall base rate); it is informational only and is not used by the scheduler"
         )
 
     # Feature importance
-    model_lines.append("")
-    model_lines.append("### Top feature importances (cache-miss)")
-    for feat, imp in list(cache_model.feature_importance.items())[:5]:
-        model_lines.append(f"  - {feat}: {imp:.4f}")
+    if not no_cache_possible:
+        model_lines.append("")
+        model_lines.append("### Top feature importances (cache-miss)")
+        for feat, imp in list(cache_model.feature_importance.items())[:5]:
+            model_lines.append(f"  - {feat}: {imp:.4f}")
 
     full_explanation = explanation + "\n".join(model_lines)
 
