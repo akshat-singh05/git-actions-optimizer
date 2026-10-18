@@ -455,31 +455,31 @@ function pageRepository(d) {
 }
 const typeCounts = (o) => `<div class="chips">${Object.entries(o).map(([t, c]) => `<span class="tag blue">${esc(t)}: ${c}</span>`).join('')}</div>`;
 function pageSource(d) {
-  const g = d.step2_source_graph, v = g.view || {};
-  const left = (v.dirs || []).map(x => ({ id: x.id, label: x.label, size: x.files })), right = (v.packages || []).map(x => ({ id: x.id, label: x.label, type: 'Package', size: x.importers }));
-  return `<div class="panel"><h3>What each part of the repository imports</h3><div class="hint">${g.node_count} nodes and ${g.edge_count} edges from ${g.files_parsed} parsed files, summarised at directory level (depth ${v.depth || '-'}): the ${right.length} most-imported packages and the directories that import them. Counts in brackets are files.</div>
-    ${bipartite(left, right, v.edges || [], { leftName: 'directory (files)' })}</div>
-    ${pageSourceExplorer(v)}
-    <div class="panel"><h3>Node types</h3>${typeCounts(g.node_types)}
-      <div class="hint" style="margin-top:12px">Discovered dependencies (first ${g.edges.length})</div>${table(['From', 'To', 'Type'], g.edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(e.type.replace('EdgeType.', ''))}</span>`]))}</div>`;
-}
-function pageSourceExplorer(v) {
-  const fi = v.file_imports || {}, names = v.pkg_names || [];
-  if (!Object.keys(fi).length) return '';
+  const g = d.step2_source_graph, v = g.view || {}, fi = v.file_imports || {};
   const depth = v.depth || 1, dirOf = (p) => { const x = p.split('/'); return x.length === 1 ? '(root)' : (x.length > depth ? x.slice(0, depth).join('/') : x.slice(0, -1).join('/')); };
   const dirs = {}; Object.keys(fi).forEach(p => { (dirs[dirOf(p)] = dirs[dirOf(p)] || []).push(p); });
   const dirList = Object.keys(dirs).sort((a, b) => dirs[b].length - dirs[a].length);
-  return `<div class="panel"><h3>Explore: pick a directory or a file, see the packages it is connected to</h3>
-    <div class="hint">${Object.keys(fi).length} files with their imports${v.file_imports_truncated ? ' (the first 3,000 only)' : ''}. Choose a directory, then optionally one file.</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      <select id="srcDir" class="sel">${dirList.map(x => `<option value="${esc(x)}">${esc(x)} (${dirs[x].length} files)</option>`).join('')}</select>
-      <select id="srcFile" class="sel"></select></div><div id="srcOut"></div></div>`;
+  const selectors = dirList.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0">
+      <select id="srcDir" class="sel"><option value="">all directories (overview)</option>${dirList.map(x => `<option value="${esc(x)}">${esc(x)} (${dirs[x].length} files)</option>`).join('')}</select>
+      <select id="srcFile" class="sel" disabled><option value="">pick a directory first</option></select></div>` : '';
+  return `<div class="panel"><h3>What the repository imports</h3>
+    <div class="hint">${g.node_count} nodes and ${g.edge_count} edges from ${g.files_parsed} parsed files. The graph starts as the directory-level overview (depth ${v.depth || '-'}); pick a directory, then optionally one file, to see the packages it is connected to${v.file_imports_truncated ? ' (file detail covers the first 3,000 files only)' : ''}.</div>
+    ${selectors}<div id="srcOut"></div></div>
+    <div class="panel"><h3>Node types</h3>${typeCounts(g.node_types)}
+      <div class="hint" style="margin-top:12px">Discovered dependencies (first ${g.edges.length})</div>${table(['From', 'To', 'Type'], g.edges.map(e => [esc(e.from), esc(e.to), `<span class="tag grey">${esc(e.type.replace('EdgeType.', ''))}</span>`]))}</div>`;
 }
 function wireSourceExplorer() {
-  const v = (S.result.step2_source_graph || {}).view || {}, fi = v.file_imports || {}, names = v.pkg_names || [];
-  const dsel = $('srcDir'), fsel = $('srcFile'), out = $('srcOut'); if (!dsel) return;
+  const g = S.result.step2_source_graph || {}, v = g.view || {}, fi = v.file_imports || {}, names = v.pkg_names || [];
+  const out = $('srcOut'); if (!out) return;
+  const dsel = $('srcDir'), fsel = $('srcFile');
   const depth = v.depth || 1, dirOf = (p) => { const x = p.split('/'); return x.length === 1 ? '(root)' : (x.length > depth ? x.slice(0, depth).join('/') : x.slice(0, -1).join('/')); };
-  const render = () => {
+  const overview = () => {
+    const left = (v.dirs || []).map(x => ({ id: x.id, label: x.label, size: x.files })), right = (v.packages || []).map(x => ({ id: x.id, label: x.label, type: 'Package', size: x.importers }));
+    out.innerHTML = `<div class="hint">Overview: the ${right.length} most-imported packages and the directories that import them. Counts in brackets are files.</div>` +
+      bipartite(left, right, v.edges || [], { leftName: 'directory (files)' });
+    wireZoom();
+  };
+  const detail = () => {
     const files = Object.keys(fi).filter(p => dirOf(p) === dsel.value).sort(), chosen = fsel.value;
     const useFiles = chosen ? [chosen] : files, counts = {};
     useFiles.forEach(f => fi[f].forEach(i => { counts[i] = (counts[i] || 0) + 1; }));
@@ -492,8 +492,17 @@ function wireSourceExplorer() {
       table(['Package', chosen ? 'Imported' : 'Files importing it'], Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([i, c]) => [esc(names[i]), c]));
     wireZoom();
   };
-  const fill = () => { const files = Object.keys(fi).filter(p => dirOf(p) === dsel.value).sort(); fsel.innerHTML = '<option value="">all files in this directory</option>' + files.map(f => `<option value="${esc(f)}">${esc(f.split('/').pop())}</option>`).join(''); render(); };
-  dsel.onchange = fill; fsel.onchange = render; fill();
+  const fillFiles = () => {
+    if (!dsel.value) { fsel.disabled = true; fsel.innerHTML = '<option value="">pick a directory first</option>'; return; }
+    const files = Object.keys(fi).filter(p => dirOf(p) === dsel.value).sort();
+    fsel.disabled = false;
+    fsel.innerHTML = '<option value="">all files in this directory</option>' + files.map(f => `<option value="${esc(f)}">${esc(f.split('/').pop())}</option>`).join('');
+  };
+  overview();
+  if (dsel) {
+    dsel.onchange = () => { fillFiles(); dsel.value ? detail() : overview(); };
+    fsel.onchange = detail;
+  }
 }
 function pageCI(d) {
   const g = d.step3_ci_graph, v = g.view;
