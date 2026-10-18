@@ -43,6 +43,7 @@ from gha_optimizer.features.feature_extraction import (
     compute_history_stats,
 )
 from gha_optimizer.gates import plan_relaxation, validate_relaxation
+from gha_optimizer.install_pruning import plan_install_pruning, validate_pruning
 from gha_optimizer.generator.workflow_writer import generate_diff, generate_optimized_workflow, write_workflow
 from gha_optimizer.graph.builder import GraphBuilder
 from gha_optimizer.graph.dependency_graph import (
@@ -52,7 +53,8 @@ from gha_optimizer.graph.dependency_graph import (
     impacted_jobs_for_diff,
 )
 from gha_optimizer.graph.fusion import GraphFusion
-from gha_optimizer.ingestion.history import InsufficientHistoryError, require_history
+from gha_optimizer.ingestion.history import InsufficientHistoryError, load_step_seconds, require_history
+from gha_optimizer.ingestion.mirror import DEFAULT_MIRROR_ROOT, RepoMirror
 from gha_optimizer.ingestion.workflow_parser import parse_workflow
 from gha_optimizer.ingestion.workspace import prepare_repo_snapshot
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor
@@ -65,13 +67,14 @@ from gha_optimizer.server.db.session import SessionLocal, init_db
 
 logger = logging.getLogger(__name__)
 
-RESULT_VERSION = 6          # bump when the payload or anything it is computed from changes meaning
+RESULT_VERSION = 7          # bump when the payload or anything it is computed from changes meaning
 DEFAULT_CACHE_DIR = Path(".gha_optimizer") / "dashboard_cache"
 # executed benchmarks of the project (docs/<folder>/summary.json + timings.json): real GitHub Actions runs of original vs proposed workflow
 MEASURED_RUNS = {
     "akshat-singh05/git-actions-optimizer": [
         ("relax_run", "Opt-in safe gate relaxation vs the original workflow"),
         ("validity_run", "Default proposal vs the original workflow"),
+        ("speedup_run", "Both opt-in levers (gate relaxation + install pruning) vs the original workflow"),
     ],
 }
 STAGES = [
@@ -440,7 +443,34 @@ class DashboardService:
         # opt-in lever, reported but NOT applied to the default proposal (rule 7): only gate-only `needs` edges that gates.py proves safe
         rel = plan_relaxation(workflow, {jp.job_id: jp.estimated_duration_seconds for jp in plan.jobs},
                               {j: (scored["predictions"][j]["failure_base_rate"] or 0.0) for j in job_ids})
+        # opt-in lever 2: project-dependency installs a tool-only job does not need (gha_optimizer/install_pruning.py). The requirement files are read from the
+        # git mirror at the snapshot's commit (the exported tree holds only source files).
+        mirror = RepoMirror(repo, DEFAULT_MIRROR_ROOT)
+
+        def read_from_mirror(rel: str) -> str | None:
+            got = mirror.read_file(snap.sha, rel[2:] if rel.startswith("./") else rel)
+            return got[1].decode("utf-8", "replace") if got else None
+
+        db2 = SessionLocal()
+        try:
+            step_seconds = load_step_seconds(db2, repo, snap.workflow_repo_path)
+        finally:
+            db2.close()
+        durations = {jp.job_id: jp.estimated_duration_seconds for jp in plan.jobs}
+        prune = plan_install_pruning(workflow, repo_root, durations, step_seconds, read_from_mirror)
+        adjusted = {j: max(d - prune.seconds_by_job().get(j, 0.0), 0.0) for j, d in durations.items()}
+        rel_combined = plan_relaxation(workflow, adjusted, {j: (scored["predictions"][j]["failure_base_rate"] or 0.0) for j in job_ids})
         results["step8_schedule"] = {
+            "pruning": {
+                "actions": [{"job": a.job, "step": a.step_name or a.step_index + 1, "removed": a.removed, "kept": a.kept, "files": a.files,
+                             "est_seconds": None if a.est_seconds is None else round(a.est_seconds, 1)} for a in prune.actions],
+                "skipped": [{"job": j, "reason": why} for j, why in list(prune.skipped.items())[:8]], "skipped_total": len(prune.skipped),
+                "baseline_seconds": round(prune.baseline_seconds, 1), "pruned_seconds": round(prune.pruned_seconds, 1), "saved_pct": round(prune.saved_pct, 1),
+                "with_relaxation": {"relaxed": [{"upstream": u, "downstream": d} for u, d in rel_combined.relaxed],
+                                    "seconds": round(rel_combined.relaxed_seconds, 1), "saved_pct_vs_original": round(
+                                        0.0 if prune.baseline_seconds == 0 else 100 * (prune.baseline_seconds - rel_combined.relaxed_seconds) / prune.baseline_seconds, 1)},
+                "estimated": True,
+            },
             "jobs": scored["schedule_jobs"], "original_order": job_ids,
             "relaxation": {
                 "relaxed": [{"upstream": u, "downstream": d} for u, d in rel.relaxed],
@@ -485,6 +515,16 @@ class DashboardService:
                 "relaxed_yaml": relaxed_path.read_text(encoding="utf-8"), "relaxed_problems": problems,
                 "relaxed_diff": (generate_diff(wf_path, relaxed_yaml, plan=plan_rel) or "")[:20000],
                 "relaxed_file_name": f"{wf_path.stem}.relaxed.yml",
+            })
+        if prune.actions:      # a third, opt-in proposal with both levers, validated against the original before it is offered
+            plan_both = replace(plan, gate_relaxation=rel_combined, install_pruning=prune)
+            both_yaml = generate_optimized_workflow(workflow, plan_both)
+            problems = validate_relaxation(workflow, both_yaml) + validate_pruning(workflow, both_yaml, repo_root, read_from_mirror)
+            both_path = out_path.with_name(f"{wf_path.stem}.speedup.yml")
+            write_workflow(both_yaml, both_path, plan_both)
+            results["step10_output"].update({
+                "speedup_yaml": both_path.read_text(encoding="utf-8"), "speedup_problems": problems,
+                "speedup_diff": (generate_diff(wf_path, both_yaml, plan=plan_both) or "")[:20000], "speedup_file_name": f"{wf_path.stem}.speedup.yml",
             })
         results["summary"] = {
             "files_analyzed": len(snap.source_files), "source_deps": source_graph.number_of_edges(), "ci_deps": ci_graph.number_of_edges(),
@@ -565,7 +605,7 @@ class DashboardService:
             runs = [{"arm": t["arm"], "round": t["round"], "run_id": t["run_id"], "conclusion": t.get("conclusion"),
                      "critical_path_s": t["critical_path_s"], "billable_job_s": t["billable_job_s"]} for t in timings if not t.get("warmup")]
             keep = ("n_measured_runs", "critical_path_s", "billable_job_s", "needs_respected_every_run", "same_steps_and_conclusions_everywhere",
-                    "jobs_all_success", "relaxed_arm_test_overlaps_lint_in_every_run", "original_arm_test_overlaps_lint_in_any_run")
+                    "jobs_all_success", "relaxed_arm_test_overlaps_lint_in_every_run", "original_arm_test_overlaps_lint_in_any_run", "needs_ok_all", "all_success", "job_median_s")
             out.append({"id": folder, "title": title, "summary": {k: summary[k] for k in keep if k in summary}, "runs": runs})
         return {"repo": repo, "experiments": out}
 

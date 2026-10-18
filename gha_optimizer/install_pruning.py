@@ -135,16 +135,24 @@ def _classify(line: str) -> tuple[str, Any]:
     return "blocked", f"runs `{toks[0]}`, which is not a stand-alone tool"
 
 
-def _requirement_file_ok(root: Path, rel: str, tools: set[str]) -> str | None:
-    """None if the file can be dropped from the job, else the reason it cannot."""
-    p = (root / rel).resolve()
-    try:
-        p.relative_to(root.resolve())
-    except ValueError:
-        return f"{rel} is outside the checkout"
-    if not p.is_file():
-        return f"{rel} is not in the checkout"
-    text = p.read_text(encoding="utf-8", errors="replace")
+def _requirement_file_ok(root: Path, rel: str, tools: set[str], read_file: Any = None) -> str | None:
+    """None if the file can be dropped from the job, else the reason it cannot.
+
+    ``read_file(rel) -> str | None`` reads the file from somewhere other than ``root`` (the dashboard reads it from the git mirror at the
+    snapshot's commit, because its exported tree holds only source files); ``None`` from it means the file does not exist."""
+    if read_file is not None:
+        text = read_file(rel)
+        if text is None:
+            return f"{rel} is not in the checkout"
+    else:
+        p = (root / rel).resolve()
+        try:
+            p.relative_to(root.resolve())
+        except ValueError:
+            return f"{rel} is outside the checkout"
+        if not p.is_file():
+            return f"{rel} is not in the checkout"
+        text = p.read_text(encoding="utf-8", errors="replace")
     if _NESTED.search(text):
         return f"{rel} contains nested requirement / constraint / index options"
     for t in sorted(tools):
@@ -153,7 +161,8 @@ def _requirement_file_ok(root: Path, rel: str, tools: set[str]) -> str | None:
     return None
 
 
-def _analyse_job(job_id: str, job: dict[str, Any], root: Path, step_seconds: dict[tuple[str, str], float]) -> tuple[list[PruneAction], str | None]:
+def _analyse_job(job_id: str, job: dict[str, Any], root: Path, step_seconds: dict[tuple[str, str], float],
+                 read_file: Any = None) -> tuple[list[PruneAction], str | None]:
     if job.get("uses") is not None:
         return [], "calls a reusable workflow"
     if isinstance(job.get("strategy"), dict) and job["strategy"].get("matrix"):
@@ -204,7 +213,7 @@ def _analyse_job(job_id: str, job: dict[str, Any], root: Path, step_seconds: dic
     actions: list[PruneAction] = []
     for idx, removed, kept, files, name in planned:
         for f in files:
-            why = _requirement_file_ok(root, f, tools)
+            why = _requirement_file_ok(root, f, tools, read_file)
             if why:
                 return [], why
         est: float | None = None
@@ -218,7 +227,7 @@ def _analyse_job(job_id: str, job: dict[str, Any], root: Path, step_seconds: dic
 
 
 def plan_install_pruning(workflow: WorkflowSpec, repo_root: str | Path, durations: dict[str, float],
-                         step_seconds: dict[tuple[str, str], float] | None = None) -> InstallPruning:
+                         step_seconds: dict[tuple[str, str], float] | None = None, read_file: Any = None) -> InstallPruning:
     """Decide which project-dependency installs can be removed.  ``durations``: predicted seconds per job (for the
     critical-path estimate); ``step_seconds``: recorded median seconds per (job key, step name)."""
     from gha_optimizer.gates import critical_path_seconds
@@ -228,7 +237,7 @@ def plan_install_pruning(workflow: WorkflowSpec, repo_root: str | Path, duration
     for job_id, job in (workflow.raw.get("jobs") or {}).items():
         if not isinstance(job, dict):
             continue
-        actions, why = _analyse_job(job_id, job, root, step_seconds or {})
+        actions, why = _analyse_job(job_id, job, root, step_seconds or {}, read_file)
         if why is not None:
             result.skipped[job_id] = why
         else:
@@ -254,11 +263,11 @@ def apply_pruning(optimized: dict, actions: list[PruneAction]) -> dict:
     return out
 
 
-def validate_pruning(original: WorkflowSpec, optimized: dict, repo_root: str | Path) -> list[str]:
+def validate_pruning(original: WorkflowSpec, optimized: dict, repo_root: str | Path, read_file: Any = None) -> list[str]:
     """Problems with the optimized dict's ``steps`` relative to the original; empty = valid.  The expected steps are recomputed
     from the original by the same rules, so a step edited any other way is reported."""
     problems: list[str] = []
-    expected = apply_pruning(original.raw, plan_install_pruning(original, repo_root, {}, {}).actions)
+    expected = apply_pruning(original.raw, plan_install_pruning(original, repo_root, {}, {}, read_file).actions)
     for job_id, body in (optimized.get("jobs") or {}).items():
         want = ((expected.get("jobs") or {}).get(job_id) or {}).get("steps")
         got = (body or {}).get("steps")

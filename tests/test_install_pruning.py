@@ -97,3 +97,22 @@ def test_validation_rejects_any_other_step_edit(tmp_path):
     out = apply_pruning(wf.raw, r.actions)
     out["jobs"]["test"]["steps"][2]["run"] = "echo skipped"          # an edit the planner did not make
     assert any("job 'test'" in p for p in validate_pruning(wf, out, root))
+
+
+def test_requirement_files_can_be_read_from_elsewhere_than_the_checkout(tmp_path):
+    """The dashboard's exported tree holds only source files; it reads requirement files from the git mirror through ``read_file``."""
+    wf, root = make(tmp_path, {"lint": LINT})
+    (root / "requirements.txt").unlink()                                    # not in the exported tree
+    assert plan_install_pruning(wf, root, {"lint": 10.0}).actions == []
+    seen = []
+
+    def reader(rel):
+        seen.append(rel)
+        return "numpy==1.26.0\n" if rel == "requirements.txt" else None
+
+    r = plan_install_pruning(wf, root, {"lint": 10.0}, None, reader)
+    assert [a.job for a in r.actions] == ["lint"] and seen == ["requirements.txt"]
+    pinned = plan_install_pruning(wf, root, {"lint": 10.0}, None, lambda rel: "ruff==0.4\n")
+    assert pinned.actions == [] and "mentions ruff" in pinned.skipped["lint"]
+    out = apply_pruning(wf.raw, r.actions)
+    assert validate_pruning(wf, out, root, reader) == []
