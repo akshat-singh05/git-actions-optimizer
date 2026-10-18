@@ -152,11 +152,6 @@ pre.code { font-family: var(--mono); font-size: 12px; background: #f8fafc; borde
 .docs-list { display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 210px); overflow-y: auto; }
 .docs-list a { font-size: 12.5px; padding: 6px 10px; border-radius: 5px; color: var(--text); text-decoration: none; font-family: var(--mono); }
 .docs-list a:hover { background: var(--surface2); } .docs-list a.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
-.index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
-.index-card { display: flex; align-items: center; gap: 12px; padding: 11px 14px; text-decoration: none; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
-.index-card:hover { border-color: var(--accent); }
-.index-text { display: flex; flex-direction: column; min-width: 0; font-size: 13px; }
-.index-text span { font-size: 11px; color: var(--text-dim); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pager { display: flex; justify-content: space-between; margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--border); }
 .pager a { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
 .pager a:hover { border-color: var(--accent); }
@@ -441,8 +436,7 @@ function pageOverview(d) {
         <li><span class="pill est">ESTIMATED</span>Savings, cost, energy and CO&#8322; come from predicted durations, not from executions.</li>
         <li>Cost, energy and CO&#8322; can rise when faster runners are chosen: a multi-objective trade-off, not a free gain.</li>
         <li>Same inputs, same numbers: the scoring time is the scored run's own creation time (${esc((ds.scored_at || 'n/a').slice(0, 16).replace('T', ' '))} UTC).</li></ul></div></div>
-    <div class="panel"><h3>Pages</h3><div class="index-grid">${STEPS.map(([n, id, t]) => `<a class="index-card" href="#${id}"><span class="step-num">${n}</span><span class="index-text"><b>${esc(t)}</b></span></a>`).join('')}
-      <a class="index-card" href="#whatif"><span class="step-num">?</span><span class="index-text"><b>What-if: change files</b><span>pick files, watch jobs and predictions update</span></span></a></div></div>`;
+`;
 }
 function oosCard(o) {
   if (!o) return '<p class="hint">Not enough failures on unseen rows to compare.</p>';
