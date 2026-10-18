@@ -596,11 +596,26 @@ function pageWorkflow(d) { const o = d.step10_output;
       <div class="hint">Validated against the original before it is offered. ${o.speedup_problems && o.speedup_problems.length ? '<b>Validation problems: ' + esc(o.speedup_problems.join('; ')) + '</b>' : 'No problems found.'}</div>
       <button class="btn primary" onclick="downloadSpeedup()">Download ${esc(o.speedup_file_name)}</button>
       <pre class="code" style="margin-top:10px">${diffHtml(o.speedup_diff)}</pre></div>` : ''}`; }
+/* the answer to "does this pipeline have a speed-up the tool can prove safe?" - computed only from the opt-in plans already in the payload */
+function opportunityBanner(d) {
+  const sc = d.step8_schedule || {}, rel = sc.relaxation, pr = sc.pruning;
+  const hasRel = !!(rel && rel.relaxed && rel.relaxed.length), hasPrune = !!(pr && pr.actions && pr.actions.length);
+  if (!hasRel && !hasPrune) {
+    const kept = rel && rel.kept ? rel.kept.length : 0, left = pr ? pr.skipped_total : 0;
+    return `<div class="note"><b>Speed-up opportunity: none that the tool can prove safe.</b> ${kept} <code>needs</code> gate(s) kept (each carries data, guards a side effect, or removing it would not shorten the critical path) and ${left} job(s) left alone by the install-pruning rules. So the default plan, which changes nothing, is the correct answer for this pipeline. Mature pipelines are usually in this state: replayed on nine of them, gate relaxation saved about 0% (<a href="#docs/GATE_REPLAY.md">gate replay</a>).</div>`;
+  }
+  const base = hasPrune ? pr.baseline_seconds : rel.baseline_seconds, after = hasPrune ? pr.with_relaxation.seconds : rel.relaxed_seconds;
+  const pct = base ? Math.round(1000 * (base - after) / base) / 10 : 0;
+  const levers = [];
+  if (hasPrune) levers.push(`remove ${pr.actions.map(a => '<code>' + esc(a.removed.join('; ')) + '</code> from <code>' + esc(a.job) + '</code>').join(', ')}`);
+  if (hasRel) levers.push(rel.relaxed.map(g => '<code>' + esc(g.downstream) + '</code> no longer waits for <code>' + esc(g.upstream) + '</code>').join(', '));
+  return `<div class="note info"><b>Speed-up opportunity found</b> <span class="pill est">ESTIMATED</span>: critical path about ${Math.round(base)} s &rarr; ${Math.round(after)} s (${pct}% shorter) if you ${levers.join(' and ')}. Both levers are opt-in; the proposal is on the <a href="#workflow">Original vs proposed workflow</a> page, validated against the original before it is offered. Trade-off: a job freed from a gate also runs when its former upstream fails. This figure is an estimate for this repository; real before/after runs exist only where shown below and for the repositories in <a href="#docs/SECOND_REPOSITORY.md">SECOND_REPOSITORY.md</a>.</div>`;
+}
 async function pageSummary(d) {
   const s = d.summary, c = (title, rows) => `<div class="compact"><h4>${title}</h4>${kv(rows)}</div>`;
   let measured = { experiments: [] };
   try { measured = await api('/measured?repo=' + encodeURIComponent(S.repo)); } catch (e) { /* none */ }
-  return `<div class="note"><span class="pill est">ESTIMATED</span> The four boxes below are derived from predicted durations; none is a measured execution. The default plan keeps the workflow's job structure, so they show 0% unless an opt-in lever is used.</div>
+  return `${opportunityBanner(d)}<div class="note"><span class="pill est">ESTIMATED</span> The four boxes below are derived from predicted durations; none is a measured execution. The default plan keeps the workflow's job structure, so they show 0% unless an opt-in lever is used.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
     ${c('Wall-clock (estimated)', [['Baseline', s.baseline_wall_clock + 's'], ['Proposed', s.optimized_wall_clock + 's'], ['Saved', (s.time_saved_pct > 0 ? '+' : '') + s.time_saved_pct + '%']])}
     ${c('Cost (estimated)', [['Baseline', '$' + s.baseline_cost], ['Proposed', '$' + s.optimized_cost], ['Change', (s.cost_saved_pct > 0 ? '+' : '') + s.cost_saved_pct + '%']])}
