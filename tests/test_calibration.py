@@ -90,3 +90,16 @@ def test_lookup_reports_what_happened_to_unseen_rows_and_flags_extrapolation():
 def test_render_handles_missing_results():
     text = render_calibration({"o/r": {"note": "no ingested rows"}}, 10)
     assert "no ingested rows" in text and "Brier" in text
+
+
+def test_failure_score_is_a_probability_only_where_the_model_beat_the_base_rate_on_unseen_rows():
+    from gha_optimizer.models.calibration import failure_score_display
+
+    ok = {"rows": 900, "failures": 60, "brier_model": 0.0400, "brier_baseline": 0.0450}
+    assert failure_score_display(ok)["as_probability"] is True
+    worse = {**ok, "brier_model": 0.0500}
+    d = failure_score_display(worse)
+    assert d["as_probability"] is False and "not better" in d["reason"]
+    assert failure_score_display({**ok, "failures": 5})["as_probability"] is False        # too few failures to say
+    assert failure_score_display({**ok, "rows": 50})["as_probability"] is False           # too few rows to say
+    assert failure_score_display(None)["as_probability"] is False                          # no evidence: never a probability

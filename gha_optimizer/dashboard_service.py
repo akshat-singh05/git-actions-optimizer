@@ -59,7 +59,7 @@ from gha_optimizer.ingestion.workflow_parser import parse_workflow
 from gha_optimizer.ingestion.workspace import prepare_repo_snapshot
 from gha_optimizer.graph.ci_semantics import workflow_cannot_restore_cache
 from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, NoCacheModel
-from gha_optimizer.models.calibration import OutOfSampleCalibrator, out_of_sample_predictions
+from gha_optimizer.models.calibration import OutOfSampleCalibrator, failure_score_display, out_of_sample_predictions
 from gha_optimizer.models.duration_estimator import DurationEstimator
 from gha_optimizer.models.failure_predictor import FailurePredictor
 from gha_optimizer.pipeline import job_only_dag
@@ -68,7 +68,7 @@ from gha_optimizer.server.db.session import SessionLocal, init_db
 
 logger = logging.getLogger(__name__)
 
-RESULT_VERSION = 8          # bump when the payload or anything it is computed from changes meaning
+RESULT_VERSION = 9          # bump when the payload or anything it is computed from changes meaning
 DEFAULT_CACHE_DIR = Path(".gha_optimizer") / "dashboard_cache"
 # executed benchmarks of the project (docs/<folder>/summary.json + timings.json): real GitHub Actions runs of original vs proposed workflow
 MEASURED_RUNS = {
@@ -430,6 +430,7 @@ class DashboardService:
                 "note": "point estimates on the pooled rolling-origin folds; intervals and more repositories: docs/MODEL_EVAL.md, docs/CALIBRATION.md",
             }
 
+        step7["score_display"] = failure_score_display(step7.get("failure_out_of_sample"))      # may the score be shown as a probability?
         dag = job_only_dag(workflow)
         ctx = RepoContext(repo=repo, workflow=workflow, simple_graph=simple_graph, full_graph=full_graph,
                           tracked_files=snap.tracked_files, real_diff=list(changed), stats=stats, as_of=snap.as_of, job_ids=job_ids,

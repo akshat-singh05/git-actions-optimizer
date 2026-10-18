@@ -319,3 +319,28 @@ def render_calibration(results: dict[str, dict[str, Any]], n_boot: int) -> str:
                          f"{c['mean_predicted']:.3f} | {c['observed_rate']:.3f} |")
         lines.append("")
     return "\n".join(lines) + "\n"
+
+
+MIN_DISPLAY_ROWS = 200
+MIN_DISPLAY_FAILURES = 20
+
+
+def failure_score_display(oos: dict[str, Any] | None) -> dict[str, Any]:
+    """May this repository's failure score be shown as a *probability*?  Only if, on rows the model had not been trained on, its Brier score
+    beats the one of the job's own prior failure rate, with enough rows and failures to say so (point estimates: this is a display gate, not a test).
+
+    Measured so far (docs/CALIBRATION*.md): on seven repositories the model never beat that baseline, so everywhere the score is shown as a
+    *risk score* next to the job's own base rate and the failure rate observed for scores like it.  The gate is here so that a repository where the model
+    does beat it can show a probability, and one where it does not never can."""
+    if not oos:
+        return {"as_probability": False, "reason": "no out-of-sample comparison could be computed for this repository (too few failures on unseen rows)"}
+    rows, failures = int(oos.get("rows", 0)), int(oos.get("failures", 0))
+    if rows < MIN_DISPLAY_ROWS or failures < MIN_DISPLAY_FAILURES:
+        return {"as_probability": False, "reason": f"too little evidence to call the score a probability: {rows} unseen rows with {failures} failures "
+                                                   f"(at least {MIN_DISPLAY_ROWS} and {MIN_DISPLAY_FAILURES} are needed)"}
+    bm, bb = float(oos["brier_model"]), float(oos["brier_baseline"])
+    if bm < bb:
+        return {"as_probability": True, "brier_model": bm, "brier_baseline": bb,
+                "reason": f"on unseen rows the model's Brier score ({bm:.4f}) beats the job's own base rate ({bb:.4f})"}
+    return {"as_probability": False, "brier_model": bm, "brier_baseline": bb,
+            "reason": f"on unseen rows the model's Brier score ({bm:.4f}) is not better than the job's own base rate ({bb:.4f}), so the score is a ranking signal, not a probability to quote"}

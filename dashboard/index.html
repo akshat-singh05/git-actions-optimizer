@@ -203,7 +203,7 @@ const S = { repo: new URLSearchParams(location.search).get('repo'), result: null
 
 const STEPS = [
   [1, 'repository', 'Repository analysis'], [2, 'source', 'Source code graph'], [3, 'ci', 'CI/CD graph'], [4, 'fusion', 'Graph fusion'],
-  [5, 'impact', 'Impact analysis'], [6, 'features', 'Feature extraction'], [7, 'models', 'Models and probabilities'],
+  [5, 'impact', 'Impact analysis'], [6, 'features', 'Feature extraction'], [7, 'models', 'Models and predictions'],
   [8, 'schedule', 'DAG-aware scheduling'], [9, 'safety', 'DAG safety verification'], [10, 'workflow', 'Original vs proposed workflow'],
   [11, 'summary', 'Final summary'],
 ];
@@ -216,7 +216,10 @@ async function api(path, opts) {
 const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? 'n/a' : (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(d)) : esc(v));
 const pct = (v) => (v === null || v === undefined) ? 'n/a' : (v * 100).toFixed(1) + '%';
 const riskClass = (p) => p > 0.5 ? 'r' : p > 0.2 ? 'a' : 'g';
-const tagFor = (p) => `<span class="tag ${p > 0.5 ? 'red' : p > 0.2 ? 'amber' : 'green'}">${p.toFixed(3)}</span>`;
+/* the failure score is shown as a probability only where the model beat the job's own base rate on unseen rows (step7_models.score_display) */
+const scoreIsProb = () => !!(S.result && S.result.step7_models && S.result.step7_models.score_display && S.result.step7_models.score_display.as_probability);
+const scoreWord = () => scoreIsProb() ? 'P(fail)' : 'risk score';
+const tagFor = (p) => (p === null || p === undefined) ? '<span class="tag grey">n/a</span>' : `<span class="tag ${p > 0.5 ? 'red' : p > 0.2 ? 'amber' : 'green'}">${p.toFixed(3)}</span>`;
 
 /* ------------------------------------------------------------------ repositories + running */
 async function init() {
@@ -276,7 +279,7 @@ function render() {
 const PAGES = {
   overview: ['Dashboard', pageOverview], whatif: ['What-if: change files', pageWhatIf], repository: ['Repository analysis', pageRepository],
   source: ['Source code graph', pageSource], ci: ['CI/CD graph', pageCI], fusion: ['Graph fusion', pageFusion], impact: ['Impact analysis', pageImpact],
-  features: ['Feature extraction', pageFeatures], models: ['Models and probabilities', pageModels], schedule: ['DAG-aware scheduling', pageSchedule],
+  features: ['Feature extraction', pageFeatures], models: ['Models and predictions', pageModels], schedule: ['DAG-aware scheduling', pageSchedule],
   safety: ['DAG safety verification', pageSafety], workflow: ['Original vs proposed workflow', pageWorkflow], summary: ['Final summary', pageSummary],
   evidence: ['Evidence for this repository', pageEvidence], docs: ['Project reports', pageDocs], live: ['Live test ledger', pageLive],
 };
@@ -424,11 +427,11 @@ function pageOverview(d) {
       <div class="kpi"><div class="label">Fused graph</div><div class="value v-cyan">${s.fused_nodes}</div><div class="sub">${s.fused_edges} edges, ${d.step4_fusion.cross_domain_edges} cross-domain</div></div>
       <div class="kpi"><div class="label">Models trained</div><div class="value v-green">${s.models_trained}</div><div class="sub">cache-miss, failure, duration</div></div>
       <div class="kpi"><div class="label">Wall-clock saved (est.)</div><div class="value ${s.time_saved_pct > 0 ? 'v-green' : 'v-amber'}">${s.time_saved_pct > 0 ? '+' : ''}${s.time_saved_pct}%</div><div class="sub">${s.baseline_wall_clock}s &rarr; ${s.optimized_wall_clock}s, predicted</div></div></div>
-    <div class="panel"><h3>Job dependency graph</h3><div class="hint">Arrows are <code>needs</code>; colour = predicted failure probability for the real diff of the latest run.</div>
-      ${dagSvg(jobs, { cls: j => riskClass(pred[j].failure), sub: j => `${pred[j].duration}s, P(fail) ${pred[j].failure.toFixed(2)}` })}
+    <div class="panel"><h3>Job dependency graph</h3><div class="hint">Arrows are <code>needs</code>; colour = predicted failure ${scoreIsProb() ? 'probability' : 'risk score (not a probability, see Models and predictions)'} for the real diff of the latest run.</div>
+      ${dagSvg(jobs, { cls: j => riskClass(pred[j].failure), sub: j => `${pred[j].duration}s, ${scoreWord()} ${pred[j].failure.toFixed(2)}` })}
       <div class="legend"><span><i style="background:#d4f1de"></i>below 0.2</span><span><i style="background:#fde8c5"></i>0.2 to 0.5</span><span><i style="background:#fbd5cf"></i>above 0.5</span></div></div>
     <div class="grid2"><div class="panel"><h3>Predicted duration per job</h3><div class="hint">Duration estimator, seconds</div>${dur}</div>
-      <div class="panel"><h3>Predicted failure probability per job</h3><div class="hint">Compare with the job's own base rate on the Models page, not with 0</div>${fail}</div></div>
+      <div class="panel"><h3>Predicted failure ${scoreIsProb() ? 'probability' : 'risk score'} per job</h3><div class="hint">Compare with the job's own base rate on the Models page, not with 0</div>${fail}</div></div>
     <div class="panel"><h3>Estimated timeline respecting <code>needs</code></h3><div class="hint">A job starts when all its <code>needs</code> jobs are done; predicted durations, unlimited runners. Critical path about ${Math.round(tl.total)} s. The scheduler's own figure (${s.baseline_wall_clock} s) is level-based - it waits for the slowest job of each DAG level - so it can be higher.</div>${tl.html}</div>
     <div class="grid2"><div class="panel"><h3>Failure model against the baseline</h3><div class="hint">Rolling-origin point estimates on this repository</div>${oosCard(oos)}</div>
       <div class="panel"><h3>How to read the numbers</h3><ul class="list">
@@ -532,9 +535,10 @@ function pageModels(d) {
     return (s.outside_range ? '<span class="tag red" title="No unseen row ever scored this high: the probability is an extrapolation">above anything seen</span> ' : '') +
       `${pct(s.observed_rate)} of ${s.rows} rows (${s.failures} failed) scored ${s.score_low.toFixed(2)}-${s.score_high.toFixed(2)}`; };
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:14px">${modelCard('Cache-miss predictor', m.cache_miss)}${modelCard('Failure predictor', m.failure)}${modelCard('Duration estimator', m.duration)}</div>
-    <div class="panel"><h3>Failure probability next to what it can be compared with</h3>
-      <div class="hint">A probability alone proves little. For each job: the model's score, the job's own historical failure rate (the naive baseline), and what actually happened to unseen rows that scored similarly (rolling-origin folds on this repository).</div>
-      ${table(['Job', 'Model score', 'Job base rate (baseline)', 'Seen on unseen rows that scored like this', 'P(cache miss)', 'Duration (s)'],
+    <div class="panel"><h3>Failure ${scoreIsProb() ? 'probability' : 'risk score'} next to what it can be compared with</h3>
+      ${(() => { const sd = m.score_display || {}; return `<div class="note ${sd.as_probability ? 'info' : ''}"><b>${sd.as_probability ? 'Shown as a probability' : 'Shown as a risk score, not a probability'}:</b> ${esc(sd.reason || '')}.</div>`; })()}
+      <div class="hint">A score alone proves little. For each job: the model's score, the job's own historical failure rate (the naive baseline), and what actually happened to unseen rows that scored similarly (rolling-origin folds on this repository).</div>
+      ${table(['Job', 'Model score', 'Job base rate (baseline)', 'Failure rate actually seen on unseen rows that scored like this', 'P(cache miss)', 'Duration (s)'],
         Object.entries(p).map(([j, v]) => [`<span class="v-accent">${esc(j)}</span>`, tagFor(v.failure), v.failure_base_rate === null ? 'n/a' : pct(v.failure_base_rate), seen(v), tagFor(v.cache_miss), v.duration]))}
       <div class="note">The score is the model's output for the real diff; it is not a calibrated probability. Re-calibrating it did not help in a test on four repositories (<a href="#docs/CALIBRATION.md">calibration report</a>), so the dashboard reports the observed rate instead of adjusting the score. A score above the highest one the model produced on unseen rows is flagged: it is an extrapolation.</div></div>
     <div class="grid2"><div class="panel"><h3>Model vs baseline on this repository</h3><div class="hint">Failure model, pooled rolling-origin folds</div>${oosCard(o)}</div>
@@ -681,15 +685,15 @@ async function runWhatIf() {
 function whatIfResult(w) {
   const d = S.result, jobs = d.step1_repository.jobs, hot = new Set(w.impacted_jobs), s = w.summary, b = w.base_summary;
   const dur = {}; w.jobs.forEach(j => dur[j.job_id] = j.whatif.duration); const tl = timeline(jobs, dur, w.impacted_jobs);
-  const arrow = (a, c, digits = 3) => `${a.toFixed(digits)} &rarr; <b>${c.toFixed(digits)}</b>`;
+  const arrow = (a, c, digits = 3) => (a === null || a === undefined || c === null || c === undefined) ? 'n/a' : `${a.toFixed(digits)} &rarr; <b>${c.toFixed(digits)}</b>`;
   return `<div class="panel"><h3>Result for ${w.changed_files.length} changed file${w.changed_files.length === 1 ? '' : 's'}</h3><div class="hint">${esc(w.changed_files.slice(0, 6).join(', '))}${w.changed_files.length > 6 ? ' ...' : ''}${w.unknown_files.length ? ` - not in the repository tree: ${esc(w.unknown_files.join(', '))}` : ''}</div>
     <div class="kpis" style="margin-bottom:0"><div class="kpi"><div class="label">Impacted jobs</div><div class="value v-accent">${w.impacted_jobs.length} / ${w.jobs.length}</div><div class="sub">${esc(w.impacted_jobs.join(', ') || 'none')}</div></div>
       <div class="kpi"><div class="label">Cache keys touched</div><div class="value v-cyan">${w.cache_keys_touched.length}</div><div class="sub" title="${esc(w.cache_keys_touched.join(' | '))}">${esc(w.cache_keys_touched.map(k => k.length > 44 ? k.slice(0, 43) + '...' : k).join(', ') || 'none')}</div></div>
       <div class="kpi"><div class="label">Wall-clock (est.)</div><div class="value">${s.baseline_wall_clock}s</div><div class="sub">real diff: ${b.baseline_wall_clock}s</div></div>
       <div class="kpi"><div class="label">Saved (est.)</div><div class="value ${s.time_saved_pct > 0 ? 'v-green' : 'v-amber'}">${s.time_saved_pct}%</div><div class="sub">default plan, ESTIMATED</div></div></div></div>
-    <div class="panel"><h3>Jobs: real diff &rarr; your files</h3>${dagSvg(jobs, { cls: j => hot.has(j) ? 'hot' : 'cold', sub: j => { const x = w.jobs.find(y => y.job_id === j); return 'P(fail) ' + x.base.failure.toFixed(2) + ' -> ' + x.whatif.failure.toFixed(2); } })}
+    <div class="panel"><h3>Jobs: real diff &rarr; your files</h3>${dagSvg(jobs, { cls: j => hot.has(j) ? 'hot' : 'cold', sub: j => { const x = w.jobs.find(y => y.job_id === j); return scoreWord() + ' ' + x.base.failure.toFixed(2) + ' -> ' + x.whatif.failure.toFixed(2); } })}
       <div class="legend"><span><i style="background:#ffe9c4"></i>impacted</span><span><i style="background:#f1f4f9"></i>not reached</span></div>
-      ${table(['Job', 'Impacted', 'P(failure)', 'Job base rate', 'Seen on unseen rows that scored like this', 'P(cache miss)', 'Duration (s)'], w.jobs.map(j => {
+      ${table(['Job', 'Impacted', scoreIsProb() ? 'P(failure)' : 'Failure risk score', 'Job base rate', 'Seen on unseen rows that scored like this', 'P(cache miss)', 'Duration (s)'], w.jobs.map(j => {
         const sl = j.whatif.failure_seen_like_this; const seen = sl && sl.available ? (sl.outside_range ? '<span class="tag red">above anything seen</span> ' : '') + `${pct(sl.observed_rate)} of ${sl.rows}` : 'n/a';
         return [`<span class="v-accent">${esc(j.job_id)}</span>`, j.impacted ? '<span class="tag amber">yes</span>' : '<span class="tag grey">no</span>', arrow(j.base.failure, j.whatif.failure),
           j.whatif.failure_base_rate === null ? 'n/a' : pct(j.whatif.failure_base_rate), seen, arrow(j.base.cache_miss, j.whatif.cache_miss), arrow(j.base.duration, j.whatif.duration, 1)]; }))}</div>

@@ -301,6 +301,7 @@ def run_pipeline(
         "### Model validation metrics (temporal holdout)",
         f"- Cache-miss predictor: {cache_metrics}",
         f"- Failure predictor: {failure_metrics}",
+        "- The failure score is a model output, NOT a calibrated probability (docs/CALIBRATION.md): read it next to the job's own failure rate, never alone",
         f"- Duration estimator: {duration_metrics}",
     ]
     labelled_jobs = {r.job_id for r in history if r.cache_hit is not None}

@@ -65,6 +65,17 @@ def take_lock() -> bool:
     return True
 
 
+DISABLED = ROOT / ".gha_optimizer" / "live" / "disabled_repos.txt"
+
+
+def disabled_repos() -> set[str]:
+    """Repositories whose scorer must stay off (one ``owner/repo`` per line; written by ``live_scorers.ps1 -Disable``)."""
+    try:
+        return {ln.strip() for ln in DISABLED.read_text(encoding="utf-8").splitlines() if ln.strip()}
+    except OSError:
+        return set()
+
+
 def external_scorers() -> set[str]:
     """Repositories that already have a running ``live-score`` process (e.g. started by an earlier supervisor)."""
     cmd = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'live-score' } "
@@ -111,8 +122,15 @@ def main() -> int:
     try:
         while True:
             already = external_scorers()
+            disabled = disabled_repos()
             for repo, workflow in TARGETS:
                 p = procs.get(repo)
+                if repo in disabled:             # switched off with `live_scorers.ps1 -Disable <repo>`: stop it and do not restart it
+                    if p is not None and p.poll() is None:
+                        p.terminate()
+                        log(f"scorer for {repo} stopped (disabled)")
+                    procs.pop(repo, None)
+                    continue
                 if p is not None and p.poll() is None:
                     continue
                 if p is not None:

@@ -13,11 +13,13 @@
 
   -Status : task state, running supervisor / scorers, ledger sizes and the last supervisor log lines.
   -Stop   : unregister the task and stop the supervisor and the scorers (use this when the live test is over).
+  -Disable owner/repo [owner/repo ...] : stop the scorer of just these repositories and tell the supervisor not to restart them (the others keep running).
   The GitHub token comes from `gh auth token` inside the supervisor and lives only in each scorer's environment.
 #>
 param(
     [switch]$Status,
-    [switch]$Stop
+    [switch]$Stop,
+    [string[]]$Disable
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,6 +36,20 @@ function Ledger-Lines([string]$repo) {
     if (Test-Path $f) { (Get-Content $f | Measure-Object -Line).Lines } else { 0 }
 }
 
+if ($Disable) {
+    $f = Join-Path $root ".gha_optimizer\live\disabled_repos.txt"
+    New-Item -ItemType Directory -Force (Split-Path $f) | Out-Null
+    foreach ($r in $Disable) {
+        Add-Content -Path $f -Value $r
+        foreach ($p in @(Get-LiveProcs | Where-Object { $_.CommandLine -match [regex]::Escape("--repo $r ") })) {
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+            "stopped scorer pid $($p.ProcessId) of $r"
+        }
+        "disabled $r (the supervisor will not restart it)"
+    }
+    return
+}
+
 if ($Status) {
     $t = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     "task $taskName : " + $(if ($t) { $t.State } else { "NOT registered" })
@@ -43,6 +59,8 @@ if ($Status) {
         $up = [bool]($procs | Where-Object { $_.CommandLine -match [regex]::Escape("--repo $r ") })
         "{0,-24} {1,-11} ledger entries: {2}" -f $r, $(if ($up) { "running" } else { "NOT running" }), (Ledger-Lines $r)
     }
+    $dis = Join-Path $root ".gha_optimizer\live\disabled_repos.txt"
+    if (Test-Path $dis) { "disabled (not restarted): " + ((Get-Content $dis) -join ", ") }
     $log = Join-Path $root ".gha_optimizer\live\logs\supervisor.log"
     if (Test-Path $log) { "--- supervisor.log (last 5)"; Get-Content $log -Tail 5 }
     return
@@ -60,6 +78,7 @@ if ($Stop) {
         "stopped pid $($p.ProcessId)"
     }
     Remove-Item (Join-Path $root ".gha_optimizer\live\supervisor.pid") -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $root ".gha_optimizer\live\disabled_repos.txt") -ErrorAction SilentlyContinue
     return
 }
 

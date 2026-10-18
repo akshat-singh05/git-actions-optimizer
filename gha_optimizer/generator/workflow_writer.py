@@ -236,7 +236,7 @@ def explain_changes(plan: SchedulePlan, sensitivity: list[dict[str, float]] | No
                       else "⚠ would skip (not applied)" if jp.skip_candidate else "✅ run")
             lines.append(
                 f"- `{jp.job_id}` → runner=`{jp.runner}`, "
-                f"P(fail)={jp.predicted_failure_prob:.2f}, "
+                f"failure score={jp.predicted_failure_prob:.2f} (not a calibrated probability), "
                 f"P(cache miss)={'n/a (no step can restore a cache)' if jp.predicted_cache_miss_prob != jp.predicted_cache_miss_prob else format(jp.predicted_cache_miss_prob, '.2f')} (informational, not used by the scheduler), "
                 f"est. {jp.estimated_duration_seconds:.0f}s "
                 f"(${jp.estimated_cost_usd:.5f}), "
