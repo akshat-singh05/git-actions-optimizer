@@ -188,6 +188,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             llm_client=_llm_client(args.llm_summary),
             relax_gates=args.relax_gates or None,
             prune_installs=args.prune_installs or None,
+            add_pip_cache=args.add_pip_cache or None,
             step_seconds=_step_seconds(args.repo, wf_repo_path) if args.prune_installs else None,
             triage_profile=_triage_profile(args.repo, wf_repo_path),
             as_of=_parse_as_of(args.as_of),
@@ -689,6 +690,9 @@ def main() -> None:
     p_analyze.add_argument("--prune-installs", action="store_true",
                            help="opt-in: remove project-dependency installs (`pip install -r FILE`) from jobs that only run stand-alone tools such as ruff "
                                 "(see gha_optimizer/install_pruning.py for the exact conditions); the saving is ESTIMATED from recorded step durations")
+    p_analyze.add_argument("--add-pip-cache", action="store_true",
+                           help="opt-in: add `cache: pip` (+ cache-dependency-path) to setup-python steps of jobs that install requirement files without a cache; the saving is NOT estimated "
+                                "(see gha_optimizer/pip_cache.py): measure it with scripts/measure_workflows.py")
     p_analyze.add_argument("--llm-summary", action="store_true",
                            help="append a plain-language summary written by an LLM (needs GEMINI_API_KEY and GHA_LLM_MODEL). "
                                 "Sends only job ids, runner labels and computed numbers to the provider; never affects the plan")

@@ -21,7 +21,8 @@ import networkx as nx
 from gha_optimizer.advisory import advise_unreached_jobs, render_advisory
 from gha_optimizer.config import config
 from gha_optimizer.gates import plan_relaxation, render_relaxation, validate_relaxation
-from gha_optimizer.install_pruning import plan_install_pruning, render_pruning, validate_pruning
+from gha_optimizer.install_pruning import plan_install_pruning, render_pruning
+from gha_optimizer.pip_cache import plan_pip_cache, render_pip_cache, validate_step_edits
 from gha_optimizer.triage import render_profile
 from gha_optimizer.features.feature_extraction import (
     build_inference_frame,
@@ -83,6 +84,7 @@ def run_pipeline(
     llm_client: LLMClient | None = None,
     relax_gates: bool | None = None,
     prune_installs: bool | None = None,
+    add_pip_cache: bool | None = None,
     step_seconds: dict | None = None,
     triage_profile: dict | None = None,
     as_of: datetime | None = None,
@@ -118,6 +120,8 @@ def run_pipeline(
     prune_installs : Opt-in (default off): remove project-dependency installs from jobs that only run stand-alone tools
         (``install_pruning.py``); validated, listed in the file header and the explanation.  ``step_seconds`` (recorded median
         seconds per ``(job key, step name)``, ``history.load_step_seconds``) only feeds the ESTIMATED saving.
+    add_pip_cache : Opt-in (default off): add ``cache: pip`` to ``setup-python`` steps of jobs that install requirement files without a cache (``pip_cache.py``); validated, listed in the file
+        header and the explanation; its saving is NOT estimated (only a real before/after run settles it).
     llm_client : Optional explanation-layer client (``llm_summary.py``).  When given, a validated plain-language
         summary is appended to the explanation; it never affects the plan, the predictions or the written workflow.
     model_dir : Directory of persisted models (``models/store.py``).  If it holds models trained on exactly this
@@ -260,6 +264,8 @@ def run_pipeline(
         plan.install_pruning = plan_install_pruning(workflow, repo_root, durations_for_gates, step_seconds)
         for job_id, saved in plan.install_pruning.seconds_by_job().items():
             durations_for_gates[job_id] = max(durations_for_gates[job_id] - saved, 0.0)
+    if add_pip_cache:
+        plan.pip_cache = plan_pip_cache(workflow, repo_root, {a.job for a in plan.install_pruning.actions} if plan.install_pruning is not None else set())
     if relax_gates:
         # opt-in: drop only the `needs` gates gates.py can prove safe AND that shorten the estimated critical path
         # the extra-cost estimate uses each job's own recent failure rate (a plain statistic of its history), not the
@@ -273,8 +279,8 @@ def run_pipeline(
     # ──────────────────────────────────────────────────────────────
     optimized_yaml = generate_optimized_workflow(workflow, plan)
     problems = validate_relaxation(workflow, optimized_yaml)       # every job kept, no needs edge added or unsafely removed
-    if plan.install_pruning is not None:
-        problems += validate_pruning(workflow, optimized_yaml, repo_root)   # steps unchanged except the provably unnecessary installs
+    if plan.install_pruning is not None or plan.pip_cache is not None:
+        problems += validate_step_edits(workflow, optimized_yaml, repo_root, prune=plan.install_pruning is not None, cache=plan.pip_cache is not None)   # steps unchanged except the provably safe edits
     if problems:                                                   # DAG correctness is sacred: never write such a file
         raise RuntimeError("generated workflow failed validation: " + "; ".join(problems))
     write_workflow(optimized_yaml, out_path, plan)
@@ -326,6 +332,8 @@ def run_pipeline(
     # Advisory only: which jobs the graph says this diff cannot reach. Never changes the plan or the proposed YAML.
     advice, unknown_jobs = advise_unreached_jobs(workflow, infer_df["job_structurally_impacted"].to_dict())
     full_explanation += "\n\n" + render_advisory(advice, unknown_jobs, replay_stats)
+    if plan.pip_cache is not None:
+        full_explanation += "\n\n" + render_pip_cache(plan.pip_cache)
     if plan.install_pruning is not None:
         full_explanation += "\n\n" + render_pruning(plan.install_pruning)
     if plan.gate_relaxation is not None:

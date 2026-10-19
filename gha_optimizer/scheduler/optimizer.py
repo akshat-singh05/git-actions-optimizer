@@ -104,6 +104,8 @@ class SchedulePlan:
     gate_relaxation: Any = None
     # opt-in: provably unnecessary dependency installs removed from tool-only jobs (gha_optimizer/install_pruning.py::InstallPruning) or None
     install_pruning: Any = None
+    # opt-in: `cache: pip` added to setup-python steps of jobs that install requirement files without a cache (gha_optimizer/pip_cache.py::PipCache) or None
+    pip_cache: Any = None
 
     @staticmethod
     def _pct(base: float, value: float) -> float:
