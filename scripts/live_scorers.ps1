@@ -37,6 +37,8 @@ function Ledger-Lines([string]$repo) {
 }
 
 if ($Disable) {
+    # `powershell -File ... -Disable a,b` delivers ONE string "a,b": split it
+    $Disable = @($Disable | ForEach-Object { $_ -split "," } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     $f = Join-Path $root ".gha_optimizer\live\disabled_repos.txt"
     New-Item -ItemType Directory -Force (Split-Path $f) | Out-Null
     foreach ($r in $Disable) {
