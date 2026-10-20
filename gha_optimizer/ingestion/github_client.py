@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -178,6 +179,7 @@ class GithubClient:
         backoff_base: float = 2.0,
         rate_limit_floor: int = 25,
         secondary_backoff: float = 60.0,
+        network_patience_s: float | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.time,
     ):
@@ -190,6 +192,9 @@ class GithubClient:
         self.backoff_base = backoff_base
         self.rate_limit_floor = rate_limit_floor
         self.secondary_backoff = secondary_backoff
+        # how long to keep waiting, after the retries above are used up, for the network (DNS) to come back before raising; 0 = raise at once (the default for library
+        # use and tests); the CLI passes GHA_NETWORK_PATIENCE_S (default 6 h) so that a long outage pauses a multi-hour ingest / live scorer instead of killing it
+        self.network_patience_s = float(os.environ.get("GHA_NETWORK_PATIENCE_S", "0") or 0) if network_patience_s is None else network_patience_s
         self._sleep = sleep_fn
         self._clock = clock
         self.stats: Counter[str] = Counter()
@@ -273,6 +278,27 @@ class GithubClient:
             return "secondary", self.secondary_backoff * (2 ** min(rate_waits, 4))
         return "forbidden", 0.0
 
+    def _wait_for_network(self) -> bool:
+        """After the retries are used up: poll DNS once a minute for up to ``network_patience_s``; True when the API host resolves again."""
+        if self.network_patience_s <= 0:
+            return False
+        import socket
+        from urllib.parse import urlparse
+
+        host = urlparse(self.api_base).hostname or "api.github.com"
+        start = self._clock()
+        logger.warning("network unreachable: waiting up to %.0f s for %s to resolve again", self.network_patience_s, host)
+        while self._clock() - start < self.network_patience_s:
+            self._sleep(60.0)
+            try:
+                socket.getaddrinfo(host, 443)
+            except OSError:
+                continue
+            self.stats["network_waits"] += 1
+            logger.warning("network is back after %.0f s", self._clock() - start)
+            return True
+        return False
+
     def _backoff(self, attempt: int, why: str) -> None:
         delay = min(self.backoff_base ** attempt, 120.0)
         self.stats["retries"] += 1
@@ -301,6 +327,9 @@ class GithubClient:
                     raise
                 attempt += 1
                 if attempt > self.max_retries:
+                    if self._wait_for_network():
+                        attempt = 0
+                        continue
                     raise GithubAPIError(0, url, f"{name}: {exc}") from exc
                 self._backoff(attempt, name)
                 continue

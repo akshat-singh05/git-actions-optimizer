@@ -177,3 +177,22 @@ def test_evaluation_says_so_when_there_is_nothing_to_score():
     rows = _ledger_rows([("r1", {"a": (0.2, 0.2, 0.1)})])
     assert "note" in evaluate_ledger(rows, {})
     assert "note" in evaluate_ledger(rows, {("r1", "a"): 0})                   # one outcome class only
+
+
+def test_an_api_outage_pauses_the_scorer_instead_of_ending_it(scorer):
+    """The scorers used to exit with code 1 when the network dropped; a failed poll is now logged and retried."""
+    from gha_optimizer.ingestion.github_client import GithubAPIError
+
+    scorer.client.runs = [run_json(20, "queued")]
+    real_get_json, calls = scorer.client.get_json, {"n": 0}
+
+    def flaky(path, params=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise GithubAPIError(0, path, "ConnectionError: no network")
+        return real_get_json(path, params)
+
+    scorer.client.get_json = flaky
+    sleeps = []
+    out = run_live(scorer, 123, minutes=0.05, poll_seconds=0.01, sleep=lambda s: (sleeps.append(s), time.sleep(0.02))[1])
+    assert out["scored_runs"] == 1 and sleeps[0] >= 30.0           # waited after the failure, then scored the run

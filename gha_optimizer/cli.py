@@ -270,7 +270,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     init_db()
     summary = {}
     for repo in args.repo:
-        client = GithubClient(token=token, repo=repo)
+        client = GithubClient(token=token, repo=repo, network_patience_s=_network_patience())
         options = IngestOptions(
             since=since,
             until=until,
@@ -393,6 +393,13 @@ def cmd_eval_models(args: argparse.Namespace) -> None:
     print(f"wrote {out} ({len(text.splitlines())} lines)")
 
 
+def _network_patience() -> float:
+    """Seconds a long-running command keeps waiting for the network to come back (env GHA_NETWORK_PATIENCE_S, default 6 h)."""
+    import os
+
+    return float(os.environ.get("GHA_NETWORK_PATIENCE_S", "21600") or 0)
+
+
 def _github_client(repo: str):
     from gha_optimizer.config import config
     from gha_optimizer.ingestion.github_client import GithubClient
@@ -400,7 +407,7 @@ def _github_client(repo: str):
     if not config.github.token:
         print("GITHUB_TOKEN is required (set it or put it in .env).")
         sys.exit(2)
-    return GithubClient(token=config.github.token, repo=repo)
+    return GithubClient(token=config.github.token, repo=repo, network_patience_s=_network_patience())
 
 
 def cmd_live_score(args: argparse.Namespace) -> None:
@@ -448,7 +455,16 @@ def cmd_live_evaluate(args: argparse.Namespace) -> None:
                              mirror_refresh=False)   # one run at a time: refreshing the mirror for each cost ~19 s; missing commits are fetched on demand
         pending = 0
         failed_runs: list[str] = []
-        for r in scored:
+        not_attempted = 0
+        import time as _time
+
+        deadline = _time.time() + 60 * args.time_budget_min if args.time_budget_min else None
+        for n_done, r in enumerate(scored):
+            if deadline is not None and _time.time() > deadline:       # time budget used up: evaluate what has been fetched, say how many were left out
+                not_attempted += 1
+                continue
+            if n_done % 25 == 0:
+                logger.info("live-evaluate: run %d of %d", n_done, len(scored))
             try:
                 if client.get_run(r["run_id"]).get("status") != "completed":
                     pending += 1
@@ -471,6 +487,8 @@ def cmd_live_evaluate(args: argparse.Namespace) -> None:
         text += f"\n{pending} scored run(s) had not completed when this was evaluated and are not included.\n"
     if failed_runs:
         text += f"\n{len(failed_runs)} scored run(s) could not be fetched from GitHub (server errors after retries) and are not included.\n"
+    if not_attempted:
+        text += f"\n{not_attempted} scored run(s) were not fetched because the time budget ({args.time_budget_min:g} min) was used up; they are not included (runs are fetched in ledger order, not chosen by outcome).\n"
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
@@ -780,6 +798,8 @@ def main() -> None:
     p_le.add_argument("--workflow-path", required=True)
     p_le.add_argument("--ledger", required=True)
     p_le.add_argument("--out", default="docs/LIVE_TEST.md")
+    p_le.add_argument("--time-budget-min", type=float, default=None,
+                      help="stop fetching run outcomes after this many minutes and evaluate what has been fetched (the report says how many runs were left out); default: no limit")
     _add_db(p_le)
 
     p_db = subparsers.add_parser("dashboard", help="Serve the dashboard (one page per pipeline stage, what-if, evidence) on the ingested repositories")

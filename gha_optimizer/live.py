@@ -32,6 +32,7 @@ from typing import Any, Callable
 import networkx as nx
 import numpy as np
 
+from gha_optimizer.ingestion.github_client import GithubAPIError
 from gha_optimizer.features.feature_extraction import (
     LineageState,
     _group_runs,
@@ -221,8 +222,13 @@ def run_live(scorer: LiveScorer, workflow_id: int, minutes: float, poll_seconds:
     deadline = time.time() + 60 * minutes
     scored = 0
     while time.time() < deadline:
-        scored += scorer.poll_once(workflow_id, since, seen)
-        logger.info("live: %d run(s) scored so far", scored)
+        try:
+            scored += scorer.poll_once(workflow_id, since, seen)
+            logger.info("live: %d run(s) scored so far", scored)
+        except GithubAPIError as exc:       # an API / network outage must pause the scorer, not end it (it used to exit with code 1)
+            logger.warning("live: poll failed (%s); trying again in %.0f s", exc, max(poll_seconds, 30.0))
+            sleep(max(poll_seconds, 30.0))
+            continue
         sleep(poll_seconds)
     return {"scored_runs": scored, "ledger_runs": len(seen)}
 

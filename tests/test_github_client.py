@@ -246,3 +246,44 @@ def test_durations_come_from_api_timestamps_and_none_when_missing():
     assert seconds_between("2026-10-01T10:00:00Z", None) is None
     assert seconds_between(None, None) is None
     assert parse_ts("garbage") is None
+
+
+# --------------------------------------------------------------------------- network patience
+
+def test_a_long_network_outage_pauses_the_client_instead_of_raising(monkeypatch):
+    """After the 8 retries (~6 min) the client used to raise; with patience it waits for DNS to resolve again and carries on."""
+    import socket
+
+    class ConnectionError(Exception):  # name-matched, like requests.exceptions.ConnectionError
+        pass
+
+    resolved = {"n": 0}
+
+    def fake_getaddrinfo(host, port, *a, **k):
+        resolved["n"] += 1
+        if resolved["n"] < 3:                       # DNS is down for the first two checks
+            raise OSError("no network")
+        return [("fake",)]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    now = {"t": 1000.0}
+    sleeps = []
+
+    def sleep(s):
+        sleeps.append(s)
+        now["t"] += s
+
+    script = [ConnectionError("dns") for _ in range(4)] + [FakeResp(200, data={"v": 7})]
+    client = GithubClient(token="t", repo="o/r", session=ScriptedSession(script), sleep_fn=sleep, clock=lambda: now["t"], max_retries=3,
+                          network_patience_s=3600)
+    assert client.get_json("/x") == {"v": 7}
+    assert sleeps.count(60.0) == 3 and client.stats["network_waits"] == 1
+
+
+def test_without_patience_the_outage_still_raises():
+    class ConnectionError(Exception):
+        pass
+
+    client, _, _ = make_client([ConnectionError("dns") for _ in range(10)], max_retries=2)
+    with pytest.raises(GithubAPIError):
+        client.get_json("/x")
