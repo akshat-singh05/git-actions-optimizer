@@ -407,7 +407,12 @@ def _github_client(repo: str):
     if not config.github.token:
         print("GITHUB_TOKEN is required (set it or put it in .env).")
         sys.exit(2)
-    return GithubClient(token=config.github.token, repo=repo, network_patience_s=_network_patience())
+    import os
+
+    # GHA_MAX_RETRIES (default 8, about 6 minutes of backoff): GitHub answers 502 for some runs with very many jobs every time, so a bulk read such as live-evaluate
+    # can lower it and retry the skipped runs in a second pass instead of spending 6 minutes on each
+    retries = int(os.environ.get("GHA_MAX_RETRIES", "8") or 8)
+    return GithubClient(token=config.github.token, repo=repo, network_patience_s=_network_patience(), max_retries=retries)
 
 
 def cmd_live_score(args: argparse.Namespace) -> None:

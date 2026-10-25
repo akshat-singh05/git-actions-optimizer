@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from contextlib import asynccontextmanager
 import logging
 import time
 import uuid
@@ -31,10 +32,24 @@ from gha_optimizer.schemas import (
 
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Create any missing tables at start-up (idempotent), so that an API started on a brand-new database - the compose flow, where only the worker used to
+    create them - declines with the documented HTTP 422 ``insufficient_history`` instead of a raw "relation does not exist" SQL error."""
+    try:
+        from gha_optimizer.server.db.session import init_db
+
+        init_db()
+    except Exception as exc:       # database not reachable yet: /ready reports it, the app still starts
+        logger.warning("Could not create the database tables at start-up: %s", exc)
+    yield
+
+
 app = FastAPI(
     title="GHA Optimizer API",
     description="ML-based predictive scheduler for GitHub Actions CI/CD pipelines",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # ─── CORS ───────────────────────────────────────────────────────────

@@ -200,3 +200,28 @@ def test_signature_check_matches_githubs_published_test_vector():
     assert app_module._verify_webhook_signature(payload, expected, secret) is True
     assert app_module._verify_webhook_signature(payload, expected.replace("7571", "7572"), secret) is False
     assert app_module._verify_webhook_signature(payload, "", secret) is False
+
+
+def test_startup_creates_the_tables_and_survives_an_unreachable_database(monkeypatch):
+    """A fresh database (compose: only the worker used to create the tables) must not turn /api/v1/optimize into a raw SQL error: the API creates missing
+    tables at start-up, and an unreachable database does not stop it from starting (/ready reports it)."""
+    import asyncio
+
+    import gha_optimizer.server.db.session as session_mod
+    from gha_optimizer.server.app import app
+
+    calls = []
+    monkeypatch.setattr(session_mod, "init_db", lambda: calls.append("init_db"))
+
+    async def start_and_stop():
+        async with app.router.lifespan_context(app):
+            pass
+
+    asyncio.run(start_and_stop())
+    assert calls == ["init_db"]
+
+    def boom():
+        raise RuntimeError("database not reachable")
+
+    monkeypatch.setattr(session_mod, "init_db", boom)
+    asyncio.run(start_and_stop())          # must not raise
