@@ -1,7 +1,7 @@
 """
 The standalone dashboard: ``gha-optimizer dashboard`` (and ``python demo_server.py``).
 
-A small FastAPI app that serves ``dashboard/index.html`` and the dashboard API on the repositories already ingested into
+A small FastAPI app that serves ``gha_optimizer/dashboard_ui/index.html`` and the dashboard API on the repositories already ingested into
 the local database.  No Postgres, Redis or Celery is needed.  The same UI and API are mounted in the full API server
 (``gha-optimizer serve`` -> ``/dashboard``), so there is exactly one dashboard.
 """
@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse
 from gha_optimizer.dashboard_service import DashboardService
 from gha_optimizer.server.api.v1 import dashboard as dashboard_api
 
-UI_PATH = Path(__file__).resolve().parent.parent / "dashboard" / "index.html"
+UI_PATH = Path(__file__).resolve().parent / "dashboard_ui" / "index.html"      # inside the package (package_data), so an installed copy serves it too
 
 
 def ui_html() -> str:

@@ -1,5 +1,5 @@
 """
-Dashboard REST API - the data behind ``dashboard/index.html``.
+Dashboard REST API - the data behind ``gha_optimizer/dashboard_ui/index.html``.
 
   GET  /dashboard/repos               ingested repositories (+ whether a result is ready)
   POST /dashboard/run                 start (or reuse) the pipeline for a repository; idempotent

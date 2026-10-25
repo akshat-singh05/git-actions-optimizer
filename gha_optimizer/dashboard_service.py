@@ -1,5 +1,5 @@
 """
-The one backend of the dashboard UI (``dashboard/index.html``).
+The one backend of the dashboard UI (``gha_optimizer/dashboard_ui/index.html``).
 
 It runs the real pipeline on an ingested repository - the same layers as :func:`gha_optimizer.pipeline.run_pipeline` -
 and returns every intermediate result as JSON for the UI, plus the pieces a presenter needs:

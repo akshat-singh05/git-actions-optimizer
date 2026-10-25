@@ -1,6 +1,6 @@
 """Compatibility entry point: ``python demo_server.py --repo owner/repo [--warm]`` is ``gha-optimizer dashboard ...``.
 
-The dashboard (UI ``dashboard/index.html`` + API + service) lives in ``gha_optimizer/``; there is no second implementation.
+The dashboard (UI ``gha_optimizer/dashboard_ui/index.html`` + API + service) lives in ``gha_optimizer/``; there is no second implementation.
 """
 import sys
 

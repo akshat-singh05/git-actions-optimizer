@@ -13,6 +13,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Akshat Singh",
     python_requires=">=3.10",
+    package_data={"gha_optimizer": ["dashboard_ui/*.html"]},      # the dashboard page ships with the package
     packages=find_packages(include=["gha_optimizer", "gha_optimizer.*"]),
     install_requires=[
         "networkx>=3.2",

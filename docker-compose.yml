@@ -41,7 +41,6 @@ services:
         condition: service_started
     volumes:
       - ./gha_optimizer:/app/gha_optimizer
-      - ./dashboard:/app/dashboard
 
   worker:
     build:

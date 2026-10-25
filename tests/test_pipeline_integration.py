@@ -105,13 +105,23 @@ def test_pipeline_declines_when_a_workflow_job_has_no_history():
     assert ei.value.details["jobs"] == ["deploy"]
 
 
-def test_pipeline_declines_when_cache_labels_are_missing():
+def test_pipeline_runs_without_the_cache_model_when_cache_labels_are_missing():
+    """Logs expired, so no cache label exists: since 2026-10-26 the report-only cache model is skipped (n/a, never a default, stated in the explanation)
+    and the failure / duration models and the scheduler still run, instead of the whole pipeline declining.  The failure labels are still required."""
+    import math
+
     history = copy.deepcopy(generate_synthetic_test_history(n_runs=50))
     for r in history:
         r.cache_hit = None  # e.g. logs expired: the label is unknown, not "hit"
+    plan, explanation, _ = _run(history)
+    assert all(math.isnan(jp.predicted_cache_miss_prob) for jp in plan.jobs)
+    assert "too few log-derived cache-miss labels" in explanation and "0 labelled rows" in explanation
+    assert all(0.0 <= jp.predicted_failure_prob <= 1.0 for jp in plan.jobs)
+    for r in history:
+        r.conclusion = "success"          # no failing outcome at all: the failure model cannot be trained, and that still declines
     with pytest.raises(InsufficientHistoryError) as ei:
         _run(history)
-    assert "cache-miss model" in ei.value.reason and ei.value.details["labelled_rows"] == 0
+    assert "failure model" in ei.value.reason
 
 
 def test_explanation_separates_assumed_from_derived_and_output_is_valid_workflow():
