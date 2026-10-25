@@ -16,6 +16,11 @@ What it does (all of it is visible in the output; nothing is simulated):
   4. reports medians, the difference and an exact permutation p-value (difference of medians) per metric;
   5. closes the pull requests and deletes the branches, also when something fails.
 
+Failing-run mode (``--inject-failure PATH --expect-failed-job JOB``): in every round a file that trips the lint job is committed
+on the arm's own branch (never on the default branch), so the run is EXPECTED to fail in ``JOB``.  A run is then valid when ``JOB`` failed
+and every other job succeeded or was skipped; the summary reports how many downstream jobs ran after the failure, which is the cost of
+a relaxed ``needs`` gate that a green-run measurement cannot show.
+
 Needs the GitHub CLI (``gh auth login``) with push rights on the repository.  It consumes GitHub Actions minutes
 (about 2 x (rounds + 1) runs) and creates temporary branches / draft PRs in the repository named below.
 """
@@ -119,7 +124,10 @@ def summarize_metric(a: list[float], b: list[float]) -> dict:
 
 
 def run_metrics(jobs: list[dict], run_obj: dict) -> dict:
-    """Timings of one finished run from the API objects."""
+    """Timings of one finished run from the API objects.  A skipped job is never billed and GitHub gives it meaningless timestamps (a negative
+    duration was seen), so skipped jobs count in ``job_conclusion`` only, not in any timing."""
+    all_jobs = jobs
+    jobs = [j for j in jobs if j.get("conclusion") != "skipped"]
     starts = [parse_ts(j["started_at"]) for j in jobs if j.get("started_at")]
     ends = [parse_ts(j["completed_at"]) for j in jobs if j.get("completed_at")]
     created = parse_ts(run_obj["created_at"])
@@ -129,14 +137,19 @@ def run_metrics(jobs: list[dict], run_obj: dict) -> dict:
         "billable_job_s": sum((parse_ts(j["completed_at"]) - parse_ts(j["started_at"])).total_seconds() for j in jobs if j.get("started_at") and j.get("completed_at")),
         "queue_s": {j["name"]: (parse_ts(j["started_at"]) - created).total_seconds() for j in jobs if j.get("started_at")},
         "job_s": {j["name"]: (parse_ts(j["completed_at"]) - parse_ts(j["started_at"])).total_seconds() for j in jobs if j.get("started_at") and j.get("completed_at")},
-        "job_conclusion": {j["name"]: j["conclusion"] for j in jobs},
-        "steps": sorted((j["name"], s["name"], s["conclusion"]) for j in jobs for s in j.get("steps", [])),
+        "job_conclusion": {j["name"]: j["conclusion"] for j in all_jobs},
+        "steps": sorted((j["name"], s["name"], s["conclusion"]) for j in all_jobs for s in j.get("steps", [])),
     }
 
 
-def build_summary(records: list[dict], repo: str) -> dict:
-    """summary.json content from the per-run records (warm-up rounds excluded from every statistic)."""
+def build_summary(records: list[dict], repo: str, expect_failed_job: str | None = None) -> dict:
+    """summary.json content from the per-run records (warm-up rounds excluded from every statistic).
+
+    ``expect_failed_job``: failing-run mode - a run is valid when that job failed and every other job succeeded or was skipped."""
     def valid(r: dict) -> bool:
+        if expect_failed_job:
+            return (r["conclusion"] == "failure" and r["job_conclusion"].get(expect_failed_job) == "failure"
+                    and all(c in ("success", "skipped") for j, c in r["job_conclusion"].items() if j != expect_failed_job))
         return r["conclusion"] == "success" and all(c in ("success", "skipped") for c in r["job_conclusion"].values())
 
     # a cancelled / failed run (e.g. cancelled by the workflow's own concurrency group) is not a timing of the workflow: it is excluded and listed
@@ -144,6 +157,7 @@ def build_summary(records: list[dict], repo: str) -> dict:
     meas = [r for r in measured if valid(r)]
     excluded = [{"arm": r["arm"], "round": r["round"], "run_id": r["run_id"], "conclusion": r["conclusion"],
                  "job_conclusion": {j: c for j, c in r["job_conclusion"].items() if c not in ("success", "skipped")}} for r in measured if not valid(r)]
+    ran = lambda r: sum(1 for j, c in r["job_conclusion"].items() if c == "success")      # noqa: E731 - jobs that actually ran to success
     A = [r for r in meas if r["arm"] == "A"]
     B = [r for r in meas if r["arm"] == "B"]
     summary = {
@@ -152,6 +166,10 @@ def build_summary(records: list[dict], repo: str) -> dict:
         "all_success": all(valid(r) for r in meas),
         "needs_ok_all": all(r["needs_ok"] for r in records),
     }
+    if expect_failed_job:
+        summary["mode"] = f"failing run: job {expect_failed_job!r} is made to fail in every run; 'all_success' then means 'every run failed in that job and nowhere else'"
+        summary["expected_failed_job"] = expect_failed_job
+        summary["jobs_run_to_success_per_run"] = {"A_original": [ran(r) for r in A], "B_proposed": [ran(r) for r in B]}
     for key in ("critical_path_s", "run_s", "billable_job_s"):
         summary[key] = summarize_metric([r[key] for r in A], [r[key] for r in B])
     jobs = sorted(set.intersection(*(set(r["job_s"]) for r in meas)))     # jobs present in every measured run
@@ -164,7 +182,8 @@ def needs_respected(jobs: list[dict], needs: dict[str, list[str]]) -> bool:
     by = {j["name"]: j for j in jobs}
     for down, ups in needs.items():
         for up in ups:
-            if down in by and up in by and parse_ts(by[down]["started_at"]) < parse_ts(by[up]["completed_at"]):
+            if down in by and up in by and by[down].get("started_at") and by[up].get("completed_at") \
+                    and parse_ts(by[down]["started_at"]) < parse_ts(by[up]["completed_at"]):
                 return False
     return True
 
@@ -183,8 +202,14 @@ def main() -> int:
                     help="pr (default): one empty commit per run on a throw-away draft PR; dispatch: start the arm's workflow with workflow_dispatch on its branch (for workflows that only run when certain paths change, so an empty commit would not trigger them; the workflow needs a workflow_dispatch trigger)")
     ap.add_argument("--touch-file", metavar="PATH", help="pr mode, for a workflow that only runs when certain paths change: instead of an empty commit, append one comment line (prefix --touch-comment) to this repository file in every round, so the push matches the workflow's paths filter without changing any behaviour (use a file whose comments are inert, e.g. ruff.toml)")
     ap.add_argument("--touch-comment", default="#", help="comment prefix of the touched file (default #)")
+    ap.add_argument("--inject-failure", metavar="PATH", help="failing-run mode: in every round write this repository file (content --inject-content, plus a comment line naming arm and round) on the arm's branch so that the lint job fails; "
+                                                             "needs --expect-failed-job")
+    ap.add_argument("--inject-content", default="import os", help="content of the injected file (default: an unused import, which ruff reports as F401)")
+    ap.add_argument("--expect-failed-job", metavar="JOB", help="failing-run mode: the job that is expected to fail (a run is valid when only this job failed)")
     ap.add_argument("--resume", metavar="STAMP", help="continue an interrupted measurement: the timestamp in the branch names measure-<STAMP>-a / -b")
     args = ap.parse_args()
+    if bool(args.inject_failure) != bool(args.expect_failed_job):
+        ap.error("--inject-failure and --expect-failed-job go together")
 
     import shutil
 
@@ -287,6 +312,11 @@ def main() -> int:
                 with open(tf, "a", encoding="utf-8", newline="\n") as fh:
                     fh.write(f"\n{args.touch_comment} measure: arm {arm} round {rnd}\n")
                 run(["git", "add", args.touch_file], cwd=wt)
+            if args.inject_failure:
+                ff = Path(wt) / args.inject_failure
+                ff.parent.mkdir(parents=True, exist_ok=True)
+                ff.write_text(f"{args.inject_content}\n{args.touch_comment} measure: arm {arm} round {rnd}\n", encoding="utf-8", newline="\n")
+                run(["git", "add", args.inject_failure], cwd=wt)
             run([*GIT, "commit", "-q", "--allow-empty", "-m", f"measure: arm {arm} round {rnd}"], cwd=wt)
             run(["git", *env_git, "push", "-q", "origin", branches[arm]], cwd=wt)
             sha = run(["git", "rev-parse", "HEAD"], cwd=wt).strip()
@@ -323,7 +353,7 @@ def main() -> int:
     records.sort(key=lambda r: (r["round"], r["arm"]))
     (out / "timings.json").write_text(json.dumps(records, indent=1), encoding="utf-8")
     (out / "runs.json").write_text(json.dumps([{k: r[k] for k in ("arm", "round", "warmup", "sha", "run_id", "conclusion")} for r in records], indent=1), encoding="utf-8")
-    summary = build_summary(records, args.repo)
+    summary = build_summary(records, args.repo, args.expect_failed_job)
     (out / "summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
     print(json.dumps(summary, indent=1))
     return 0
