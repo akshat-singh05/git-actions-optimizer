@@ -62,6 +62,16 @@ def test_numbers_inside_strings_and_rounded_forms_are_accepted():
     assert validate_summary("The first job uses a 4 core runner and takes about 120 s (estimated 17%).", FACTS) is None
 
 
+def test_a_faithful_high_precision_quote_and_the_magnitude_of_a_negative_fact_are_accepted_but_an_invented_number_is_not():
+    """Found by the first live call (2026-10-26): the model quoted a cost stored as 0.0293398 as 0.02934 and a fact of -43.1 as "-43.1%"; both were rejected as
+    'not in the facts' because only up to 3 decimals and signed values were allowed.  A rounding / magnitude of a fact is the same figure; an invented one is not."""
+    facts = {"plan": {"cost_usd": 0.0293398, "larger_runners": {"cost_saved_pct": -43.1, "wall_clock_saved_pct": 29.5}}}
+    assert validate_summary("Estimated cost is 0.02934 USD.", facts) is None                      # 5 decimals of the stored value
+    assert validate_summary("Larger runners are estimated to cost -43.1% (more) and save 29.5% time.", facts) is None
+    assert validate_summary("Estimated cost is 0.02935 USD.", facts) is not None                   # one digit off: an invented figure
+    assert validate_summary("Larger runners are estimated to cost 43.2% more.", facts) is not None
+
+
 # ---- Gemini client ------------------------------------------------------------------------------------
 
 class FakeResponse:

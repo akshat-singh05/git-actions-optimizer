@@ -158,8 +158,12 @@ def _allowed_numbers(obj: Any) -> set[float]:
         if isinstance(leaf, bool) or leaf is None:
             continue
         if isinstance(leaf, (int, float)):
-            for d in range(0, 4):
-                out.add(round(float(leaf), d))
+            # a faithful quote of a fact may round it to any number of decimals (a cost of 0.0293398 quoted as 0.02934) and, because the answer's numbers
+            # are read as magnitudes, a negative fact (-43.1) is matched by its magnitude (43.1); an invented number still matches nothing
+            for d in range(0, 7):
+                r = round(float(leaf), d)
+                out.add(r)
+                out.add(abs(r))
         elif isinstance(leaf, str):
             out.update(_numbers_in(leaf))        # "ubuntu-latest-4-cores" legitimately contains a 4
     return out
