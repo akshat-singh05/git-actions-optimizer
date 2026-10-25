@@ -211,6 +211,7 @@ def test_the_one_ui_is_served_and_contains_no_embedded_data(client):
     c, _ = client
     html = c.get("/").text
     assert "GitHub Actions Performance Optimizer" in html and "/api/v1/dashboard" in html
-    ui = Path(__file__).resolve().parent.parent / "gha_optimizer" / "dashboard_ui" / "index.html"
+    from gha_optimizer.dashboard_app import UI_PATH
+    ui = UI_PATH                                                                       # the page the (possibly pip-installed) package serves
     assert ui.is_file() and not (ui.parent / "app.js").exists()                       # the old second UI is gone
     assert not (Path(__file__).resolve().parent.parent / "demo_ui.html").exists()
