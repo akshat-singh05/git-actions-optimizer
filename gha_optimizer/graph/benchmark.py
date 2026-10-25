@@ -24,6 +24,10 @@ from gha_optimizer.graph.models import GraphBenchmarkReport
 logger = logging.getLogger(__name__)
 
 
+def _as_int(value: float | None) -> int | None:
+    return None if value is None else int(value)
+
+
 class GraphBenchmarker:
     """Collects performance measurements for graph operations."""
 
@@ -66,9 +70,9 @@ class GraphBenchmarker:
             incremental_update_time_ms=self._timings.get("incremental_update"),
             traversal_time_ms=self._timings.get("traversal"),
             query_performance_ms=self._timings.get("query"),
-            memory_usage_bytes=self._timings.get("memory_usage_bytes"),
+            memory_usage_bytes=_as_int(self._timings.get("memory_usage_bytes")),
             parser_throughput_files_per_sec=self._timings.get("parser_throughput"),
-            snapshot_storage_bytes=self._timings.get("snapshot_storage_bytes"),
+            snapshot_storage_bytes=_as_int(self._timings.get("snapshot_storage_bytes")),
             node_count=g.number_of_nodes(),
             edge_count=g.number_of_edges(),
         )

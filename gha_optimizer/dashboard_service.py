@@ -53,12 +53,12 @@ from gha_optimizer.graph.dependency_graph import (
     impacted_jobs_for_diff,
 )
 from gha_optimizer.graph.fusion import GraphFusion
-from gha_optimizer.ingestion.history import InsufficientHistoryError, load_step_seconds, require_history
+from gha_optimizer.ingestion.history import InsufficientHistoryError, cache_label_shortfall, load_step_seconds, require_history
 from gha_optimizer.ingestion.mirror import DEFAULT_MIRROR_ROOT, RepoMirror
 from gha_optimizer.ingestion.workflow_parser import parse_workflow
 from gha_optimizer.ingestion.workspace import prepare_repo_snapshot
 from gha_optimizer.graph.ci_semantics import workflow_cannot_restore_cache
-from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, NoCacheModel
+from gha_optimizer.models.cache_miss_predictor import NO_CACHE_REASON, CacheMissPredictor, NoCacheModel
 from gha_optimizer.models.calibration import OutOfSampleCalibrator, failure_score_display, out_of_sample_predictions
 from gha_optimizer.models.duration_estimator import DurationEstimator
 from gha_optimizer.models.failure_predictor import FailurePredictor
@@ -68,7 +68,7 @@ from gha_optimizer.server.db.session import SessionLocal, init_db
 
 logger = logging.getLogger(__name__)
 
-RESULT_VERSION = 9          # bump when the payload or anything it is computed from changes meaning
+RESULT_VERSION = 11          # bump when the payload or anything it is computed from changes meaning
 DEFAULT_CACHE_DIR = Path(".gha_optimizer") / "dashboard_cache"
 # executed benchmarks of the project (docs/<folder>/summary.json + timings.json): real GitHub Actions runs of original vs proposed workflow
 MEASURED_RUNS = {
@@ -265,7 +265,7 @@ class DashboardService:
         with self._lock:
             p = self._progress[repo]
             p.state, p.started_at, p.message = "running", time.time(), ""
-            marks = {"t": time.time(), "stage": -1}
+            marks: dict[str, Any] = {"t": time.time(), "stage": -1}
 
             def progress(stage: int, message: str = "") -> None:
                 now = time.time()
@@ -304,7 +304,7 @@ class DashboardService:
         init_db()
         db = SessionLocal()
         try:
-            extra = {"snapshot_root": self.snapshot_root} if self.snapshot_root else {}
+            extra: dict[str, Any] = {"snapshot_root": self.snapshot_root} if self.snapshot_root else {}
             snap = prepare_repo_snapshot(db, repo, **extra)
         except (InsufficientHistoryError, LookupError) as exc:
             return {"declined": True, "repo": repo, "reason": str(exc),
@@ -382,8 +382,13 @@ class DashboardService:
         }
         try:
             no_cache_possible = workflow_cannot_restore_cache(workflow.raw.get("jobs") or {})   # no cache labels can exist: the report-only cache model is skipped
-            require_history(snap.history, workflow.jobs.keys(), config.model.min_history_runs, 0 if no_cache_possible else config.model.min_cache_labels,
-                            need_failure_labels=True)
+            # too few log-derived cache labels skips the (report-only) cache model instead of declining the repository: failure and duration have their own labels
+            cache_shortfall = None if no_cache_possible else cache_label_shortfall(snap.history, config.model.min_cache_labels)
+            cache_skip_reason = NO_CACHE_REASON if no_cache_possible else (
+                None if cache_shortfall is None else
+                f"too few log-derived cache-miss labels to train it ({cache_shortfall['labelled_rows']} labelled rows, classes {cache_shortfall['classes_present']}, "
+                f"{cache_shortfall['required_rows']} rows of both classes required)")
+            require_history(snap.history, workflow.jobs.keys(), config.model.min_history_runs, 0, need_failure_labels=True)
         except InsufficientHistoryError as exc:
             results.update(declined=True, reason=str(exc), hint="ingest more real history (with job logs); no synthetic data is substituted")
             return results, None
@@ -404,11 +409,11 @@ class DashboardService:
         progress(6, "cache-miss, failure and duration models")
         trained: dict[str, Any] = {}
         step7: dict[str, Any] = {}
-        for name, model in {"cache_miss": NoCacheModel() if no_cache_possible else CacheMissPredictor(), "failure": FailurePredictor(), "duration": DurationEstimator()}.items():
+        for name, model in {"cache_miss": NoCacheModel(cache_skip_reason) if cache_skip_reason else CacheMissPredictor(), "failure": FailurePredictor(), "duration": DurationEstimator()}.items():
             try:
                 metrics = model.fit(train_df)
                 trained[name] = model
-                step7[name] = ({"status": "NOT APPLICABLE - no step of this workflow can restore a cache, so there are no cache labels"} if isinstance(model, NoCacheModel)
+                step7[name] = ({"status": f"NOT APPLICABLE - {model.reason}"} if isinstance(model, NoCacheModel)
                                else {**{k: _num(v) for k, v in metrics.items()}, "status": "TRAINED"})
             except ValueError as exc:
                 step7[name] = {"status": f"NOT TRAINED - {exc}"}
@@ -533,7 +538,7 @@ class DashboardService:
         results["summary"] = {
             "files_analyzed": len(snap.source_files), "source_deps": source_graph.number_of_edges(), "ci_deps": ci_graph.number_of_edges(),
             "fused_nodes": fused_graph.number_of_nodes(), "fused_edges": fused_graph.number_of_edges(), "jobs": len(workflow.jobs),
-            "models_trained": len(trained), **_plan_numbers(plan), "estimated": True,
+            "models_trained": sum(1 for m in trained.values() if not isinstance(m, NoCacheModel)), "models_trained_names": [n for n, m in trained.items() if not isinstance(m, NoCacheModel)], **_plan_numbers(plan), "estimated": True,
             "elapsed": round(time.time() - t0, 2),
         }
         results["suggestions"] = ctx.suggestions
@@ -684,7 +689,7 @@ def source_graph_view(graph: nx.MultiDiGraph, max_dirs: int = 26, max_packages: 
     if not paths:
         return {"dirs": [], "packages": [], "edges": []}
     depth = _pick_depth(list(paths.values()), max_dirs)
-    dir_files: dict[str, int] = Counter(_dir_of(p, depth) for p in paths.values())
+    dir_files: Counter[str] = Counter(_dir_of(p, depth) for p in paths.values())
     imports: dict[tuple[str, str], set[str]] = {}
     pkg_files: dict[str, set[str]] = {}
     file_pkgs: dict[str, set[str]] = {}
@@ -722,8 +727,8 @@ def fusion_graph_view(fused: nx.MultiDiGraph, max_dirs: int = 22, max_targets: i
     agg: dict[tuple[str, str], int] = Counter()
     for path, tgt, _ in links:
         agg[(_dir_of(path, depth), tgt)] += 1
-    tgt_total: dict[str, int] = Counter()
-    dir_total: dict[str, int] = Counter()
+    tgt_total: Counter[str] = Counter()
+    dir_total: Counter[str] = Counter()
     for (d, t), w in agg.items():
         tgt_total[t] += w
         dir_total[d] += w

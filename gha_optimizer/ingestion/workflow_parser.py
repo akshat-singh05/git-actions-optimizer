@@ -107,7 +107,7 @@ class JobSpec:
     @property
     def cache_paths(self) -> list[str]:
         """Return all cache paths declared by actions/cache steps."""
-        paths = []
+        paths: list[str] = []
         for step in self.steps:
             if "actions/cache" in str(step.get("uses", "")):
                 path_val = step.get("with", {}).get("path", "")
@@ -346,7 +346,7 @@ def parse_workflow_text(text: str, default_name: str = "workflow") -> WorkflowSp
             env=job_env,
             permissions=job_perms,
             uses=job_body.get("uses") if isinstance(job_body.get("uses"), str) else None,
-            with_inputs=job_body.get("with") if isinstance(job_body.get("with"), dict) else {},
+            with_inputs=dict(job_body["with"]) if isinstance(job_body.get("with"), dict) else {},
             outputs={str(k): str(v) for k, v in (job_body.get("outputs") or {}).items()}
             if isinstance(job_body.get("outputs"), dict) else {},
             working_directory=_run_working_directory(job_body.get("defaults")) or wf_wd,

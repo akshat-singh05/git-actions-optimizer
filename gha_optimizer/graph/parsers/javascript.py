@@ -45,7 +45,7 @@ class JavaScriptParser(BaseLanguageParser):
             self.capabilities.available = True
         except Exception as e:
             logger.warning("Tree-sitter JavaScript unavailable: %s", e)
-            self.parser = None
+            self.parser = None  # type: ignore[assignment]  # tree-sitter grammar unavailable: parse_file then returns nothing
             self.capabilities.error_message = str(e)
 
     def parse_file(self, file_path: Path) -> Tuple[List[NodeMetadata], List[EdgeMetadata]]:

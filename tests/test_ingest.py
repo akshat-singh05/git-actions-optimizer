@@ -453,3 +453,30 @@ def test_run_windows_do_not_depend_on_the_local_timezone(monkeypatch):
     finally:
         monkeypatch.undo()
         time.tzset()
+
+
+def test_outcomes_only_ingestion_fetches_no_diff_and_leaves_the_run_unfinished(session_factory):
+    """live-evaluate needs only the job conclusions: with fetch_diffs=False no diff request is made, the run is not marked done (a normal ingest completes it
+    later) and load_history reads its outcomes only on request (require_diff=False)."""
+    from gha_optimizer.ingestion.history import load_history
+
+    ing, client, s = make(session_factory, fetch_diffs=False)
+    ing.ingest_single_run(1003)
+    assert client.calls["compare"] == 0 and client.calls["get_commit"] == 0 and client.calls["pulls_for_commit"] == 0
+    run = s.query(m.WorkflowRun).filter_by(run_id="1003").one()
+    assert run.jobs_fetched_at is not None and run.diff_source is None
+    assert s.query(m.IngestionProgress).filter_by(stage="run_done", key="1003").count() == 0
+    assert load_history(s, "o/r") == []                                           # a run without a known diff is not training data
+    outcomes = {r.job_id: r.conclusion for r in load_history(s, "o/r", require_diff=False)}
+    assert outcomes == {"lint": "success", "test": "success", "build": "failure"}   # run 1003 is the failing run of the fake
+
+
+def test_a_loop_over_runs_with_one_ingestor_sets_up_once_and_reuses_the_fetched_run(session_factory):
+    ing, client, s = make(session_factory, fetch_diffs=False)
+    setups = []
+    original = client.list_workflows
+    client.list_workflows = lambda: (setups.append(1), original())[1]
+    for rid in (1000, 1001, 1002):
+        ing.ingest_single_run(rid, run_json=client.get_run(rid))
+    assert len(setups) == 1
+    assert s.query(m.WorkflowRun).count() == 3 and s.query(m.WorkflowJob).count() == 12

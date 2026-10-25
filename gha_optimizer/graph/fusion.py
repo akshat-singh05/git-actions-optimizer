@@ -191,10 +191,10 @@ class GraphFusion:
             if not recognised:
                 for step in job.steps:
                     action = step["uses"].split("@", 1)[0]
-                    tc = SETUP_ACTION_TOOLCHAIN.get(action)
-                    if tc:
+                    setup_tc = SETUP_ACTION_TOOLCHAIN.get(action)
+                    if setup_tc:
                         scope = normalize_path(step["wd"] or "")
-                        added += _link(g, _toolchain_target(g, index, tc, "all", scope), job.node,
+                        added += _link(g, _toolchain_target(g, index, setup_tc, "all", scope), job.node,
                                        EdgeType.DEPENDS_ON, prov_setup)
         return added
 

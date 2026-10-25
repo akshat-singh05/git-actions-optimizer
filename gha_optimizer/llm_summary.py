@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Protocol
+from typing import Any, Mapping, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +88,8 @@ class GeminiClient:
 
 def client_from_env(env: dict[str, str] | None = None) -> GeminiClient | None:
     """A client if ``GEMINI_API_KEY`` and ``GHA_LLM_MODEL`` are both set, else None (layer disabled)."""
-    env = os.environ if env is None else env
-    key, model = env.get("GEMINI_API_KEY", "").strip(), env.get("GHA_LLM_MODEL", "").strip()
+    source: Mapping[str, str] = os.environ if env is None else env
+    key, model = source.get("GEMINI_API_KEY", "").strip(), source.get("GHA_LLM_MODEL", "").strip()
     return GeminiClient(key, model) if key and model else None
 
 
@@ -114,12 +114,13 @@ def build_facts(plan: Any, advice: list[Any], unknown: list[str], replay_stats: 
             "reachability_unknown": list(unknown),
         },
     }
-    b = (replay_stats or {}).get("dag_safe_readable")
+    stats = replay_stats or {}
+    b = stats.get("dag_safe_readable")
     if b:
         pct = lambda x: None if x is None else round(100 * x, 1)  # noqa: E731
         facts["measured_replay"] = {
             "basis": "MEASURED on past runs of this repository; a counterfactual, the policy was not run",
-            "runs_replayed": replay_stats["runs"],
+            "runs_replayed": stats["runs"],
             "billable_time_skipped_pct": pct(b["saved_seconds_share"]),
             "failing_runs_that_would_look_green": b["masked_runs"],
             "failing_runs_total": b["failing_runs"],

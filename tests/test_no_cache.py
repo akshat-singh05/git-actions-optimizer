@@ -56,6 +56,40 @@ def test_pipeline_runs_without_cache_labels_when_the_workflow_cannot_cache(tmp_p
     plan, explanation = run_pipeline(workflow_path=wf, repo_root=FIXTURES / "sample_repo", tracked_files=["src/app.py", "requirements.txt"], history=history,
                                      changed_files=["src/app.py"], out_path=out)
     assert len(plan.jobs) == 5 and plan.baseline_wall_clock_seconds > 0
-    assert "n/a (no step can restore a cache)" in explanation and "not defined for this workflow" in explanation
+    assert "n/a (no cache-miss model for this workflow, see the model notes)" in explanation and "not defined for this workflow" in explanation
     assert all(math.isnan(jp.predicted_cache_miss_prob) for jp in plan.jobs)
     assert copy.deepcopy(plan.time_saved_pct) == 0.0          # the default plan is unchanged by this
+
+
+def test_pipeline_runs_with_too_few_cache_labels_instead_of_declining(tmp_path):
+    """The workflow CAN restore a cache but the ingested history has no log-derived cache label (log retention): the report-only cache model is
+    skipped (NaN, stated in the explanation) and the failure / duration models and the scheduler still run, instead of declining the repository."""
+    history = [dataclasses.replace(r, cache_hit=None) for r in generate_synthetic_test_history(n_runs=50)]
+    with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
+        out = f.name
+    plan, explanation = run_pipeline(workflow_path=FIXTURES / "sample_workflow.yml", repo_root=FIXTURES / "sample_repo",
+                                     tracked_files=["src/app.py", "requirements.txt"], history=history, changed_files=["src/app.py"], out_path=out)
+    assert len(plan.jobs) == 5 and plan.baseline_wall_clock_seconds > 0
+    assert "too few log-derived cache-miss labels" in explanation and "0 labelled rows" in explanation
+    assert all(math.isnan(jp.predicted_cache_miss_prob) for jp in plan.jobs)
+    assert all(0.0 <= jp.predicted_failure_prob <= 1.0 for jp in plan.jobs)      # the failure model really ran
+    assert copy.deepcopy(plan.time_saved_pct) == 0.0
+
+
+def test_cache_label_shortfall_is_none_with_enough_labels_of_both_classes_and_describes_the_gap_otherwise():
+    from gha_optimizer.ingestion.history import cache_label_shortfall
+
+    rich = generate_synthetic_test_history(n_runs=50)
+    assert cache_label_shortfall(rich, 5) is None
+    none_labelled = [dataclasses.replace(r, cache_hit=None) for r in rich]
+    gap = cache_label_shortfall(none_labelled, 5)
+    assert gap == {"labelled_rows": 0, "classes_present": [], "required_rows": 5}
+    one_class = [dataclasses.replace(r, cache_hit=True) for r in rich]
+    assert cache_label_shortfall(one_class, 5)["classes_present"] == ["True"]
+
+
+def test_no_cache_model_reports_its_reason():
+    import pandas as pd
+
+    m = NoCacheModel("too few log-derived cache-miss labels to train it (13 labelled rows)")
+    assert "13 labelled rows" in m.fit(pd.DataFrame({"a": [1]}))["status"]

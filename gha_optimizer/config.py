@@ -111,13 +111,11 @@ class AppConfig(BaseSettings):
     # Environment configs that can override defaults
     database_url: str = Field(
         default="postgresql://postgres:postgres@db:5432/gha_optimizer",
-        alias="DATABASE_URL",
-        env="DATABASE_URL"
+        alias="DATABASE_URL"
     )
     redis_url: str = Field(
         default="redis://redis:6379/0",
-        alias="REDIS_URL",
-        env="REDIS_URL"
+        alias="REDIS_URL"
     )
 
     github: GithubConfig = Field(default_factory=GithubConfig)

@@ -8,6 +8,7 @@ from gha_optimizer.config import config
 logger = logging.getLogger(__name__)
 
 # Initialize redis connection
+redis_client: Optional[Any] = None
 try:
     redis_client = redis.from_url(config.redis_url, decode_responses=True)
 except Exception as e:

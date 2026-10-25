@@ -248,9 +248,9 @@ def evaluate_ledger(rows: list[dict[str, Any]], outcomes: dict[tuple[str, str], 
     flat = []
     for r in scored:
         for j in r["jobs"]:
-            y = outcomes.get((r["run_id"], j["job"]))
-            if y is not None:
-                flat.append((r["run_id"], j, int(y)))
+            outcome = outcomes.get((r["run_id"], j["job"]))
+            if outcome is not None:
+                flat.append((r["run_id"], j, int(outcome)))
     result: dict[str, Any] = {"runs_in_ledger": len(scored), "skipped_runs": len(rows) - len(scored),
                               "runs_with_outcomes": len({f[0] for f in flat}), "scored_jobs": len(flat),
                               "positives": int(sum(f[2] for f in flat))}
@@ -267,7 +267,7 @@ def evaluate_ledger(rows: list[dict[str, Any]], outcomes: dict[tuple[str, str], 
     def top_precision(p: np.ndarray, yy: np.ndarray) -> tuple[float, float]:
         k = max(int(np.ceil(TOP_FRACTION * len(p))), 1)
         idx = np.argsort(-p, kind="stable")[:k]
-        return float(yy[idx].mean()), float(yy[idx].sum() / yy.sum())
+        return float(yy[idx].mean()), float(yy[idx].sum()) / float(yy.sum())
 
     metrics = {}
     for m, p in P.items():

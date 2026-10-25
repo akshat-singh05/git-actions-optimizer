@@ -11,6 +11,8 @@ the canonical graph implementation.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -37,11 +39,11 @@ from gha_optimizer.generator.workflow_writer import (
 )
 from gha_optimizer.graph.dependency_graph import build_dependency_graph
 from gha_optimizer.ingestion.github_client import WorkflowRunRecord
-from gha_optimizer.ingestion.history import require_history
+from gha_optimizer.ingestion.history import cache_label_shortfall, require_history
 from gha_optimizer.ingestion.workflow_parser import WorkflowSpec, parse_workflow
 from gha_optimizer.llm_summary import LLMClient, summarize
 from gha_optimizer.graph.ci_semantics import workflow_cannot_restore_cache
-from gha_optimizer.models.cache_miss_predictor import CacheMissPredictor, NoCacheModel
+from gha_optimizer.models.cache_miss_predictor import NO_CACHE_REASON, CacheMissPredictor, NoCacheModel
 from gha_optimizer.models.duration_estimator import DurationEstimator
 from gha_optimizer.models.store import ModelStore, fingerprint
 from gha_optimizer.models.failure_predictor import FailurePredictor
@@ -153,11 +155,19 @@ def run_pipeline(
         history = [r for r in history if r.workflow_path in (None, workflow_repo_path)]
     # a workflow in which no step can restore a cache has no cache labels by construction: the (report-only) cache model is skipped, not faked
     no_cache_possible = workflow_cannot_restore_cache(workflow.raw.get("jobs") or {})
+    # too few log-derived cache labels (log retention) does not decline the whole pipeline either: the cache prediction is report-only and never enters the
+    # schedule, so the cache model is skipped (n/a, stated in the explanation) while the failure and duration models, which have their own labels, still run
+    cache_shortfall = None if no_cache_possible else cache_label_shortfall(history, config.model.min_cache_labels)
+    cache_skipped = no_cache_possible or cache_shortfall is not None
+    cache_skip_reason = NO_CACHE_REASON if no_cache_possible else (
+        None if cache_shortfall is None else
+        f"too few log-derived cache-miss labels to train it ({cache_shortfall['labelled_rows']} labelled rows, classes {cache_shortfall['classes_present']}, "
+        f"{cache_shortfall['required_rows']} rows of both classes required)")
     require_history(
         history,
         workflow.jobs.keys(),
         min_runs=config.model.min_history_runs,
-        need_cache_labels=0 if no_cache_possible else config.model.min_cache_labels,
+        need_cache_labels=0,
         need_failure_labels=True,
     )
 
@@ -182,8 +192,8 @@ def run_pipeline(
     # ──────────────────────────────────────────────────────────────
     # Layer 3 — Train models & score current diff
     # ──────────────────────────────────────────────────────────────
-    store = ModelStore(model_dir) if (model_dir is not None and not no_cache_possible) else None
-    fp = fingerprint(history) if store is not None else None
+    store = ModelStore(model_dir) if (model_dir is not None and not cache_skipped) else None
+    fp = fingerprint(history) if store is not None else ""      # only used when a store exists
     loaded = store.try_load(fp, workflow_repo_path) if store is not None else None
     if loaded is not None:
         models, metrics = loaded
@@ -191,7 +201,7 @@ def run_pipeline(
         cache_metrics, failure_metrics, duration_metrics = metrics["cache_miss"], metrics["failure"], metrics["duration"]
         model_source = f"loaded from {model_dir} (same history, features and hyper-parameters as when they were fit)"
     else:
-        cache_model = NoCacheModel() if no_cache_possible else CacheMissPredictor()
+        cache_model = NoCacheModel(cache_skip_reason) if cache_skipped else CacheMissPredictor()
         failure_model = FailurePredictor()
         duration_model = DurationEstimator()
 
@@ -240,7 +250,7 @@ def run_pipeline(
     # ──────────────────────────────────────────────────────────────
     dag = job_only_dag(workflow)
 
-    schedule_kwargs = {}
+    schedule_kwargs: dict[str, Any] = {}
     if alpha is not None:
         schedule_kwargs["alpha"] = alpha
     if beta is not None:
@@ -314,6 +324,8 @@ def run_pipeline(
     unsupported = [j for j in workflow.jobs if j not in labelled_jobs]
     if no_cache_possible:
         model_lines.append("- P(cache miss) is not defined for this workflow: no step of it can restore a cache, so there are no cache labels (reported as n/a; it never entered the schedule)")
+    elif cache_skipped:
+        model_lines.append(f"- P(cache miss) is not available for this workflow: {cache_skip_reason} (reported as n/a, never a default; it never enters the schedule, and the failure and duration models are unaffected)")
     elif unsupported:
         model_lines.append(
             f"- P(cache miss) for {unsupported} is NOT backed by any log-derived label for that job "
@@ -321,7 +333,7 @@ def run_pipeline(
         )
 
     # Feature importance
-    if not no_cache_possible:
+    if not cache_skipped:
         model_lines.append("")
         model_lines.append("### Top feature importances (cache-miss)")
         for feat, imp in list(cache_model.feature_importance.items())[:5]:

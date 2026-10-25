@@ -89,6 +89,7 @@ def load_history(
     workflow_path: str | None = None,
     since: datetime | None = None,
     events: Iterable[str] | None = None,
+    require_diff: bool = True,
 ) -> list[WorkflowRunRecord]:
     """Real ``(run, job key)`` records for ``repo`` (optionally one workflow), oldest first.
 
@@ -96,11 +97,15 @@ def load_history(
     ``run_changed_files`` rows, and would otherwise enter the dataset with ``files_changed_count = 0`` - a false
     value, not an unknown one.
 
+    ``require_diff=False`` admits runs whose diff is not known, for reading OUTCOMES only (``live-evaluate``): their ``files_changed`` is then empty, which is
+    unknown, not zero - never use such records as training or feature data.
+
     Raises nothing for an empty result; callers decide (see :func:`require_history`).
     """
     runs_q = db.query(m.WorkflowRun).filter(m.WorkflowRun.repo == repo, m.WorkflowRun.status == "completed",
-                                            m.WorkflowRun.jobs_fetched_at.isnot(None),
-                                            m.WorkflowRun.diff_source.isnot(None))
+                                            m.WorkflowRun.jobs_fetched_at.isnot(None))
+    if require_diff:
+        runs_q = runs_q.filter(m.WorkflowRun.diff_source.isnot(None))
     if workflow_path:
         runs_q = runs_q.filter(m.WorkflowRun.workflow_path == workflow_path)
     if since is not None:
@@ -176,6 +181,16 @@ def load_history(
     return records
 
 
+def cache_label_shortfall(history: list[WorkflowRunRecord], need: int) -> dict | None:
+    """``None`` when the history has enough log-derived cache-miss labels to train a cache model (at least ``need`` labelled rows and
+    both classes present); otherwise the facts, for a message."""
+    labelled = [r for r in history if r.cache_hit is not None]
+    classes = {r.cache_hit for r in labelled}
+    if len(labelled) < need or len(classes) < 2:
+        return {"labelled_rows": len(labelled), "classes_present": sorted(map(str, classes)), "required_rows": need}
+    return None
+
+
 def require_history(
     history: list[WorkflowRunRecord],
     job_ids: Iterable[str],
@@ -195,13 +210,9 @@ def require_history(
     if missing:
         raise InsufficientHistoryError("workflow jobs with no ingested history", jobs=missing)
     if need_cache_labels:
-        labelled = [r for r in history if r.cache_hit is not None]
-        classes = {r.cache_hit for r in labelled}
-        if len(labelled) < need_cache_labels or len(classes) < 2:
-            raise InsufficientHistoryError(
-                "cache-miss model cannot be trained from the available log-derived labels",
-                labelled_rows=len(labelled), classes_present=sorted(map(str, classes)), required_rows=need_cache_labels,
-            )
+        shortfall = cache_label_shortfall(history, need_cache_labels)
+        if shortfall is not None:
+            raise InsufficientHistoryError("cache-miss model cannot be trained from the available log-derived labels", **shortfall)
     if need_failure_labels:
         failed = sum(1 for r in history if r.conclusion in ("failure", "timed_out"))
         passed = sum(1 for r in history if r.conclusion == "success")

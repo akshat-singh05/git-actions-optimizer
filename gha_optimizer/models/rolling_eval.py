@@ -238,10 +238,10 @@ def evaluate_target(
 
     # paired cluster bootstrap over runs
     rng = np.random.default_rng(SEED)
-    run_index: dict[str, np.ndarray] = {}
+    run_lists: dict[str, list[int]] = {}
     for idx, r in enumerate(runs_arr):
-        run_index.setdefault(r, []).append(idx)  # type: ignore[arg-type]
-    run_index = {r: np.array(ix) for r, ix in run_index.items()}
+        run_lists.setdefault(r, []).append(idx)
+    run_index = {r: np.array(ix) for r, ix in run_lists.items()}
     keys = list(run_index)
     primary = "pr_auc" if spec.kind == "binary" else "mae"
     comparisons = [c for c in (("all", "no_structural"), ("all", "baseline"), ("no_structural", "baseline"))

@@ -93,6 +93,7 @@ class IngestOptions:
     progress_every: int = 10
     log_workers: int = 6                 # concurrent log downloads within a run (network-bound)
     mirror_refresh: bool = True          # fetch new commits into an existing mirror at start
+    fetch_diffs: bool = True             # False = outcomes only (live-evaluate): jobs and their conclusions, no diff; such a run is NOT marked done, so a normal ingest completes it later
 
 
 class RepoIngestor:
@@ -163,15 +164,19 @@ class RepoIngestor:
             self._finish(status)
         return dict(self.counters)
 
-    def ingest_single_run(self, run_id: str | int) -> dict[str, Any]:
-        """Ingest one run (e.g. from a ``workflow_run`` webhook): same idempotent steps as a window scan."""
+    def ingest_single_run(self, run_id: str | int, run_json: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Ingest one run (e.g. from a ``workflow_run`` webhook): same idempotent steps as a window scan.
+
+        ``run_json``: the run object when the caller already fetched it (saves one request).  The repository / workflow / mirror setup is done once
+        per ingestor, so a loop over many runs with one ingestor does not repeat it."""
         self._ingestion_run = m.IngestionRun(repo=self.repo, status="running", args={"run_id": str(run_id)})
         self.db.add(self._ingestion_run)
         self.db.commit()
         status = "complete"
         try:
-            self._setup()
-            run_json = self.client.get_run(run_id)
+            if not self.workflows:
+                self._setup()
+            run_json = run_json or self.client.get_run(run_id)
             wf = next((w for w in self.workflows.values() if w["id"] == run_json.get("workflow_id")), None)
             if wf is None:
                 self.counters["runs_ignored_workflow_not_selected"] += 1
@@ -472,7 +477,8 @@ class RepoIngestor:
                 return
         jobs_yaml = self._ensure_workflow_blob(run)
         self._ensure_jobs(run)
-        self._ensure_diff(run)
+        if self.opts.fetch_diffs:
+            self._ensure_diff(run)
         self._map_job_keys(run, jobs_yaml)
         if self.opts.fetch_logs:
             self._ensure_logs(run, jobs_yaml)

@@ -243,7 +243,7 @@ def explain_changes(plan: SchedulePlan, sensitivity: list[dict[str, float]] | No
             lines.append(
                 f"- `{jp.job_id}` → runner=`{jp.runner}`, "
                 f"failure score={jp.predicted_failure_prob:.2f} (not a calibrated probability), "
-                f"P(cache miss)={'n/a (no step can restore a cache)' if jp.predicted_cache_miss_prob != jp.predicted_cache_miss_prob else format(jp.predicted_cache_miss_prob, '.2f')} (informational, not used by the scheduler), "
+                f"P(cache miss)={'n/a (no cache-miss model for this workflow, see the model notes)' if jp.predicted_cache_miss_prob != jp.predicted_cache_miss_prob else format(jp.predicted_cache_miss_prob, '.2f')} (informational, not used by the scheduler), "
                 f"est. {jp.estimated_duration_seconds:.0f}s "
                 f"(${jp.estimated_cost_usd:.5f}), "
                 f"CO₂={jp.estimated_co2_grams:.3f}g, "

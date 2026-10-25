@@ -53,17 +53,24 @@ def miss_target(df: pd.DataFrame, target: str) -> pd.Series:
     return df["label_cache_exact_miss"]
 
 
+NO_CACHE_REASON = "no step of this workflow can restore a cache, so there are no cache labels by construction"
+
+
 class NoCacheModel:
-    """Stand-in for :class:`CacheMissPredictor` for a workflow in which **no step can restore a cache** (see
-    ``ci_semantics.workflow_cannot_restore_cache``): P(cache miss) is not defined there, there is no log line to label, so every
-    prediction is NaN ("not applicable", never a default value).  The cache prediction was only ever carried for reporting
-    (it does not enter the schedule), so nothing else changes.  Never persisted."""
+    """Stand-in for :class:`CacheMissPredictor` when no cache-miss model can be trained: either **no step of the workflow can restore
+    a cache** (see ``ci_semantics.workflow_cannot_restore_cache``; there is no log line to label) or the ingested history has **too few
+    log-derived cache labels** (``history.cache_label_shortfall``).  P(cache miss) is then not defined and every prediction is NaN
+    ("not applicable", never a default value).  The cache prediction is only carried for reporting (it does not enter the schedule), so
+    the failure and duration models and the scheduler are unaffected.  Never persisted."""
 
     variant = "not_applicable"
     feature_importance: dict[str, float] = {}
 
+    def __init__(self, reason: str | None = None):
+        self.reason = reason or NO_CACHE_REASON
+
     def fit(self, df: pd.DataFrame) -> dict:
-        return {"status": "not applicable: no step of this workflow can restore a cache, so there are no cache labels by construction"}
+        return {"status": f"not applicable: {self.reason}"}
 
     def predict_proba(self, df: pd.DataFrame) -> pd.Series:
         return pd.Series(float("nan"), index=df.index)

@@ -439,12 +439,12 @@ class GithubClient:
             mid = lo + (hi - lo) / 2
             left = self.collect_runs(lo, mid, workflow_id, min_span)
             right = self.collect_runs(mid + timedelta(seconds=1), hi, workflow_id, min_span)
-            by_id = {r["id"]: r for r in left.runs}
+            by_id: dict[int, dict[str, Any]] = {r["id"]: r for r in left.runs}
             by_id.update({r["id"]: r for r in right.runs})
             return RunWindow(lo, hi, list(by_id.values()), left.total_count + right.total_count,
                              left.complete and right.complete)
 
-        by_id: dict[int, dict[str, Any]] = {r["id"]: r for r in first.get("workflow_runs", [])}
+        by_id = {r["id"]: r for r in first.get("workflow_runs", [])}
         for attempt in range(2):  # the second pass guards against an inconsistent listing
             page = 2 if attempt == 0 else 1
             while len(by_id) < total and page <= LISTING_CAP // self.per_page + 1:

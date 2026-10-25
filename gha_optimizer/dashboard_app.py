@@ -7,6 +7,8 @@ the local database.  No Postgres, Redis or Celery is needed.  The same UI and AP
 """
 from __future__ import annotations
 
+from typing import Any
+
 import logging
 import threading
 from pathlib import Path
@@ -53,7 +55,7 @@ def run_dashboard(repo: str | None, host: str = "127.0.0.1", port: int = 8501, w
                   snapshot_root: str | None = None, cache_dir: str | None = None) -> None:
     import uvicorn
 
-    kwargs = {"cache_dir": cache_dir} if cache_dir else {}
+    kwargs: dict[str, Any] = {"cache_dir": cache_dir} if cache_dir else {}
     service = DashboardService(default_repo=repo, snapshot_root=snapshot_root, **kwargs)
     available = [r["repo"] for r in service.repos()]
     if repo is None and available:

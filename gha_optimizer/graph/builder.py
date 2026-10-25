@@ -43,7 +43,7 @@ class GraphBuilder:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
         self.graph = nx.MultiDiGraph()
-        self._parsers: Dict[str, object] = {}
+        self._parsers: Dict[str, Any] = {}
         self._parser_errors: Dict[str, str] = {}
         self._load_parsers()
 

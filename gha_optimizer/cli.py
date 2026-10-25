@@ -450,9 +450,11 @@ def cmd_live_evaluate(args: argparse.Namespace) -> None:
     init_db()
     db = SessionLocal()
     try:
+        # outcomes only: the job conclusions are all the evaluation needs, so no diff is fetched (the diff alone cost dozens of API requests per run, a full
+        # re-ingest ~135 per run) and the repository setup is done once for all runs; refreshing the mirror for each run cost ~19 s, missing commits are fetched on demand
         opts = IngestOptions(since=datetime.now(timezone.utc).replace(tzinfo=None), workflows=[args.workflow_path],
-                             fetch_logs=False, use_mirror=True,
-                             mirror_refresh=False)   # one run at a time: refreshing the mirror for each cost ~19 s; missing commits are fetched on demand
+                             fetch_logs=False, use_mirror=True, mirror_refresh=False, fetch_diffs=False)
+        ingestor = RepoIngestor(args.repo, client, db, opts)
         pending = 0
         failed_runs: list[str] = []
         not_attempted = 0
@@ -466,15 +468,16 @@ def cmd_live_evaluate(args: argparse.Namespace) -> None:
             if n_done % 25 == 0:
                 logger.info("live-evaluate: run %d of %d", n_done, len(scored))
             try:
-                if client.get_run(r["run_id"]).get("status") != "completed":
+                run_json = client.get_run(r["run_id"])
+                if run_json.get("status") != "completed":
                     pending += 1
                     continue
-                RepoIngestor(args.repo, client, db, opts).ingest_single_run(r["run_id"])
+                ingestor.ingest_single_run(r["run_id"], run_json=run_json)
             except GithubAPIError as exc:       # a transient GitHub error must not discard the other runs' outcomes
                 db.rollback()
                 failed_runs.append(str(r["run_id"]))
                 logger.warning("run %s skipped in the evaluation: %s", r["run_id"], exc)
-        history = load_history(db, args.repo, args.workflow_path)
+        history = load_history(db, args.repo, args.workflow_path, require_diff=False)     # outcomes only: a run without a known diff still has its job conclusions
     finally:
         db.close()
     outcomes = {(r.run_id, r.job_id): (1 if r.conclusion in ("failure", "timed_out") else 0 if r.conclusion == "success" else None)
@@ -683,7 +686,7 @@ def main() -> None:
 
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]  # Windows consoles default to cp1252
         except (AttributeError, ValueError):
             pass
 

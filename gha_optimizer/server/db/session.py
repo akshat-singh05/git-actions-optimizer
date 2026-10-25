@@ -1,7 +1,7 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
 # Default to SQLite if DATABASE_URL is not set, for backward compatibility
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///gha_optimizer.db")
@@ -15,7 +15,9 @@ engine = create_engine(
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """Declarative base of every table (SQLAlchemy 2.0 form: a real class, so type checkers accept it as a base class)."""
 
 def get_db():
     db = SessionLocal()
