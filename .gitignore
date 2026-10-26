@@ -13,3 +13,8 @@ dist/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Project documents, the paper and the slides are kept outside the repository
+docs/
+*.pptx
+*.docx

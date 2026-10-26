@@ -2,7 +2,6 @@
 .git
 .github
 .venv
-.claude
 .gha_optimizer
 .env
 *.db

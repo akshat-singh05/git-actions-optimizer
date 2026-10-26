@@ -1,5 +1,5 @@
 """
-Safe relaxation of ``needs`` gates (docs/IMPROVEMENT_PLAN.md C; CLAUDE.md rule 7 as amended).
+Safe relaxation of ``needs`` gates (the one approved exception to the rule that a ``needs`` edge is never removed).
 
 A ``needs`` edge ``up -> down`` often only *gates*: ``down`` runs after ``up`` succeeded, but uses nothing ``up`` produced.
 On GitHub-hosted runners the wall-clock of such a pair is ``up + down``; without the edge it is ``max(up, down)``.  This module

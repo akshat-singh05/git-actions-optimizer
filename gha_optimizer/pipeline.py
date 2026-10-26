@@ -117,7 +117,7 @@ def run_pipeline(
     triage_profile : ``triage.job_failure_profile`` of this repository's real history (optional): appended as a short
         "what the past failures looked like" section; never affects the plan.
     relax_gates : Opt-in (default off): remove ``needs`` gates that ``gates.py`` proves safe and that shorten the estimated
-        critical path.  Rule 7 (CLAUDE.md) allows this exception only; the written workflow is validated and every
+        critical path.  This is the only exception to the rule that a ``needs`` edge is never removed; the written workflow is validated and every
         removed edge is listed in the file header and the explanation.
     prune_installs : Opt-in (default off): remove project-dependency installs from jobs that only run stand-alone tools
         (``install_pruning.py``); validated, listed in the file header and the explanation.  ``step_seconds`` (recorded median

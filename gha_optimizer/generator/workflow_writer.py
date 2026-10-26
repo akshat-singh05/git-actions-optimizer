@@ -29,7 +29,7 @@ def generate_optimized_workflow(workflow: WorkflowSpec, plan: SchedulePlan) -> d
     Rewrite the workflow YAML from an optimized ``SchedulePlan``.
 
     Build matrices are never modified: dropping a cell removes a tested configuration, which a history of past
-    failures cannot justify (see CLAUDE.md, "matrix reduction was evaluated and removed").
+    failures cannot justify (matrix reduction was evaluated and removed).
 
     Parameters
     ----------

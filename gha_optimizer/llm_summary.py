@@ -1,7 +1,7 @@
 """
 Optional plain-language summary of an optimization result, written by an LLM.  EXPLANATION LAYER ONLY.
 
-Contract (CLAUDE.md rule 9):
+Contract:
 
 * The schedule, the predictions, the advisory classification and the proposed workflow are computed before this module
   runs and never read anything it produces.  The summary is appended to the explanation text, nothing else.

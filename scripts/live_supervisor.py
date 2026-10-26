@@ -2,9 +2,9 @@
 Keeps the prospective live scorers (``gha-optimizer live-score``) running for days.  Started by the Windows Task Scheduler through
 ``pythonw.exe`` (no console), installed and removed with ``scripts/live_scorers.ps1`` - see docs/BACKGROUND_RUNBOOK.md.
 
-Why this shape: processes started from a Claude session, through WMI, or as *console* programs under the Task Scheduler all died
+Why this shape: processes started from an interactive session, through WMI, or as *console* programs under the Task Scheduler all died
 (a console program gets a Ctrl-C event, exit code 0xC000013A, when its console goes away).  A console-less Python process owned by
-the Task Scheduler is independent of the Claude app and survives it.
+the Task Scheduler is independent of the interactive session and survives it.
 
 Behaviour: one scorer per repository (a 12 h window each, restarted when it ends or crashes, with back-off), a single-instance lock,
 a log in ``.gha_optimizer/live/logs/supervisor.log``.  The GitHub token is read from ``gh auth token`` and handed to each scorer in its

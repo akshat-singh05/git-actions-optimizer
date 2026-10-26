@@ -5,10 +5,10 @@
 .DESCRIPTION
   Default (no switch): register the Windows Task Scheduler task "GHA-Optimizer-LiveSupervisor" if missing and start it.
   The task runs scripts/live_supervisor.py with pythonw.exe (no console window), starts at logon, re-checks every 15 minutes and
-  is independent of the Claude app and of any terminal tab; the supervisor itself keeps one scorer per repository alive
+  is independent of any terminal tab or interactive session; the supervisor itself keeps one scorer per repository alive
   (12 h windows, restart with back-off) and takes a single-instance lock.  Needs no administrator rights.
 
-  Why pythonw: a *console* program started by the Task Scheduler, by WMI or by a Claude session was killed within seconds or when
+  Why pythonw: a *console* program started by the Task Scheduler, by WMI or by an interactive session was killed within seconds or when
   the session ended (exit code 0xC000013A, a Ctrl-C event when the console goes away); a console-less process is not.
 
   -Status : task state, running supervisor / scorers, ledger sizes and the last supervisor log lines.

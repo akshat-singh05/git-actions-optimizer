@@ -25,7 +25,7 @@ Set-Location $root
 $py = Join-Path $root ".venv\Scripts\python.exe"
 
 & $py -W ignore -c "import sklearn.ensemble, fastapi, uvicorn" 2>$null
-if ($LASTEXITCODE -ne 0) { throw "scikit-learn / fastapi could not be imported. If Windows Smart App Control blocked it, do NOT disable it: retry in a minute or use the Docker image (see CLAUDE.md)." }
+if ($LASTEXITCODE -ne 0) { throw "scikit-learn / fastapi could not be imported. If Windows Smart App Control blocked it, do NOT disable it: retry in a minute or use the Docker image (scripts/start_demo_docker.ps1)." }
 
 $port = 8501
 if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) { throw "port $port is already in use: a dashboard is probably running already - open http://localhost:$port" }

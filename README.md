@@ -1,274 +1,232 @@
-# GitHub Actions Performance Optimizer
+# GitHub Actions Optimizer
 
-**A dependency-graph-aware, prediction-driven analysis and scheduling toolkit for GitHub Actions CI/CD pipelines, evaluated on real workflow history.**
+**A machine-learning, dependency-graph-aware scheduler for GitHub Actions CI/CD pipelines.**
 
-B.Tech CSE capstone (BCSE497J), Vellore Institute of Technology.
-Akshat Singh (23BKT0005) and Aditya Choubey (23BCE2274). Supervisor: Prof. Pushpa Lakshmi R, SCOPE.
+[![CI](https://github.com/akshat-singh05/git-actions-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/akshat-singh05/git-actions-optimizer/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 
-> **Status: research prototype with a deliberately critical evaluation.**
-> The system ingests real GitHub Actions history, builds a heterogeneous dependency graph, predicts job failure,
-> duration and cache misses, triages real failures, and proposes a re-scheduled workflow with a reviewable diff.
-> It does **not** demonstrate a general speed-up. Every improvement figure it prints is labelled **ESTIMATED**
-> (derived from predicted durations) or **MEASURED** (observed on recorded or executed runs), and the two are never mixed.
-> Read [`docs/RESULTS.md`](docs/RESULTS.md) (section 00 is current) and [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) before relying on any claim.
+GitHub Actions Optimizer reads the real execution history of a repository's workflows, links it to a dependency graph of the repository
+(source files, jobs, steps, caches, runners), predicts how each job will behave, and uses those predictions to propose a re-scheduled
+workflow. It never edits your workflow file: it writes a **proposed** file next to it, with a reviewable diff and an explanation of every change.
 
----
+```
+Repository ──► Graph ──► Features ──► Predictions ──► Scheduler ──► Proposed workflow
+ (git + API)   files,     history +     failure,        respects       YAML + diff;
+               jobs,      graph +       duration,       `needs`        the original file
+               caches     time          cache miss                     is never modified
+```
 
 ## Contents
 
-1. [What it does](#what-it-does)
-2. [What the evaluation found](#what-the-evaluation-found)
-3. [Architecture](#architecture)
-4. [Quick start](#quick-start)
-5. [The dashboard](#the-dashboard)
-6. [Command reference](#command-reference)
-7. [Component status](#component-status)
-8. [Evaluation method](#evaluation-method)
-9. [Reproducibility and verification](#reproducibility-and-verification)
-10. [Repository layout](#repository-layout)
-11. [Documentation](#documentation)
-12. [Principles and limitations](#principles-and-limitations)
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Getting started](#getting-started)
+- [Command reference](#command-reference)
+- [Opt-in speed-up levers](#opt-in-speed-up-levers)
+- [Dashboard and REST API](#dashboard-and-rest-api)
+- [Configuration](#configuration)
+- [Docker](#docker)
+- [Project layout](#project-layout)
+- [Development](#development)
+- [Evaluation and current status](#evaluation-and-current-status)
+- [Team](#team)
 
-## What it does
+## Features
 
-```
-Repository -> Graph -> Features -> Predictions -> Scheduler -> Proposed workflow
-```
+- **Real data only.** History is ingested from the GitHub REST API (runs, jobs, steps, logs) and from a local git mirror (workflow YAML and diffs at each commit). No synthetic data is used anywhere in the package.
+- **Heterogeneous dependency graph.** Source files are parsed with tree-sitter (Python, JavaScript, Java, Go), the workflow is parsed into jobs, steps and cache keys, and five static rules link files to jobs and caches. The graph is built per commit.
+- **Three predictions per job.** Failure (regularised logistic regression by default, gradient-boosted tree variants available), duration (gradient-boosted trees on the log ratio to the job's prior mean) and cache miss (report-only).
+- **Dependency-safe scheduling.** Jobs are ordered fail-fast over the job DAG while respecting every `needs` edge; the default plan keeps the workflow's structure.
+- **Provably safe, opt-in edits.** Removing gate-only `needs` edges, pruning unnecessary dependency installs and adding a pip cache are validated against the original workflow and listed in the proposed file's header.
+- **Honest numbers.** Every figure is labelled **ESTIMATED** (derived from predicted durations) or **MEASURED** (real runs). Each score is shown next to a naive baseline, and the tool declines to predict when the ingested history is too thin.
+- **Reproducible.** Models are seeded, and the scoring time is an explicit input (`--as-of`), so the same analysis gives the same numbers.
+- **Optional LLM summary.** A plain-language summary can be appended after every decision is made. It sends only job ids, runner labels and computed numbers, never affects the plan, and the tool works fully without it.
+- **Three ways in.** A command-line tool, a REST API (FastAPI) and a single-page dashboard with per-stage pages and a what-if scorer.
 
-1. **Graph.** Source files, workflow jobs, steps, cache keys and `needs` edges are fused into one graph by five static rules
-   (path filters, path arguments, toolchain scope, `setup-*` actions, cache-key globs). Every edge carries a provenance and a confidence.
-2. **Features.** For every (run, job): does the diff reach the job, does it touch a cache key, the job's prior failure rate and
-   duration, same-pull-request history, what the change touches (tests, dependencies, CI config, docs), author and time signals.
-   History is taken strictly from runs that had **finished** before the scored run started.
-3. **Models.** Three tabular models predict job failure, duration and cache misses, each measured against a naive baseline.
-   When too few cache labels exist (job logs expire) the report-only cache model is shown as not applicable, never faked, and the other two still run.
-4. **Triage.** Real failures are classified from recorded outcomes (aggregator job, flaky on the same commit, pre-existing,
-   fixed by a later commit, persistent, unrelated to the change) with the failing step and a suggested action.
-5. **Scheduler.** Respects `needs`, orders jobs fail-fast, and chooses runners by `alpha*time + beta*cost + gamma*energy`.
-   The default plan equals the original workflow; skip guards, larger runners, safe gate relaxation, install pruning and pip caching are opt-in.
-6. **Generator.** Writes a **proposed** workflow, a diff and an explanation. The original file is never modified.
+## How it works
 
-## What the evaluation found
-
-All numbers come from commands in this repository run on real ingested history: sixteen public repositories
-(the first nine are described in [`docs/DATASET_REPORT.md`](docs/DATASET_REPORT.md); seven more were added for the failure-volume experiment). Intervals are paired-bootstrap 95% intervals
-over runs; they are optimistic (runs of one pull request are correlated) and many comparisons were made, so single cells are leads, not established effects.
-
-| question | answer | evidence |
+| Stage | What it does | Where |
 |---|---|---|
-| Do the models beat naive baselines? | **Only in some repositories.** Under the realistic protocol the boosted-tree v2 model beats the "job's prior failure rate" baseline significantly in prometheus only (+0.269 PR-AUC); the logistic default beats it nowhere and is significantly worse nowhere. The raw-seconds duration model is worse than its baseline everywhere. | [`RESULTS.md`](docs/RESULTS.md) sections 00 and 0, [`MODEL_EVAL.md`](docs/MODEL_EVAL.md) |
-| Is the logistic default a sound choice? | **A safe one, not a proven gain.** Frozen in advance and tested once on runs that did not exist when it was chosen (21 Oct): not significantly worse than the baseline in all three judged repositories (poetry +0.121, prometheus +0.044, dubbo +0.057 PR-AUC, every interval includes 0). | [`FROZEN_CHOICE.md`](docs/FROZEN_CHOICE.md), [`MODEL_EVAL_FRESH_FINAL.md`](docs/MODEL_EVAL_FRESH_FINAL.md) |
-| Did a richer failure model (v2) improve on it? | **Not by the standard fixed in advance:** it beat the baseline in 1 of 9 repositories; the pre-registered bar was 3. | [`IMPROVEMENT_PLAN.md`](docs/IMPROVEMENT_PLAN.md), [`IMPROVEMENT_RESULTS.md`](docs/IMPROVEMENT_RESULTS.md) |
-| Do models win only where failures are plentiful? | **Inconclusive.** On six failure-rich repositories chosen by a pre-registered rule the v2 model beats the baseline in 5 and loses in none, but the criterion's second part (winners have more failures than non-winners) is not met. The largest gain (immich, PR-AUC 0.94) is mostly failure persistence within one pull request, which the baseline cannot see. | [`FAILURE_VOLUME_PLAN.md`](docs/FAILURE_VOLUME_PLAN.md), [`FAILURE_VOLUME_RESULTS.md`](docs/FAILURE_VOLUME_RESULTS.md) |
-| Pooled leave-one-repository-out model, fresh-data verdict | **Rejected (26 Oct).** Frozen in advance and tested once on runs that did not exist when it was fixed: of the four repositories with at least 20 fresh failures it beats the baseline in two (prometheus +0.282, ruff +0.054 PR-AUC), is indistinguishable in two (quarkus, uv) and is worse in none; the rule needed three wins. Not adopted. One uv gap: 333 of 1,846 completed runs could not be read from GitHub (HTTP 502). | [`POOLED_FROZEN.md`](docs/POOLED_FROZEN.md), [`POOLED_EVAL_FRESH.md`](docs/POOLED_EVAL_FRESH.md) |
-| Are the failure probabilities calibrated? | **No, and recalibration did not help.** The score is mildly over-confident at the top; Platt scaling and an out-of-sample isotonic map did not improve the Brier score in 3 of 4 repositories. The dashboard calls it a risk score and shows what actually happened to unseen rows that scored alike. | [`CALIBRATION.md`](docs/CALIBRATION.md) |
-| Does the dependency graph describe the workflow? | **Only where the workflow declares file-to-job relationships** (poetry, fastapi). Elsewhere it is uninformative; where gating lives in shell scripts (ruff, uv) it points the right way only weakly. | [`GRAPH_FEATURES.md`](docs/GRAPH_FEATURES.md), [`HELDOUT_RESULTS.md`](docs/HELDOUT_RESULTS.md), [`HELDOUT_RESULTS_2.md`](docs/HELDOUT_RESULTS_2.md) |
-| Does skipping jobs the graph says a diff cannot reach help? | **It saves 12-17% of billable time in two repositories but would make 3-10% (far more in some held-out repositories) of failing runs look green, and did not generalise.** Advisory report only. | [`IMPACT_REPLAY.md`](docs/IMPACT_REPLAY.md), [`DEFERRAL_REPLAY.md`](docs/DEFERRAL_REPLAY.md) |
-| Does the scheduler make CI faster? | **Not by default (0.0% estimated on real poetry).** Skip guards cannot save time under GitHub's `needs` rules; runner upsizing rests on an assumed speed-up law. | [`SCHEDULER_ASSUMPTIONS.md`](docs/SCHEDULER_ASSUMPTIONS.md) |
-| Does relaxing safe `needs` gates help? | **Where the pattern exists, with a measured price.** Real before/after runs on GitHub Actions, critical path **MEASURED**: -15.1% (our own CI, p = 0.013), -37.8% and -49.0% (two public forks), billable time unchanged in green runs. In a **failing** run the relaxed workflow still runs its downstream jobs and bills **+29 s and +97 s** more than the original, which stops after the failed gate (7 vs 7 runs each). Replayed on nine mature repositories the lever saves about 0%. Three small pipelines chosen for a large estimated saving. | [`SPEEDUP.md`](docs/SPEEDUP.md), [`SECOND_REPOSITORY.md`](docs/SECOND_REPOSITORY.md), [`GATE_REPLAY.md`](docs/GATE_REPLAY.md) |
-| Install pruning, pip caching? | Install pruning: lint job 37 s -> 11 s on our own CI (critical path -19.6%, p = 0.093, not significant) and it qualifies for none of the ingested workflows. Pip caching: **no detectable effect**. | [`SPEEDUP.md`](docs/SPEEDUP.md) |
-| Is the generated workflow safe to run? | Original vs proposed executed on real GitHub Actions (12 runs): identical behaviour, `needs` respected, no detectable time difference (+0.3%, p = 0.92). | [`VALIDITY_RUN.md`](docs/VALIDITY_RUN.md) |
-| What do real CI failures look like? | In poetry and fastapi about half of all failed jobs are aggregator ("status") jobs that only repeat an upstream failure; 10-25% of red runs in four repositories needed no code change. Flakiness is under-counted. | [`FAILURE_TRIAGE.md`](docs/FAILURE_TRIAGE.md) |
-| Can predictions be judged prospectively? | A hash-chained ledger scored queued runs before any job finished (12-22 Oct). **Neither model beat the baseline in uv (440 runs) or ruff (156 runs)**; in prometheus (76 scored runs) the v2 model did (+0.161 [+0.030, +0.320]) but only 33% of seen runs were scored, so its pre-set coverage rule failed. A demonstration, not a significance test. | [`LIVE_TEST.md`](docs/LIVE_TEST.md) |
+| Ingestion | Loads runs, jobs, logs and diffs into a SQL database (SQLite by default); resumable and idempotent | `gha_optimizer/ingestion/` |
+| Graph | Builds the source-code graph and the workflow graph and fuses them | `gha_optimizer/graph/` |
+| Features | One row per job and run; history uses strictly earlier runs only; unknown stays unknown | `gha_optimizer/features/` |
+| Models | Failure, duration and cache-miss models, fitted per repository; persisted only when a data fingerprint matches | `gha_optimizer/models/` |
+| Scheduler | DAG levels, fail-fast priority order, runner choice on time, cost and energy | `gha_optimizer/scheduler/` |
+| Generator | Writes the proposed workflow, the diff and the explanation | `gha_optimizer/generator/` |
 
-Removed after verification (kept in git history): a GNN that could not have worked on the current graph, and a
-matrix-reduction engine whose coverage estimate overstated what it kept ([`docs/RESULTS.md`](docs/RESULTS.md) section 6).
+`run_pipeline()` in `gha_optimizer/pipeline.py` is the single entry point used by the CLI, the API, the dashboard and the tests.
 
-**The credible contributions** are the evaluation method (protocol with completion-aware visibility, rolling-origin folds,
-paired cluster bootstrap, pre-registered tests and amendments, a prospective ledger), the negative and mixed results it
-produced, the safety rules for rewriting workflows together with the measured benefit **and** cost of the one lever that removes a `needs` edge,
-the failure triage, and a working, tested pipeline that refuses to predict from too little real history.
-A paper draft ([`docs/paper/main.pdf`](docs/paper/main.pdf)) and the review deck ([`docs/presentation/`](docs/presentation)) present the same results.
+## Getting started
 
-## Architecture
-
-```mermaid
-flowchart LR
-  GH[(GitHub API + git mirror)] --> ING[Ingestion<br/>runs, jobs, logs, diffs]
-  ING --> DB[(SQLite / Postgres)]
-  DB --> HIST[History<br/>strictly earlier runs]
-  WF[Workflow YAML] --> GRA[Graph + fusion rules]
-  HIST --> FEA[Features]
-  GRA --> FEA
-  FEA --> MOD[Failure / duration / cache models]
-  MOD --> SCH[DAG-aware scheduler]
-  GRA --> SCH
-  SCH --> GEN[Generator<br/>proposed YAML + diff]
-  MOD --> TRI[Triage and evaluation]
-  GEN --> UI[Dashboard]
-  MOD --> UI
-  TRI --> UI
-```
-
-`gha_optimizer/pipeline.py::run_pipeline` is the single orchestration entry point used by the CLI, the API and the tests.
-The optional LLM layer (`llm_summary.py`) only words facts after every decision is made; the system works fully without it.
-
-## Quick start
-
-Python 3.10+. A GitHub token is needed to ingest history (job logs require authentication).
+**Requirements:** Python 3.10 or newer, Git, and a GitHub personal access token (needed to ingest history because job logs require authentication). Docker is optional.
 
 ```bash
-pip install -e ".[dev]"              # core pipeline, CLI and tests
-pip install -e ".[server]"           # optional: API server, Celery worker, Postgres driver
+git clone https://github.com/akshat-singh05/git-actions-optimizer.git
+cd git-actions-optimizer
 
-export GITHUB_TOKEN=...              # or put it in .env (see .env.example)
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 
-# 1. collect real history for a repository (bounded and resumable)
-gha-optimizer ingest --repo owner/repo --workflow ci.yml --since 40d --max-runs 300
-gha-optimizer build-dataset --repo owner/repo        # per-commit graph features
+pip install -e ".[dev]"              # core pipeline, CLI and test tools
+pip install -e ".[server]"           # optional: API server, Celery worker, Postgres and Redis clients
+pip install -e ".[ml]"               # optional: XGBoost (used automatically when installed)
 
-# 2. open the dashboard on everything ingested so far
-gha-optimizer dashboard --repo owner/repo            # http://localhost:8501
-
-# 3. or analyse a workflow from the command line
-gha-optimizer analyze path/to/checkout/.github/workflows/ci.yml --repo owner/repo --changed src/a.py,src/b.py
-#    writes ci.optimized.yml beside it and prints the explanation, diff and ESTIMATED figures.
-#    Exits 2 (declines) when the history is too thin; it never substitutes synthetic data.
+cp .env.example .env                 # then set GITHUB_TOKEN (the .env file is git-ignored)
 ```
 
-**`.env`:** copy `.env.example` to `.env` (git ignores it). For local use leave `DATABASE_URL` commented out so the SQLite database
-`gha_optimizer.db` is used; the Postgres URL in the template is for the compose stack, which sets its own. Never put a key in `.env.example`.
+### Quick start
 
-**Optional explanation layer:** set `GEMINI_API_KEY` and `GHA_LLM_MODEL` (no model name is assumed: copy a current id from Google AI Studio) in `.env`,
-check with `gha-optimizer llm-check`, then add `--llm-summary` to `analyze`. The summary is checked by the application (every number must be a
-rounding or magnitude of a computed fact) and cannot change the plan or the proposed file.
+```bash
+# 1. Ingest the recent history of a repository (resumable; a bare git mirror is cloned under .gha_optimizer/)
+gha-optimizer ingest --repo owner/repo --workflow ci.yml --since 40d
 
-Job logs are what give cache-miss labels. If a repository was first ingested with `--no-logs`, repeat `ingest` without it:
-runs that finished without logs are revisited and their logs back-filled, newest first, within `--log-budget`.
+# 2. See what was ingested (real SQL row counts)
+gha-optimizer ingest-status --repo owner/repo
 
-## The dashboard
+# 3. Analyse a workflow for a given change set; the proposed file is written next to the original
+gha-optimizer analyze path/to/checkout/.github/workflows/ci.yml --repo owner/repo --changed src/app.py,README.md
 
-`gha-optimizer dashboard` (also served by `gha-optimizer serve` at `/dashboard`) is one page application on the ingested
-repositories; there is no separate demo UI. The page ships inside the package (`gha_optimizer/dashboard_ui/index.html`), so an installed copy serves it too.
+# 4. Explore everything in the browser (http://localhost:8501)
+gha-optimizer dashboard --repo owner/repo
+```
 
-* **Repository selector** for every ingested repository. A repository without enough real history (or without failure labels) shows why the system declined.
-* **Dashboard** with the job graph coloured by predicted failure risk, per-job duration and failure bars and an estimated timeline.
-* **One page per pipeline stage** (repository, source graph, CI graph, fusion, impact, features, models, schedule, safety, workflow, summary).
-* **Models and probabilities**: each failure score next to the job's own base rate and the failure rate observed on unseen rows that scored alike.
-* **What-if**: pick changed files (search, one-click scenarios built from real files, or the real diff) and watch impacted jobs, predictions and the estimated plan update.
-* **Original vs proposed workflow** side by side with a download button; the original is never modified.
-* **Evidence**: the rows of every generated report that concern the selected repository, the project reports, and the live-test ledgers with their hash-chain status.
-* **Progress** per pipeline stage, and a **disk cache** (`.gha_optimizer/dashboard_cache/`) so a restart does not repeat the work; a cached result is reused only if the ingested runs, tip commit and library versions still match.
-
-`--warm` computes every ingested repository in the background (about 20 minutes for nineteen); `--snapshot-root D:/ghas` keeps exported paths short on Windows
-(apache/dubbo exceeds the 260-character limit otherwise). A presenter's guide is in [`docs/PRESENTING.md`](docs/PRESENTING.md), the demo script in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
+`analyze` exits with code 2 and prints *"Declining to predict: insufficient ingested history"* when the history is too thin. It writes the proposed workflow to
+`.github/workflows/<name>.optimized.yml` in the checkout and never overwrites the original. Pass `--as-of 2026-10-12T12:00:00Z` for a reproducible score.
 
 ## Command reference
 
-| command | purpose |
+Run `gha-optimizer <command> --help` for every option.
+
+| Command | Purpose |
 |---|---|
-| `ingest`, `ingest-status`, `build-dataset`, `dataset-report` | collect and describe real history |
-| `analyze` | proposed workflow, diff and explanation (`--enable-skips`, `--larger-runners`, `--relax-gates`, `--prune-installs`, `--add-pip-cache`, `--as-of`, `--llm-summary`) |
-| `dashboard`, `serve` | dashboard UI and API; full API server with webhook and worker |
-| `eval-models`, `eval-pooled`, `eval-calibration` | rolling-origin model comparison, pooled model, calibration |
-| `replay-impact`, `replay-gates` | counterfactual replays of the graph-skip policy and of gate relaxation on history |
-| `triage` | classify real failures |
-| `live-score`, `live-evaluate` | prospective scoring into a hash-chained ledger, and its evaluation (outcomes only: no diff, one setup) |
-| `evaluate` | scheduler objective-weight ablation (ESTIMATED) |
-| `llm-check` | verify the optional explanation layer's credentials with one tiny request (no repository data) |
-| `python scripts/measure_workflows.py` | **real** before/after (or, with `--inject-failure`, failing-run) measurement of two workflow files on GitHub Actions via throw-away draft pull requests |
+| `ingest`, `ingest-status` | Collect real run history into the database; show row counts |
+| `build-dataset`, `dataset-report` | Build per-commit graph features; generate a dataset report from the database |
+| `analyze` | Predict, schedule and write a proposed workflow with a diff and an explanation |
+| `evaluate` | Ablate the scheduler's time / cost / energy weights (ESTIMATED figures) |
+| `dashboard` | The web dashboard (`--warm` pre-computes every ingested repository; `--snapshot-root` keeps exported paths short on Windows) |
+| `serve` | The FastAPI server (REST API, webhook endpoint and the dashboard under `/dashboard`) |
+| `eval-models` | Rolling-origin comparison of the models against naive baselines, with feature-set ablation and paired bootstrap intervals |
+| `eval-calibration` | Brier score, calibration error and reliability of the failure scores |
+| `eval-pooled` | Leave-one-repository-out evaluation of a pooled failure model |
+| `replay-impact`, `replay-gates` | Counterfactual replays on real history of skipping unreached jobs and of relaxing safe gates |
+| `triage` | Classify real failures from recorded outcomes (class, failing step, suggested action) |
+| `live-score`, `live-evaluate` | Prospective scoring of live runs into a hash-chained ledger, and evaluation against the real outcomes |
+| `llm-check` | One tiny request to verify the optional LLM configuration |
 
-`gha-optimizer <command> --help` lists the flags. Full-stack: `docker-compose up --build` (Postgres, Redis, API, Celery worker).
+## Opt-in speed-up levers
 
-## Component status
+All levers are **off by default**, so the default plan equals the original workflow.
 
-Classification: IMPLEMENTED (code exists, reachable from an entry point, run, tested), PARTIALLY IMPLEMENTED, STUB, PLANNED, REMOVED.
-The full table with what was verified for each component is [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
-
-| component | status | notes |
+| Option of `analyze` | Effect | Safety |
 |---|---|---|
-| Ingestion of real history (runs, jobs, logs, git mirror, diffs) | IMPLEMENTED | resumable; waits out network outages; log retention limits cache labels |
-| Dependency graph and fusion rules | IMPLEMENTED | static approximation; modest predictive value |
-| Features with completion-aware history (protocol v2) | IMPLEMENTED | 15 extra failure features |
-| Failure / duration / cache-miss models | IMPLEMENTED | mixed results against baselines; default confirmed as a safe choice |
-| Persisted models (fingerprint-checked) | IMPLEMENTED | never loads a stale artifact |
-| Failure triage | IMPLEMENTED | heuristics from recorded outcomes; not validated against developer actions |
-| Scheduler | IMPLEMENTED | default plan = baseline; levers opt-in; figures ESTIMATED |
-| Safe gate relaxation (`--relax-gates`) | IMPLEMENTED, opt-in | provably-safe gates only; validated against the original; **measured** saving and measured failing-run cost on three / two pipelines |
-| Install pruning, pip caching | IMPLEMENTED, opt-in | pruning measured once (not significant); pip caching shows no detectable effect |
-| Workflow generator (proposed file, diff, explanation) | IMPLEMENTED | never edits the original; never changes build matrices |
-| Advisory report (graph-unreached jobs) | IMPLEMENTED | not applied automatically |
-| Calibration and out-of-sample reliability | IMPLEMENTED | reporting layer; the scheduler uses the raw score |
-| Dashboard (stages, what-if, evidence, progress, disk cache) | IMPLEMENTED | one UI and one service; ships inside the package |
-| Prospective live scoring | IMPLEMENTED | ran 12-22 Oct with gaps; outcomes of all scored runs read |
-| LLM explanation layer | IMPLEMENTED, verified against the live Gemini API (26 Oct) | cannot influence results; output identical with and without it |
-| FastAPI server, Celery worker, Postgres | IMPLEMENTED (run end to end 11 Oct and 26 Oct) | [`FULL_STACK_RUN.md`](docs/FULL_STACK_RUN.md); the webhook accepts unsigned requests unless `GITHUB_WEBHOOK_SECRET` is set |
-| Packaging | IMPLEMENTED | a clean non-editable install in `python:3.10-slim` runs the test suite; not verified on a fresh Windows virtualenv (Smart App Control blocks scikit-learn there) |
-| Measured general speed-up | **NOT SHOWN** | gains on three simple pipelines chosen for a large estimated saving; mature repositories' critical paths are their test and build jobs |
-| GNN cache predictor, matrix reduction | **REMOVED** | verified unworkable / overstated; see `docs/RESULTS.md` |
+| `--relax-gates` | Removes `needs` edges that only gate a job (no data dependency, no secrets other than `GITHUB_TOKEN`, no deploy or publish step, no status-function condition) so that jobs run in parallel | Every removal is proven safe by `gha_optimizer/gates.py`, listed in the file header and validated against the original. The job then also runs when its former upstream fails |
+| `--prune-installs` | Removes `pip install -r FILE` from jobs that only run stand-alone linters | Strict tested conditions, validated |
+| `--add-pip-cache` | Adds `cache: pip` where safe and meaningful | Validated; the saving is deliberately not estimated |
+| `--enable-skips` | Writes `if: ${{ false }}` guards for jobs predicted to fail | A correct prediction saves nothing under GitHub's `needs` semantics and a wrong one removes tests; reported as advice only unless enabled |
+| `--larger-runners` | Relabels base-tier jobs to larger runners that exist in your organisation | Relies on an assumed speed-up law (`--speedup-exponent`) |
+| `--llm-summary` | Appends a plain-language summary (needs `GEMINI_API_KEY` and `GHA_LLM_MODEL`) | Wording only; every number must appear in the computed facts |
 
-## Evaluation method
+## Dashboard and REST API
 
-* **Protocol.** A run's outcome becomes visible to later runs only after that run finished, as it would at scoring time.
-* **Folds.** Expanding-window, rolling-origin; all jobs of a run are on the same side; the split is never random.
-* **Baselines.** The job's prior failure rate, prior mean duration, prior cache-hit rate; metrics are always reported with the base rate.
-* **Intervals.** Paired cluster bootstrap over runs (1,000 resamples, seed 13). A repository counts as a win or a loss only with at least 20 positives.
-* **Pre-registration.** Choices that could be tuned were fixed in writing before the data they are judged on was read, and later changes are dated amendments made before the stage they concern
-  ([`IMPROVEMENT_PLAN.md`](docs/IMPROVEMENT_PLAN.md), [`HELDOUT_PLAN.md`](docs/HELDOUT_PLAN.md), [`FROZEN_CHOICE.md`](docs/FROZEN_CHOICE.md), [`FAILURE_VOLUME_PLAN.md`](docs/FAILURE_VOLUME_PLAN.md), [`POOLED_FROZEN.md`](docs/POOLED_FROZEN.md));
-  held-out repositories were never used to choose anything.
-* **Measured speed-ups** run the original and proposed workflow alternately on real GitHub Actions runners (warm-up excluded, exact permutation test on the difference of medians); every percentage in the documents was recomputed from the raw timing files.
-* **Prospective test.** Predictions are written to an append-only ledger before any job of the run completes; every entry carries the hash of the previous one.
+`gha-optimizer dashboard` serves a single-page dashboard on `http://localhost:8501` with a repository selector and one page per pipeline stage
+(repository, source and CI graphs, graph fusion, impact analysis, features, models, scheduling, safety verification, original vs proposed workflow, final summary),
+a what-if scorer and evidence pages. Results are cached on disk and reused while the ingested runs, the tip commit and the library versions are unchanged.
+The dashboard never renders invented numbers: a repository that the pipeline declines shows the reason instead.
 
-## Reproducibility and verification
+`gha-optimizer serve` starts the API on port 8000:
 
-The same inputs give the same numbers. All models are seeded. The hour and weekday of the scored run are model features and
-used to default to the wall clock, so the same repository scored at different hours differed; the scoring time is now an explicit
-input (`as_of`: the scored run's own creation time in the dashboard and demos, `--as-of` for `analyze`). Two full dashboard
-runs under different `PYTHONHASHSEED` values produced byte-identical results; `tests/test_reproducibility.py` pins the behaviour.
+| Endpoint | Description |
+|---|---|
+| `POST /api/v1/optimize` | Run the pipeline for a workflow and a change set (returns 422 when the history is insufficient) |
+| `GET /health`, `GET /ready` | Liveness and readiness |
+| `POST /webhook/github` | GitHub webhook receiver (HMAC-validated; set `GITHUB_WEBHOOK_SECRET`) |
+| `GET /api/v1/parsers`, `GET /api/v1/metrics` | Available language parsers; service metrics |
+| `/api/v1/graph/...` | Graph queries (hotspots, risk, critical path, quality, provenance, history, diffs) |
+| `/api/v1/dashboard/...` | The API behind the dashboard; the page itself is at `/dashboard` |
 
-Verified on 2026-10-26: **479 tests pass** (1 skipped); `ruff` and `mypy gha_optimizer/ --ignore-missing-imports` are clean (`mypy.ini` documents one remaining gap: SQLAlchemy's typing of legacy `Column` attributes in the modules that touch ORM attributes);
-the suite also passes against a clean non-editable install in a Python 3.10 container (which found and led to the fix of three defects hidden by editable installs); the `docker compose` stack was run end to end.
+Interactive API documentation is served by FastAPI at `/docs` when the server is running.
 
-## Repository layout
+## Configuration
+
+Settings are read from environment variables or a `.env` file found from the working directory upward (real environment variables win).
+
+| Variable | Purpose |
+|---|---|
+| `GITHUB_TOKEN` | Token used to read runs, jobs, logs and to clone the mirror (never placed in a URL) |
+| `GITHUB_REPO` | Default repository (`owner/repo`) |
+| `GITHUB_WEBHOOK_SECRET` | Secret for webhook signature validation; without it unsigned webhooks are accepted, so set it in any reachable deployment |
+| `DATABASE_URL` | SQLAlchemy URL; falls back to `sqlite:///gha_optimizer.db` |
+| `REDIS_URL` | Celery broker (full stack only) |
+| `GHA_MODEL_DIR` | Where fingerprint-matched fitted models are stored |
+| `GHA_HOST`, `GHA_PORT` | Server bind address and port |
+| `GEMINI_API_KEY`, `GHA_LLM_MODEL` | Optional LLM summary |
+| `GHA_MAX_RETRIES`, `GHA_NETWORK_PATIENCE_S` | Retry count and patience of the GitHub client for bulk reads |
+
+Never commit `.env`; it is git-ignored. The scheduler's weights and thresholds (`alpha`, `beta`, `gamma`, runner prices, skip threshold) are defaults in `gha_optimizer/config.py`.
+
+## Docker
+
+```bash
+docker compose up --build        # Postgres, Redis, the API on :8000 and a Celery worker
+```
+
+The images install only the package, so a clean non-editable install is also what runs in the containers. Mirror clones authenticate through git's environment configuration, not through the URL.
+
+## Project layout
 
 ```
 gha_optimizer/
-  cli.py, pipeline.py, config.py        entry points and orchestration
-  ingestion/                            GitHub client, log parsing, git mirror, history loading, log back-fill
-  graph/                                graph builder, fusion rules, CI semantics, workflow expansion
-  features/                             feature extraction, per-commit graph features, dataset and reports
-  models/                               failure / duration / cache models, rolling-origin and pooled evaluation, calibration, model store
-  scheduler/, generator/                scheduler, proposed workflow writer
-  gates.py, install_pruning.py,         opt-in levers and their validation
-  pip_cache.py
-  triage.py, advisory.py, replay.py,    failure triage, advisory report, counterfactual replays
-  gate_replay.py
-  live.py                               prospective scoring ledger
-  dashboard_service.py, dashboard_app.py, evidence.py, server/api/v1/dashboard.py     the dashboard's backend
-  dashboard_ui/index.html               the single dashboard page (package data)
-  llm_summary.py                        optional explanation layer
-  server/, worker/                      FastAPI app and database, Celery tasks
-scripts/                                measurement harness, live-test runner, demo launchers
-docs/                                   design notes, generated reports, pre-registered plans, results, paper, deck
-tests/                                  test suite (fixtures are data, not tests)
+  ingestion/        GitHub client, log parser, job mapping, git mirror, history loader
+  graph/            tree-sitter parsers, workflow graph, fusion rules, graph analytics and storage
+  features/         feature extraction, per-commit graph features, dataset report
+  models/           failure / duration / cache models, rolling-origin evaluation, calibration, model store
+  scheduler/        DAG-aware scheduler and the plan it returns
+  generator/        proposed workflow, diff and explanation
+  server/           FastAPI app, dashboard API, database models and migrations helpers
+  worker/           Celery tasks
+  dashboard_ui/     the single-page dashboard
+  pipeline.py       run_pipeline(): the orchestration entry point
+  cli.py            the `gha-optimizer` command
+alembic/            database migrations
+scripts/            demo start scripts, live-test supervisor, measurement harness for real before/after runs
+tests/              the test suite (fixtures hold real log excerpts and a toy repository)
+examples/, demo.py  runnable demonstrations on an ingested repository
 ```
 
-## Documentation
+## Development
 
-* [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) - status of every component, what is verified and what is left
-* [`docs/RESULTS.md`](docs/RESULTS.md), [`docs/IMPROVEMENT_RESULTS.md`](docs/IMPROVEMENT_RESULTS.md), [`docs/FAILURE_VOLUME_RESULTS.md`](docs/FAILURE_VOLUME_RESULTS.md) - consolidated results and threats to validity
-* [`docs/REAL_DATA_FOUNDATION.md`](docs/REAL_DATA_FOUNDATION.md), [`docs/DATASET_REPORT.md`](docs/DATASET_REPORT.md) - the dataset
-* [`docs/GRAPH_FEATURES.md`](docs/GRAPH_FEATURES.md) - graph rules and structural features
-* [`docs/MODEL_EVAL.md`](docs/MODEL_EVAL.md), [`docs/CALIBRATION.md`](docs/CALIBRATION.md), [`docs/POOLED_EVAL.md`](docs/POOLED_EVAL.md) - model comparisons
-* [`docs/SPEEDUP.md`](docs/SPEEDUP.md), [`docs/SECOND_REPOSITORY.md`](docs/SECOND_REPOSITORY.md), [`docs/GATE_REPLAY.md`](docs/GATE_REPLAY.md) - the speed-up levers, measured and replayed
-* [`docs/FAILURE_TRIAGE.md`](docs/FAILURE_TRIAGE.md), [`docs/LIVE_TEST.md`](docs/LIVE_TEST.md) - triage and the live test
-* [`docs/SCHEDULER_ASSUMPTIONS.md`](docs/SCHEDULER_ASSUMPTIONS.md) - what the scheduler's estimate rests on
-* [`docs/VALIDITY_RUN.md`](docs/VALIDITY_RUN.md), [`docs/FULL_STACK_RUN.md`](docs/FULL_STACK_RUN.md) - original vs proposed workflow on real GitHub Actions; the full stack
-* [`docs/PRESENTING.md`](docs/PRESENTING.md), [`docs/VIVA_QA.md`](docs/VIVA_QA.md), [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md), [`docs/paper/`](docs/paper), [`docs/presentation/`](docs/presentation) - presenting the project
-* [`docs/LLM_EXPLANATION.md`](docs/LLM_EXPLANATION.md) - the optional explanation layer, its guarantees and its live verification
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v                                          # the full suite trains models and takes about 15 minutes
+ruff check gha_optimizer/ --select E,F,W --ignore E501    # lint, as in CI
+mypy gha_optimizer/ --ignore-missing-imports              # type check, as in CI
+alembic upgrade head                                      # database migrations (DATABASE_URL, default SQLite)
+```
 
-## Principles and limitations
+The CI workflow (`.github/workflows/ci.yml`) runs lint, type checking and the tests on Python 3.10.
+On Windows, Smart App Control can block native extensions of scikit-learn or tree-sitter intermittently; do not disable it, retry, or run the Linux Docker image instead.
 
-* No synthetic or default values are presented as results; the only synthetic generator lives in the tests.
-* ESTIMATED (from predicted durations) and MEASURED (on recorded or executed runs) are never mixed.
-* A generated workflow never violates a `needs` relationship that carries data or guards a side effect, and never overwrites the original file.
-  The one opt-in exception, `--relax-gates`, removes only gate-only edges that can be proven safe, lists each removal and states the trade-off (now also measured).
-* Machine learning and scheduling do not depend on any LLM; the optional layer only words the facts.
-* Claims are pre-registered where they could be tuned, and negative results are kept.
+## Evaluation and current status
 
-**Limitations.** Sixteen repositories with weeks to months of history each, chosen by the authors or by a written rule (the seven failure-volume repositories because they fail often); one workflow per repository; few
-failures in several repositories, so intervals are wide and optimistic; cache labels exist only where logs were downloadable; the graph rules are a static approximation; the speed-up is shown on three small pipelines
-chosen for a large estimated saving and its failing-run cost on two of them; the live test has gaps and 33 uv runs could not be read; triage recommendations were not compared with what developers did;
-the optional explanation layer was verified on one repository and one model.
+The system was evaluated on **24,667 workflow runs (590,663 job records) from 19 public repositories**, with rolling-origin folds (the models only ever see the past),
+paired bootstrap intervals and a naive baseline next to every metric. Several claims were fixed in writing before the data were read and then re-tested on later runs.
+The `eval-*`, `replay-*` and `live-*` commands above regenerate these reports from an ingested database.
 
-Licence: not yet specified.
+- **Prediction is modest.** The models beat the job's own prior-failure-rate baseline in some repositories and not in others. The logistic default was confirmed on fresh data only as a *safe* default. A richer failure model missed its pre-registered bar, and a pooled model was rejected on fresh data. Failure scores are not calibrated, so they are presented as risk scores, never as probabilities.
+- **The graph helps only where the workflow states which files affect which job.** Elsewhere its features are uninformative.
+- **By default the plan saves nothing** (0.0% ESTIMATED; a real run agreed). Skipping jobs and larger runners are opt-in and not measured savings.
+- **Gate relaxation can shorten the critical path, with a cost.** On three real pipelines the **MEASURED** critical path was 15% to 49% shorter with billable time unchanged in green runs. In a failing run the relaxed workflow still runs the downstream jobs and billed 29 s and 97 s more on the two pipelines where this was measured. These pipelines were chosen because the estimated saving was large; mature repositories gain about nothing.
+- **Known limits.** One workflow per repository; log retention (about 45-90 days) limits cache-miss labels; GitHub's API refuses some very large runs; the live prospective test is a demonstration, not a significance test.
+
+Status of the components: ingestion, graph engine, features, the three models, the scheduler, the workflow generator with its validators, the CLI, the API and the dashboard are implemented and tested
+(480 tests; type checking is clean; a clean non-editable install and the full Docker stack were verified). The optional LLM layer is implemented and was verified against the live service.
+A graph neural network and a matrix-reduction module were built, evaluated and removed because they did not hold up.
+
+## Team
+
+Capstone project **BCSE497J (Project I)**, B.Tech, School of Computer Science and Engineering (SCOPE), Vellore Institute of Technology.
+
+- Akshat Singh (23BKT0005)
+- Aditya Choubey (23BCE2274)
+
+Supervisor: Dr. Pushpa Lakshmi, SCOPE, VIT.
