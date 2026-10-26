@@ -270,7 +270,11 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     init_db()
     summary = {}
     for repo in args.repo:
-        client = GithubClient(token=token, repo=repo, network_patience_s=_network_patience())
+        import os
+
+        # GHA_MAX_RETRIES as in _github_client: a run GitHub answers 502 for every time is skipped sooner and completed by a later pass
+        client = GithubClient(token=token, repo=repo, network_patience_s=_network_patience(),
+                              max_retries=int(os.environ.get("GHA_MAX_RETRIES", "8") or 8))
         options = IngestOptions(
             since=since,
             until=until,
